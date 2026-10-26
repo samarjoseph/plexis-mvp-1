@@ -1,22 +1,26 @@
 """
-Comprehensive test suite for Cloudflare R2 Persistent Storage and Spreadsheet Action History.
+Comprehensive test suite for Backblaze B2 Persistent Storage and Spreadsheet Action History.
 
 Tests:
-1. StorageManager, R2Client, and Account Routing (Primary vs Secondary, Strict Isolation).
-2. Key generation and filename sanitization (preventing directory traversal).
-3. Put, Get, Stream, Head, Delete, and Missing-key handling.
-4. Single Cell Edits, Batch Edits, and Optimistic Concurrency Control (OCC).
-5. Undo, Redo, and Branch Invalidation.
-6. Periodic Snapshot Compaction to R2.
-7. Cold-Start Rehydration (Restoring dataset from R2 snapshots + replay).
-8. Legacy Dataset Fallback (PostgreSQL BYTEA compatibility).
-9. Flask API Endpoints (/api/spreadsheet/edit, /undo, /redo, /history, /api/transform/redo).
+1. StorageManager, B2Client, and Account Routing (Primary vs Secondary, Strict Isolation).
+2. Endpoint and Region Resolution for Backblaze B2 S3 API.
+3. Key generation and filename sanitization (preventing directory traversal).
+4. Object Storage CRUD (Put, Get, Stream, Head, Delete, Presigned URLs).
+5. Storage Quotas & Zero-Budget MVP Safeguards (Usage calculation, Pre-upload Quota Enforcement).
+6. Single Cell Edits, Batch Edits, and Optimistic Concurrency Control (OCC 409).
+7. Undo, Redo, and Branch Invalidation.
+8. Periodic Snapshot Compaction to Backblaze B2.
+9. Cold-Start Rehydration (Restoring dataset from B2 snapshots + replay).
+10. Legacy Dataset Fallback (PostgreSQL BYTEA compatibility).
+11. Flask API Endpoints (/api/spreadsheet/edit, /undo, /redo, /history, /api/transform/redo).
+12. R2-to-B2 Safe Migration Utility (dry run, copy verification, idempotent execution).
 """
 import io
+import os
 import uuid
 import pytest
 import pandas as pd
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.compiler import compiles
@@ -38,9 +42,11 @@ from storage.contracts import (
     StorageAccountConfig,
     StorageObjectNotFoundError,
     StorageAccountNotConfiguredError,
+    StorageQuotaExceededError,
 )
-from storage.r2_client import R2Client
+from storage.b2_client import B2Client
 from storage.manager import StorageManager, storage_manager
+from storage.migration_r2_to_b2 import R2ToB2Migrator
 from spreadsheet.persistence import (
     SpreadsheetHistoryManager,
     ConcurrencyConflictError,
@@ -75,16 +81,42 @@ def mock_storage():
     return mgr
 
 
-# ─── PART 1: STORAGE ABSTRACTION & ROUTING TESTS ─────────────────────────────
+# ─── PART 1: STORAGE ABSTRACTION, REGION RESOLUTION & ROUTING ────────────────
+
+def test_b2_endpoint_and_region_resolution():
+    """Test Backblaze B2 S3 endpoint formatting and region extraction."""
+    # 1. Given endpoint URL, extract region
+    cfg1 = StorageAccountConfig(
+        account_id="005abc",
+        access_key_id="005abc",
+        secret_access_key="K005secret",
+        bucket_name="my-bucket",
+        endpoint_url="https://s3.us-west-004.backblazeb2.com",
+    )
+    assert cfg1.get_region_name() == "us-west-004"
+    assert cfg1.get_endpoint_url() == "https://s3.us-west-004.backblazeb2.com"
+
+    # 2. Given region name, format endpoint URL
+    cfg2 = StorageAccountConfig(
+        account_id="005xyz",
+        access_key_id="005xyz",
+        secret_access_key="K005secret",
+        bucket_name="my-bucket",
+        region_name="eu-central-003",
+    )
+    assert cfg2.get_region_name() == "eu-central-003"
+    assert cfg2.get_endpoint_url() == "https://s3.eu-central-003.backblazeb2.com"
+
 
 def test_storage_manager_routing_and_account_isolation(mock_storage):
     """Test strict account routing and unknown account rejection."""
     assert mock_storage.is_account_configured("primary")
+    assert mock_storage.is_account_configured("b2")
     assert mock_storage.is_account_configured("account_a")
 
-    # Requesting configured account returns client
-    client_a = mock_storage.get_client("primary")
-    assert client_a is not None
+    client_primary = mock_storage.get_client("primary")
+    client_b2 = mock_storage.get_client("b2")
+    assert client_primary is client_b2
 
     # Requesting unconfigured account strictly raises StorageAccountNotConfiguredError
     with pytest.raises(StorageAccountNotConfiguredError):
@@ -97,25 +129,25 @@ def test_server_controlled_key_builders(mock_storage):
     dataset_id = str(uuid.uuid4())
 
     # Traversal characters must be sanitized
-    dirty_filename = "../../evil/path/../secret_data.csv"
+    dirty_filename = "../../evil/path/../financial_report.csv"
     orig_key = mock_storage.build_original_key(user_id, dataset_id, dirty_filename)
     assert ".." not in orig_key
     assert orig_key.startswith(f"users/{user_id}/datasets/{dataset_id}/original/")
-    assert orig_key.endswith("secret_data.csv")
+    assert orig_key.endswith("financial_report.csv")
 
     # Snapshot key format
-    snap_key = mock_storage.build_snapshot_key(user_id, dataset_id, 42, "plexis.json")
-    assert snap_key == f"users/{user_id}/datasets/{dataset_id}/snapshots/rev_000042.plexis.json"
+    snap_key = mock_storage.build_snapshot_key(user_id, dataset_id, 10, "plexis.json")
+    assert snap_key == f"users/{user_id}/datasets/{dataset_id}/snapshots/rev_000010.plexis.json"
 
     # History segment key format
-    seg_key = mock_storage.build_history_segment_key(user_id, dataset_id, "001_100")
-    assert seg_key == f"users/{user_id}/datasets/{dataset_id}/history/segment_001_100.jsonl"
+    seg_key = mock_storage.build_history_segment_key(user_id, dataset_id, "seg_001")
+    assert seg_key == f"users/{user_id}/datasets/{dataset_id}/history/segment_seg_001.jsonl"
 
 
-def test_r2_crud_operations(mock_storage):
-    """Test object put, get, head, exists, and delete operations."""
+def test_b2_crud_and_presigned_urls(mock_storage):
+    """Test object put, get, head, exists, stream, presigned URL, and delete operations."""
     test_key = f"test/{uuid.uuid4().hex}/sample.txt"
-    test_data = b"Hello Cloudflare R2 and Plexis!"
+    test_data = b"Hello Backblaze B2 and Plexis!"
 
     # Put
     res = mock_storage.put_object(test_key, test_data, content_type="text/plain")
@@ -136,9 +168,14 @@ def test_r2_crud_operations(mock_storage):
     downloaded = mock_storage.get_object(test_key)
     assert downloaded == test_data
 
-    # Stream
+    # Stream (with context manager closing handle)
     with mock_storage.get_object_stream(test_key) as stream:
         assert stream.read() == test_data
+
+    # Presigned URL
+    url = mock_storage.generate_presigned_url(test_key, client_method="get_object", expires_in=1800)
+    assert url is not None
+    assert test_key in url or "sample.txt" in url
 
     # Delete
     deleted = mock_storage.delete_object(test_key)
@@ -150,7 +187,48 @@ def test_r2_crud_operations(mock_storage):
         mock_storage.get_object(test_key)
 
 
-# ─── PART 2: SPREADSHEET ACTION HISTORY & CONCURRENCY TESTS ──────────────────
+# ─── PART 2: STORAGE QUOTA & ZERO-BUDGET SAFEGUARDS ──────────────────────────
+
+def test_storage_quota_calculation_and_enforcement():
+    """Test that exceeding configured storage quota blocks new uploads with StorageQuotaExceededError."""
+    # Create client with a small 1 KB quota limit and unique isolated alias
+    quota_limit_bytes = 1024
+    unique_alias = f"test_quota_{uuid.uuid4().hex[:8]}"
+    cfg = StorageAccountConfig(
+        account_id="",
+        access_key_id="",
+        secret_access_key="",
+        bucket_name="test-quota-bucket",
+        account_alias=unique_alias,
+        max_storage_bytes=quota_limit_bytes,
+    )
+    client = B2Client(cfg)
+    try:
+        # 1. Upload 600 bytes -> Should succeed
+        small_data = b"X" * 600
+        res1 = client.put_object("small.txt", small_data)
+        assert res1.success is True
+
+        usage = client.get_storage_usage()
+        assert usage.total_bytes == 600
+        assert usage.quota_bytes == quota_limit_bytes
+        assert usage.quota_remaining_bytes == 424
+
+        # 2. Upload another 500 bytes -> 600 + 500 = 1100 > 1024 -> Must raise StorageQuotaExceededError
+        overflow_data = b"Y" * 500
+        with pytest.raises(StorageQuotaExceededError) as exc_info:
+            client.put_object("overflow.txt", overflow_data)
+
+        assert exc_info.value.current_bytes == 600
+        assert exc_info.value.incoming_bytes == 500
+        assert exc_info.value.max_bytes == quota_limit_bytes
+    finally:
+        if hasattr(client, "_local_dir") and os.path.exists(client._local_dir):
+            import shutil
+            shutil.rmtree(client._local_dir, ignore_errors=True)
+
+
+# ─── PART 3: SPREADSHEET ACTION HISTORY & CONCURRENCY TESTS ──────────────────
 
 def _seed_test_dataset(db, row_count=5):
     """Helper to create a user and dataset with initial DataFrame in test DB."""
@@ -168,7 +246,7 @@ def _seed_test_dataset(db, row_count=5):
         id=uuid.uuid4(),
         user_id=user.id,
         original_filename="flights.csv",
-        storage_account="primary",
+        storage_account="b2",
         storage_key=None,
         current_revision=0,
         file_hash="dummy_hash",
@@ -178,7 +256,6 @@ def _seed_test_dataset(db, row_count=5):
     db.add(ds)
     db.commit()
 
-    # Register in L1 cache
     entry = DatasetEntry(
         dataset_id=str(ds.id),
         filename=ds.original_filename,
@@ -221,11 +298,9 @@ def test_single_cell_edit_and_optimistic_concurrency(test_db):
     assert res["old_value"] == "Airline_0"
     assert res["value"] == "SuperAirways"
 
-    # In-memory DataFrame must be updated
     cached_df = dataset_registry.get_by_id(str(ds.id)).dataframe
     assert cached_df.at[0, "carrier"] == "SuperAirways"
 
-    # Database revision must be updated
     test_db.refresh(ds)
     assert ds.current_revision == 1
 
@@ -316,7 +391,6 @@ def test_branch_invalidation_after_undo(test_db):
     mgr = SpreadsheetHistoryManager()
     user, ds, df = _seed_test_dataset(test_db)
 
-    # Edit 1 & 2
     mgr.apply_cell_edit(test_db, ds.id, 0, "carrier", "FirstEdit", base_revision=0, user_id=user.id)
     mgr.apply_cell_edit(test_db, ds.id, 0, "carrier", "SecondEdit", base_revision=1, user_id=user.id)
 
@@ -336,7 +410,7 @@ def test_branch_invalidation_after_undo(test_db):
 
 def test_snapshot_compaction_and_cold_start_recovery(test_db):
     """
-    Test that periodic snapshots are stored in R2, and cold-start rehydration
+    Test that periodic snapshots are stored in Backblaze B2, and cold-start rehydration
     rebuilds the DataFrame accurately after clearing all memory caches.
     """
     mgr = SpreadsheetHistoryManager()
@@ -344,19 +418,15 @@ def test_snapshot_compaction_and_cold_start_recovery(test_db):
 
     # Configure snapshot interval to every 2 actions for fast test
     with patch.object(Config, "SNAPSHOT_INTERVAL_ACTIONS", 2):
-        # Action 1 (rev 1)
         mgr.apply_cell_edit(test_db, ds.id, 0, "dep_delay", 100, base_revision=0, user_id=user.id)
-        # Action 2 (rev 2) -> should trigger R2 snapshot compaction
         res2 = mgr.apply_cell_edit(test_db, ds.id, 1, "dep_delay", 200, base_revision=1, user_id=user.id)
         assert res2["snapshot_key"] is not None
-        # Action 3 (rev 3) -> replay action on top of snapshot
         mgr.apply_cell_edit(test_db, ds.id, 2, "dep_delay", 300, base_revision=2, user_id=user.id)
 
-    # Verify R2 has the snapshot
-    assert storage_manager.object_exists(res2["snapshot_key"]) is True
+    # Verify B2 has the snapshot
+    assert storage_manager.object_exists(res2["snapshot_key"], account_identifier="b2") is True
 
     # ── SIMULATE COMPLETE SERVER CRASH & COLD START ──
-    # Wipe the in-memory DatasetRegistry
     dataset_registry._datasets.clear()
     assert dataset_registry.get_by_id(str(ds.id)) is None
 
@@ -364,7 +434,6 @@ def test_snapshot_compaction_and_cold_start_recovery(test_db):
     restored_ds, restored_df = mgr.restore_dataset_state(test_db, ds.id, user.id)
     assert restored_df is not None
     assert len(restored_df) == 3
-    # Check that snapshot (rev 2) + replayed action 3 (rev 3) gave exact values
     assert restored_df.at[0, "dep_delay"] == 100
     assert restored_df.at[1, "dep_delay"] == 200
     assert restored_df.at[2, "dep_delay"] == 300
@@ -381,11 +450,9 @@ def test_legacy_dataset_db_bytea_fallback(test_db):
     mgr = SpreadsheetHistoryManager()
     user, ds, df = _seed_test_dataset(test_db, row_count=2)
 
-    # Ensure dataset has no R2 key
     ds.storage_key = None
     test_db.commit()
 
-    # Store legacy BYTEA content in dataset_files table
     csv_bytes = df.to_csv(index=False).encode("utf-8")
     compressed = gzip.compress(csv_bytes)
     db_file = DatasetFile(
@@ -398,17 +465,15 @@ def test_legacy_dataset_db_bytea_fallback(test_db):
     test_db.add(db_file)
     test_db.commit()
 
-    # Clear memory cache
     dataset_registry._datasets.clear()
 
-    # Cold restore
     restored_ds, restored_df = mgr.restore_dataset_state(test_db, ds.id, user.id)
     assert restored_df is not None
     assert len(restored_df) == 2
     assert list(restored_df.columns) == ["carrier", "dep_delay", "cancelled"]
 
 
-# ─── PART 3: FLASK API ENDPOINTS TEST ────────────────────────────────────────
+# ─── PART 4: FLASK API ENDPOINTS TEST ────────────────────────────────────────
 
 def test_spreadsheet_api_endpoints(test_db):
     """Test Flask endpoints /api/spreadsheet/edit, /undo, /redo, and /history."""
@@ -424,7 +489,6 @@ def test_spreadsheet_api_endpoints(test_db):
     user, ds, df = _seed_test_dataset(test_db)
 
     with app.test_client() as client:
-        # Patch get_db to return our test_db
         with patch("db.session.get_db", return_value=test_db), patch("api.transform.get_db", return_value=test_db):
             # 1. Edit Cell: Success 200
             resp = client.post("/api/spreadsheet/edit", json={
@@ -445,7 +509,7 @@ def test_spreadsheet_api_endpoints(test_db):
                 "row": 0,
                 "col": "carrier",
                 "value": "LateConflictAir",
-                "base_revision": 0,  # Expected 1!
+                "base_revision": 0,  # Stale!
             })
             assert resp_conflict.status_code == 409
             conflict_data = resp_conflict.get_json()
@@ -473,3 +537,47 @@ def test_spreadsheet_api_endpoints(test_db):
             redo_data = redo_resp.get_json()
             assert redo_data["success"] is True
             assert redo_data["current_revision"] == 1
+
+
+# ─── PART 5: MIGRATION UTILITY VERIFICATION ──────────────────────────────────
+
+def test_r2_to_b2_migration_dry_run_and_execution(test_db):
+    """Test the R2ToB2Migrator dry-run and execution verification."""
+    user, ds, df = _seed_test_dataset(test_db)
+
+    # Set up simulated legacy R2 storage key
+    fake_key = f"users/{user.id}/datasets/{ds.id}/original/data.csv"
+    ds.storage_account = "primary"
+    ds.storage_key = fake_key
+    test_db.commit()
+
+    # Seed the file in local emulated store
+    from config import Config
+    local_source_path = os.path.join(Config.UPLOAD_FOLDER, "r2_emulated", "primary", fake_key)
+    os.makedirs(os.path.dirname(local_source_path), exist_ok=True)
+    with open(local_source_path, "wb") as f:
+        f.write(b"carrier,dep_delay\nAirline_0,0\n")
+
+    # 1. Dry run
+    migrator_dry = R2ToB2Migrator(dry_run=True)
+    summary_dry = migrator_dry.run_migration(test_db)
+    assert summary_dry["status"] == "dry_run"
+    assert summary_dry["pending_count"] == 1
+
+    # In dry run, DB record must NOT be modified
+    test_db.refresh(ds)
+    assert ds.storage_account == "primary"
+
+    # 2. Real Execution
+    migrator_exec = R2ToB2Migrator(dry_run=False)
+    summary_exec = migrator_exec.run_migration(test_db)
+    assert summary_exec["status"] == "completed"
+    assert summary_exec["succeeded"] == 1
+    assert summary_exec["failed"] == 0
+
+    # In real run, DB record is updated to 'b2' after verification
+    test_db.refresh(ds)
+    assert ds.storage_account == "b2"
+
+    # Source file must STILL exist (non-destructive)
+    assert os.path.exists(local_source_path) is True

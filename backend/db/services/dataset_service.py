@@ -46,15 +46,25 @@ class DatasetService:
         file_obj.seek(0)
         file_bytes = file_obj.read()
 
+        file_size = len(file_bytes)
         file_hash = hashlib.sha256(file_bytes).hexdigest()
-        logger.debug("[DATASET_SVC] Hash computed: %s for %s", file_hash[:12] + "...", filename)
+        logger.debug("[DATASET_SVC] Hash computed: %s for %s (%d bytes)", file_hash[:12] + "...", filename, file_size)
+
+        # ── Check per-upload limit (MAX_UPLOAD_SIZE_MB) ──
+        from config import Config
+        max_upload_bytes = getattr(Config, "MAX_UPLOAD_SIZE_MB", 100) * 1024 * 1024
+        if file_size > max_upload_bytes:
+            raise ValueError(
+                f"File size exceeds maximum allowed upload limit of {Config.MAX_UPLOAD_SIZE_MB} MB."
+            )
 
         dataset_id = uuid.uuid4()
-        storage_account = "primary"
+        storage_account = "b2"
         storage_key = None
 
-        # Upload original file to R2
+        # ── Pre-upload quota check & write to Backblaze B2 ──
         from storage.manager import storage_manager
+        from storage.contracts import StorageQuotaExceededError
         try:
             storage_key = storage_manager.build_original_key(
                 user_id=user_id,
@@ -66,10 +76,14 @@ class DatasetService:
                 data=file_bytes,
                 account_identifier=storage_account,
                 content_type=mime_type,
+                check_quota=True,
             )
-            logger.info("[DATASET_SVC] Uploaded original file to R2 key=%s", storage_key)
+            logger.info("[DATASET_SVC] Uploaded original file to Backblaze B2 key=%s", storage_key)
+        except StorageQuotaExceededError as qe:
+            logger.error("[DATASET_SVC] Upload blocked by storage quota limit: %s", qe)
+            raise ValueError(str(qe))
         except Exception as e:
-            logger.warning("[DATASET_SVC] R2 upload failed (non-fatal, falling back): %s", e)
+            logger.warning("[DATASET_SVC] Backblaze B2 upload failed (non-fatal, falling back to DB BYTEA): %s", e)
             storage_key = None
 
         try:
@@ -101,7 +115,7 @@ class DatasetService:
         user_id: Optional[UUID] = None,
     ):
         """
-        Restore a DataFrame from R2 / PostgreSQL storage.
+        Restore a DataFrame from Backblaze B2 / PostgreSQL storage.
         Re-registers in DatasetRegistry L1 cache.
         """
         import pandas as pd
@@ -144,7 +158,7 @@ class DatasetService:
                 acc = getattr(content_dataset, 'storage_account', 'primary') or 'primary'
                 raw_bytes = storage_manager.get_object(content_dataset.storage_key, acc)
             except Exception as e:
-                logger.warning("[DATASET_SVC] Failed fetching R2 key %s: %s", content_dataset.storage_key, e)
+                logger.warning("[DATASET_SVC] Failed fetching object storage key %s: %s", content_dataset.storage_key, e)
                 raw_bytes = None
 
         # 4. Fallback: PostgreSQL BYTEA in dataset_files

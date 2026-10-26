@@ -106,20 +106,50 @@ class Config:
     UPLOAD_FOLDER: str = os.environ.get("UPLOAD_FOLDER", "storage/uploads")
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-    # ── Object Storage (Cloudflare R2 / S3-compatible) ────────────────────────
-    # Account A (Primary)
-    R2_ACCOUNT_ID: str = (os.environ.get("R2_ACCOUNT_ID") or os.environ.get("R2_A_ACCOUNT_ID") or "").strip()
-    R2_ACCESS_KEY_ID: str = (os.environ.get("R2_ACCESS_KEY_ID") or os.environ.get("R2_A_ACCESS_KEY_ID") or "").strip()
-    R2_SECRET_ACCESS_KEY: str = (os.environ.get("R2_SECRET_ACCESS_KEY") or os.environ.get("R2_A_SECRET_ACCESS_KEY") or "").strip()
-    R2_BUCKET_NAME: str = (os.environ.get("R2_BUCKET_NAME") or os.environ.get("R2_A_BUCKET_NAME") or "plexis-datasets").strip()
-    R2_ENDPOINT_URL: str = (os.environ.get("R2_ENDPOINT_URL") or os.environ.get("R2_A_ENDPOINT_URL") or "").strip()
+    # ── Object Storage (Backblaze B2 / S3-compatible) ────────────────────────
+    STORAGE_PROVIDER: str = os.environ.get("STORAGE_PROVIDER", "b2").strip().lower()
 
-    # Account B (Secondary / Optional)
-    R2_B_ACCOUNT_ID: str = os.environ.get("R2_B_ACCOUNT_ID", "").strip()
-    R2_B_ACCESS_KEY_ID: str = os.environ.get("R2_B_ACCESS_KEY_ID", "").strip()
-    R2_B_SECRET_ACCESS_KEY: str = os.environ.get("R2_B_SECRET_ACCESS_KEY", "").strip()
-    R2_B_BUCKET_NAME: str = os.environ.get("R2_B_BUCKET_NAME", "").strip()
-    R2_B_ENDPOINT_URL: str = os.environ.get("R2_B_ENDPOINT_URL", "").strip()
+    # Backblaze B2 Account A (Primary)
+    B2_APPLICATION_KEY_ID: str = (
+        os.environ.get("B2_APPLICATION_KEY_ID")
+        or os.environ.get("B2_KEY_ID")
+        or os.environ.get("B2_A_APPLICATION_KEY_ID")
+        or ""
+    ).strip()
+    B2_APPLICATION_KEY: str = (
+        os.environ.get("B2_APPLICATION_KEY")
+        or os.environ.get("B2_APP_KEY")
+        or os.environ.get("B2_A_APPLICATION_KEY")
+        or ""
+    ).strip()
+    B2_BUCKET_NAME: str = (
+        os.environ.get("B2_BUCKET_NAME")
+        or os.environ.get("B2_A_BUCKET_NAME")
+        or "plexis-datasets"
+    ).strip()
+    B2_S3_ENDPOINT_URL: str = (
+        os.environ.get("B2_S3_ENDPOINT_URL")
+        or os.environ.get("B2_ENDPOINT_URL")
+        or os.environ.get("B2_A_S3_ENDPOINT_URL")
+        or ""
+    ).strip()
+    B2_REGION: str = (
+        os.environ.get("B2_REGION")
+        or os.environ.get("B2_A_REGION")
+        or ""
+    ).strip()
+
+    # Backblaze B2 Account B (Secondary / Optional)
+    B2_B_APPLICATION_KEY_ID: str = os.environ.get("B2_B_APPLICATION_KEY_ID", "").strip()
+    B2_B_APPLICATION_KEY: str = os.environ.get("B2_B_APPLICATION_KEY", "").strip()
+    B2_B_BUCKET_NAME: str = os.environ.get("B2_B_BUCKET_NAME", "").strip()
+    B2_B_S3_ENDPOINT_URL: str = os.environ.get("B2_B_S3_ENDPOINT_URL", "").strip()
+    B2_B_REGION: str = os.environ.get("B2_B_REGION", "").strip()
+
+    # Storage Quotas & Limits (Safeguards for zero-budget MVP)
+    # Default maximum tracked storage: 10 GB (10,000 MB, Backblaze B2 free tier limit)
+    B2_MAX_STORAGE_MB: int = int(os.environ.get("B2_MAX_STORAGE_MB", "10000"))
+    MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
 
     # Spreadsheet Snapshot Compaction
     SNAPSHOT_INTERVAL_ACTIONS: int = int(os.environ.get("SNAPSHOT_INTERVAL_ACTIONS", "20"))
@@ -151,3 +181,11 @@ class Config:
                 "DATABASE_URL is not set. PostgreSQL persistence is disabled. "
                 "Set DATABASE_URL in .env to enable multi-user persistence."
             )
+
+        if cls.STORAGE_PROVIDER == "b2":
+            if not cls.B2_APPLICATION_KEY_ID or not cls.B2_APPLICATION_KEY or not cls.B2_BUCKET_NAME:
+                warnings.warn(
+                    "STORAGE_PROVIDER=b2 is configured but Backblaze B2 credentials/bucket are incomplete. "
+                    "Storage will run in local emulated fallback mode until B2_APPLICATION_KEY_ID, "
+                    "B2_APPLICATION_KEY, and B2_BUCKET_NAME are configured in .env."
+                )

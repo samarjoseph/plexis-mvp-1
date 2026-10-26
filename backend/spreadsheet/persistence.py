@@ -3,7 +3,7 @@ Plexis Spreadsheet History and Persistence Manager.
 
 Durable, reversible spreadsheet state with:
 - Optimistic Concurrency Control (OCC) via base_revision checks
-- Cloudflare R2 snapshot compaction and cold-start rehydration
+- Backblaze B2 snapshot compaction and cold-start rehydration
 - Atomic cell edits and batch edits with strict inverse payloads
 - Linear and branching history support (invalidating undone actions on new branches)
 - In-memory L1 cache (DatasetRegistry) synchronization
@@ -194,7 +194,7 @@ class SpreadsheetHistoryManager:
         resulting_rev = current_rev + 1
 
         # 5. Build action record
-        storage_acc = dataset.storage_account or "primary"
+        storage_acc = dataset.storage_account or "b2"
         action = SpreadsheetAction(
             id=uuid.uuid4(),
             dataset_id=dataset.id,
@@ -231,11 +231,11 @@ class SpreadsheetHistoryManager:
                 dataset.storage_key = snap_key
                 snapshot_key = snap_key
                 logger.info(
-                    "[SpreadsheetHistory] Created R2 snapshot for dataset %s at rev %d (%s)",
+                    "[SpreadsheetHistory] Created Backblaze B2 snapshot for dataset %s at rev %d (%s)",
                     dataset.id, resulting_rev, snap_key,
                 )
             except Exception as e:
-                logger.warning("[SpreadsheetHistory] Failed to write R2 snapshot (non-fatal): %s", e)
+                logger.warning("[SpreadsheetHistory] Failed to write Backblaze B2 snapshot (non-fatal): %s", e)
 
         # 7. Update dataset revision & sync registry
         dataset.current_revision = resulting_rev
@@ -311,7 +311,7 @@ class SpreadsheetHistoryManager:
         next_seq = max_seq + 1
         resulting_rev = current_rev + 1
 
-        storage_acc = dataset.storage_account or "primary"
+        storage_acc = dataset.storage_account or "b2"
         action = SpreadsheetAction(
             id=uuid.uuid4(),
             dataset_id=dataset.id,
@@ -347,7 +347,7 @@ class SpreadsheetHistoryManager:
                 dataset.storage_key = snap_key
                 snapshot_key = snap_key
             except Exception as e:
-                logger.warning("[SpreadsheetHistory] Failed to write R2 batch snapshot: %s", e)
+                logger.warning("[SpreadsheetHistory] Failed to write Backblaze B2 batch snapshot: %s", e)
 
         dataset.current_revision = resulting_rev
         db.add(action)
@@ -379,7 +379,7 @@ class SpreadsheetHistoryManager:
         """
         base_rev = dataset.current_revision or 0
         resulting_rev = base_rev + 1
-        storage_acc = dataset.storage_account or "primary"
+        storage_acc = dataset.storage_account or "b2"
 
         # Invalidate undone branches
         db.query(SpreadsheetAction).filter(
@@ -413,7 +413,7 @@ class SpreadsheetHistoryManager:
             )
             dataset.storage_key = snap_key
         except Exception as e:
-            logger.error("[SpreadsheetHistory] Failed to upload transformation snapshot to R2: %s", e)
+            logger.error("[SpreadsheetHistory] Failed to upload transformation snapshot to Backblaze B2: %s", e)
 
         action = SpreadsheetAction(
             id=uuid.uuid4(),
@@ -617,7 +617,7 @@ class SpreadsheetHistoryManager:
             return None, None
 
         target_rev = override_revision if override_revision is not None else (dataset.current_revision or 0)
-        storage_acc = dataset.storage_account or "primary"
+        storage_acc = dataset.storage_account or "b2"
 
         df: Optional[pd.DataFrame] = None
         base_rev_loaded = 0
@@ -638,7 +638,7 @@ class SpreadsheetHistoryManager:
         if snapshot_action and snapshot_action.storage_key:
             try:
                 logger.info(
-                    "[SpreadsheetHistory] Loading R2 snapshot %s (account=%s) for dataset %s",
+                    "[SpreadsheetHistory] Loading Backblaze B2 snapshot %s (account=%s) for dataset %s",
                     snapshot_action.storage_key, snapshot_action.storage_account, dataset.id,
                 )
                 raw_snap = storage_manager.get_object(snapshot_action.storage_key, snapshot_action.storage_account)
@@ -652,13 +652,13 @@ class SpreadsheetHistoryManager:
         if df is None:
             if dataset.storage_key and storage_manager.is_account_configured(storage_acc):
                 try:
-                    logger.info("[SpreadsheetHistory] Loading original file from R2 key=%s", dataset.storage_key)
+                    logger.info("[SpreadsheetHistory] Loading original file from Backblaze B2 key=%s", dataset.storage_key)
                     raw_file = storage_manager.get_object(dataset.storage_key, storage_acc)
                     from db.services.dataset_service import dataset_service
                     df = dataset_service._bytes_to_dataframe(raw_file, dataset.original_filename)
                     base_rev_loaded = 0
                 except Exception as e:
-                    logger.warning("[SpreadsheetHistory] R2 original file fetch failed (%s): %s", dataset.storage_key, e)
+                    logger.warning("[SpreadsheetHistory] Backblaze B2 original file fetch failed (%s): %s", dataset.storage_key, e)
                     df = None
 
             # Legacy fallback: PostgreSQL BYTEA in dataset_files
