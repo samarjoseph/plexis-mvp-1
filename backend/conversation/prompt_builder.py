@@ -13,6 +13,9 @@ Responsibilities:
 This module does NOT handle routing, planning, or execution.
 """
 
+from __future__ import annotations
+from typing import Optional, Dict, Any, List
+
 from conversation.identity import PLEXIS_IDENTITY, WARMTH_PRINCIPLES
 from conversation.reasoning import REASONING_FRAMEWORK, RESPONSE_BEHAVIOUR
 from conversation.analyst_voice import DATA_ANALYST_VOICE

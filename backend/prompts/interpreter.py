@@ -48,6 +48,9 @@ INTENT VALUES:
 NOTE: TRANSFORM operations are DATA-MUTATING. DATA_OPERATION operations are READ-ONLY.
 NOTE: The operations array is populated for DATA_OPERATION and TRANSFORM intents. If there are multiple distinct questions/actions, include multiple objects in the operations array.
 """
+from __future__ import annotations
+from typing import Dict, Any, Optional, List
+
 import json
 
 
