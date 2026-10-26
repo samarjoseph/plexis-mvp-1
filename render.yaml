@@ -34,3 +34,40 @@ services:
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      # ── Backblaze B2 Object Storage ──
+      - key: STORAGE_PROVIDER
+        value: "b2"
+      - key: B2_APPLICATION_KEY_ID
+        sync: false
+      - key: B2_APPLICATION_KEY
+        sync: false
+      - key: B2_BUCKET_NAME
+        sync: false
+      - key: B2_S3_ENDPOINT_URL
+        sync: false
+      - key: B2_REGION
+        sync: false
+      - key: B2_MAX_STORAGE_MB
+        value: "9500"
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "100"
+
+  # ── Frontend Static Site (Optional on Render / or use Vercel) ─────────────────
+  - type: static
+    name: plexis-frontend
+    region: oregon
+    plan: free
+    buildCommand: "npm run build"
+    staticPublishPath: "dist"
+    routes:
+      - type: rewrite
+        source: "/*"
+        destination: "/index.html"
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: plexis-backend
+          property: host
