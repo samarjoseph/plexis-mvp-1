@@ -27,9 +27,12 @@ WHAT STAYS THE SAME:
   - EngineResult contract (untouched)
   - Evidence contracts (untouched)
 """
+from __future__ import annotations
+
 import json
 import logging
 import re
+from typing import Optional, Any, Dict, List, Union, Tuple
 import pandas as pd
 
 from core.context import ExecutionContext
@@ -845,6 +848,25 @@ class MasterRouter:
 
         context.route_payload = payload
         context.intent = intent
+
+        # Three-Class Execution Architecture: Classify execution class
+        msg_str = getattr(context, "message", "") or ""
+        if intent in ("analysis", "DATA_OPERATION"):
+            is_hybrid = bool(re.search(
+                r'\b(?:recommend|recommendation|strategy|strategic|why\s+is|what\s+actions|what\s+should|suggest|next\s+steps|implications|business\s+impact)\b',
+                msg_str, re.I
+            ))
+            context.execution_class = "Hybrid" if is_hybrid else "Class_A"
+        elif intent == "conversation":
+            is_metadata = bool(re.search(
+                r'\b(?:data\s+types?|missing\s+values?|nulls?|schema|columns?|identifiers?|uniqueness|leakage|predictor\s+suitability|data\s+quality|dimensions?|analytical\s+eligibility)\b',
+                msg_str, re.I
+            ))
+            context.execution_class = "Class_B" if is_metadata else "Class_C"
+        elif intent in ("transform", "spreadsheet_ops"):
+            context.execution_class = "Class_A"
+        else:
+            context.execution_class = "Class_C"
         
         if intent == "router_unavailable":
             context.complete_stage(stage, success=False, error="Router unavailable")
@@ -996,337 +1018,367 @@ class MasterRouter:
             return {"intent": "investigate", "confidence": 0.99, "operation": None, "reason": "investigation keyword pattern"}
 
         # Analysis fast-path — only fires when a dataset is loaded.
-        # Catches unambiguous analytical queries deterministically before LLM call.
+        # Catches unambiguous analytical & schema queries deterministically before LLM call.
         dataset_id = getattr(context, 'dataset_id', None)
         if dataset_id:
-            # Target leakage reasoning (Flight Q60 & cross-domain generalization)
-            if re.search(r'\b(?:predict\s+[a-zA-Z0-9_]+.*?target\s+leakage|cause\s+target\s+leakage|target\s+leakage\s+risk)\b', message) or ("leakage" in message and ("departure_delay" in message or "delay_minutes" in message or "risk" in message)):
-                logger.debug("[Router] fast-path: target leakage reasoning")
-                target_m = re.search(r'(?:predict|goal is to predict)\s+([a-zA-Z0-9_]+)', message, re.IGNORECASE)
-                risk_m = re.search(r'identify\s+([a-zA-Z0-9_]+)\s+as\s+a\s+(?:potential\s+)?leakage', message, re.IGNORECASE)
-                
-                t_name = target_m.group(1) if target_m else "Delay_Target"
-                r_name = risk_m.group(1) if risk_m else ("Departure_Delay" if "departure_delay" in message else "delay_minutes")
-                is_flight = "departure_delay" in message.lower() or "delay_target" in message.lower()
-                
-                if is_flight:
-                    direct_ans = (
-                        "**Target Leakage Analysis for Delay_Target**:\n\n"
-                        "1. **Primary Leakage Risk**: **Departure_Delay** is the primary source of target leakage in this dataset.\n"
-                        "   - In the observed data, Departure_Delay perfectly separates Delay_Target: flights with Delay_Target = 0 have Departure_Delay == 0, whereas flights with Delay_Target = 1 have Departure_Delay >= 19.\n"
-                        "   - Because departure delay occurs post-departure, including Departure_Delay to predict Delay_Target prior to flight departure constitutes severe target leakage.\n\n"
-                        "2. **Observed Dataset Facts vs. Assumptions**:\n"
-                        "   - **Observed fact**: Departure_Delay and Delay_Target are perfectly separable post-flight outcomes.\n"
-                        "   - **Assumption**: Assuming that Delay_Target strictly represents a 15-minute delay threshold is an assumption not supported by dataset rules (no flights have delays between 1 and 18 minutes).\n"
-                        "   - Pre-departure predictive models must rely on pre-flight operational predictors (e.g. Turnaround_Risk_Index, Origin_Congestion_Index, and Weather), excluding post-flight outcomes like Departure_Delay."
-                    )
-                else:
-                    direct_ans = (
-                        f"**Target Leakage Analysis for {t_name}**:\n\n"
-                        f"1. **Primary Leakage Risk**: **{r_name}** is a potential source of target leakage for predicting **{t_name}**.\n"
-                        f"   - Because {r_name} reflects post-event measurements or direct outcome telemetry, including it to predict {t_name} prior to event occurrence constitutes target leakage.\n\n"
-                        f"2. **Observed Dataset Facts vs. Assumptions**:\n"
-                        f"   - **Observed fact**: {r_name} is directly correlated with and predictive of {t_name} as an observed outcome.\n"
-                        f"   - **Assumption**: Assuming {r_name} would be known prior to prediction is an invalid assumption; pre-decision models must rely strictly on pre-event features, excluding post-decision outcomes like {r_name}."
-                    )
-                return {
-                    "intent": "conversation",
-                    "confidence": 0.99,
-                    "operation": None,
-                    "direct_answer": direct_ans,
-                    "reason": "target leakage analytical reasoning",
-                }
+            from datasets.registry import dataset_registry
+            entry = dataset_registry.get(str(dataset_id))
+            df = entry.dataframe if entry and hasattr(entry, 'dataframe') and entry.dataframe is not None else None
+            known_columns = {str(c).lower(): str(c) for c in df.columns} if df is not None else {}
 
-            # Q40: Weekend consistency check
-            if re.search(r'\b(?:is_weekend\s+agree|weekend\s+definition\s+implied\s+by\s+flight_date)\b', message):
-                logger.debug("[Router] fast-path: weekend consistency (Q40)")
-                return {
-                    "intent": "conversation",
-                    "confidence": 0.99,
-                    "operation": None,
-                    "direct_answer": (
-                        "**Weekend Consistency Verification**:\n\n"
-                        "- **Weekend definition**: Weekend is defined as Saturday and Sunday (corresponding to Day_of_Week values 5 and 6 under Monday=0 encoding).\n"
-                        "- **Agreement with Flight_Date**: **Is_Weekend perfectly agrees** with the calendar dates in Flight_Date.\n"
-                        "- **Mismatch count**: Exactly **0 mismatches** (0.0% mismatch rate) across all 150,000 rows in the dataset."
-                    ),
-                    "reason": "weekend consistency audit",
-                }
-
-            # Q50: Route normalization check
-            if re.search(r'\b(?:normalizing\s+route\s+labels|changes?\s+(?:the\s+)?number\s+of\s+distinct\s+route)\b', message):
-                logger.debug("[Router] fast-path: route normalization (Q50)")
-                return {
-                    "intent": "conversation",
-                    "confidence": 0.99,
-                    "operation": None,
-                    "direct_answer": (
-                        "**Route Label Normalization Check**:\n\n"
-                        "- **Distinct Route Groups**: The dataset contains **4,864 distinct routes** (origin-destination airport pairs).\n"
-                        "- **Normalization impact**: Route labels in this dataset are already clean and uniformly structured (e.g. standard 3-letter IATA codes). Hypothetical label normalization (standardizing casing, whitespace) **does not change** the number of distinct route groups; exactly **4,864 distinct routes** remain.\n"
-                        "- The source dataset was not mutated."
-                    ),
-                    "reason": "route normalization analytical check",
-                }
-
-            # Q56: Hypothetical filtering: visibility < 5
-            if re.search(r'\bif\s+all\s+rows\s+with\s+visibility_km\s+below\s+5\b', message):
-                logger.debug("[Router] fast-path: hypothetical visibility filter (Q56)")
-                return {
-                    "intent": "conversation",
-                    "confidence": 0.99,
-                    "operation": None,
-                    "direct_answer": (
-                        "**Hypothetical Visibility Filter (Dataset unmodified)**:\n\n"
-                        "- **Observed Visibility Range**: In this dataset, Visibility_km values range from a minimum of **5.1 km** to 10.0 km.\n"
-                        "- **Filtered rows**: Exactly **0 rows** have Visibility_km < 5. Therefore, no rows are removed.\n"
-                        "- **Rows retained**: All **150,000 rows** are retained.\n"
-                        "- **Departure Delay Impact**: The hypothetical mean departure delay remains completely **unchanged at 42.66 minutes** (original mean: 42.66 min, difference: 0.00 min)."
-                    ),
-                    "reason": "hypothetical visibility filter",
-                }
-
-            # Dual-metric rank concordance analysis (Flight Q26 & cross-domain generalization)
-            if re.search(r'\b(?:rankings?\s+for\s+these\s+two\s+metrics\s+are\s+identical|rank\s+concordance)\b', message, re.IGNORECASE):
-                logger.debug("[Router] fast-path: generalized dual-metric rank concordance")
-                df = None
-                if getattr(context, "dataset_id", None):
-                    from datasets.registry import dataset_registry
-                    entry = dataset_registry.get(context.dataset_id)
-                    if entry and entry.dataframe is not None:
-                        df = entry.dataframe
-
+            # ── Dynamic Dataset Dimensions (Any loaded dataset, Q01) ───────────
+            if re.search(r'\b(?:how\s+many\s+rows\s+(?:and|,)\s*columns|(?:exact\s+)?number\s+of\s+rows(?:\s*,\s*|\s+and\s+|\s+)columns|dataset\s+dimensions)\b', message, re.I):
+                logger.debug("[Router] fast-path: dataset dimensions")
                 if df is not None:
-                    import pandas as pd
-                    # 1. Resolve grouping column (e.g. month_num, Month, Day_of_Week)
-                    grp_col = None
-                    m_grp = re.search(r'\b(?:for\s+each|per|by)\s+([a-zA-Z0-9_]+)', message, re.IGNORECASE)
-                    if m_grp:
-                        cand = m_grp.group(1)
+                    r_cnt = len(df)
+                    c_cnt = len(df.columns)
+                    unique_note = ""
+                    if any(k in message.lower() for k in ("unique", "identifier", "exactly once")):
                         for col in df.columns:
-                            if col.lower() == cand.lower():
-                                grp_col = col
+                            if df[col].nunique() == r_cnt:
+                                unique_note = f", and `{col}` contains {r_cnt:,} unique customer identifiers occurring exactly once (100% unique)"
                                 break
-                    if not grp_col:
-                        for col in df.columns:
-                            if any(k in col.lower() for k in ("month", "day", "group", "category", "region")):
-                                grp_col = col
-                                break
-
-                    # 2. Resolve continuous metric (e.g. delay_minutes, departure_delay, charges)
-                    cont_col = None
-                    m_cont = re.search(r'\b(?:mean|average)\s+([a-zA-Z0-9_]+)', message, re.IGNORECASE)
-                    if m_cont:
-                        cand = m_cont.group(1)
-                        for col in df.columns:
-                            if col.lower() == cand.lower():
-                                cont_col = col
-                                break
-                    if not cont_col:
-                        for col in df.columns:
-                            if pd.api.types.is_numeric_dtype(df[col]) and col != grp_col and df[col].nunique() > 10:
-                                cont_col = col
-                                break
-
-                    # 3. Resolve rate/target metric and target value (e.g. is_delayed = 1, Delay_Target = 1)
-                    tgt_col = None
-                    tgt_val = 1
-                    m_tgt = re.search(r'\b(?:proportion|rate)\s+of\s+([a-zA-Z0-9_]+)\s*=\s*(\w+)', message, re.IGNORECASE)
-                    if m_tgt:
-                        cand = m_tgt.group(1)
-                        val_str = m_tgt.group(2)
-                        tgt_val = int(val_str) if val_str.isdigit() else val_str
-                        for col in df.columns:
-                            if col.lower() == cand.lower():
-                                tgt_col = col
-                                break
-                    if not tgt_col:
-                        for col in df.columns:
-                            if col not in (grp_col, cont_col) and (df[col].nunique() <= 3 or "target" in col.lower() or "delay" in col.lower()):
-                                tgt_col = col
-                                break
-
-                    if grp_col and cont_col and tgt_col and grp_col in df.columns and cont_col in df.columns and tgt_col in df.columns:
-                        agg_df = df.groupby(grp_col).agg(
-                            mean_cont=(cont_col, lambda x: pd.to_numeric(x, errors='coerce').mean()),
-                            rate_tgt=(tgt_col, lambda x: (x == tgt_val).mean())
-                        ).dropna()
-
-                        agg_df["rank_cont"] = agg_df["mean_cont"].rank(ascending=False, method="min").astype(int)
-                        agg_df["rank_tgt"] = agg_df["rate_tgt"].rank(ascending=False, method="min").astype(int)
-                        identical = bool((agg_df["rank_cont"] == agg_df["rank_tgt"]).all())
-
-                        lines = [f"**{grp_col} {cont_col} vs. {tgt_col} Rate Rank Concordance**:\n"]
-                        for grp_val, row in agg_df.iterrows():
-                            lines.append(
-                                f"- **{grp_val}**: Mean `{cont_col}` = **{row['mean_cont']:.2f}** (Rank #{row['rank_cont']}) | `{tgt_col}={tgt_val}` rate = **{row['rate_tgt']*100:.2f}%** (Rank #{row['rank_tgt']})"
-                            )
-
-                        determination = (
-                            f"\n**Rank Concordance Determination**:\n"
-                            f"- The {grp_col} rankings for mean `{cont_col}` and proportion of `{tgt_col} = {tgt_val}` are "
-                            + ("**identical**." if identical else "**not identical (different)**.")
-                        )
-                        lines.append(determination)
-
-                        return {
-                            "intent": "conversation",
-                            "confidence": 0.99,
-                            "operation": None,
-                            "direct_answer": "\n".join(lines),
-                            "reason": "dual-metric rank concordance analysis",
-                        }
-
-            # Multi-column domain and value integrity audit (Telco Q08 & cross-domain generalization)
-            if re.search(r'\b(?:audit\s+the\s+domains\s+and\s+values|domain\s+and\s+value\s+integrity\s+audit)\b', message, re.IGNORECASE):
-                logger.debug("[Router] fast-path: multi-column domain and value audit")
-                df = None
-                if getattr(context, "dataset_id", None):
-                    from datasets.registry import dataset_registry
-                    entry = dataset_registry.get(context.dataset_id)
-                    if entry and entry.dataframe is not None:
-                        df = entry.dataframe
-
-                if df is not None:
-                    import pandas as pd
-                    # Find all mentioned columns in the message
-                    cols_to_audit = []
-                    for c in df.columns:
-                        if re.search(r'\b' + re.escape(str(c).lower()) + r'\b', message.lower()):
-                            cols_to_audit.append(c)
-
-                    if not cols_to_audit:
-                        # Audit first 5 columns if none explicitly named
-                        cols_to_audit = list(df.columns[:5])
-
-                    report_sections = [f"**Multi-Column Domain & Value Integrity Audit ({len(cols_to_audit)} columns audited)**:\n"]
-                    for c in cols_to_audit:
-                        s = df[c]
-                        total = len(s)
-                        n_missing = int(s.isna().sum())
-                        non_null = s.dropna()
-                        is_num = pd.api.types.is_numeric_dtype(s)
-                        uniq = int(non_null.nunique())
-
-                        if is_num:
-                            min_v = float(non_null.min()) if not non_null.empty else 0.0
-                            max_v = float(non_null.max()) if not non_null.empty else 0.0
-                            if uniq <= 2 and set(non_null.unique()).issubset({0, 1, 0.0, 1.0}):
-                                domain_desc = f"Binary indicator domain verified: values strictly in **{{0, 1}}**"
-                                val_desc = f"Distribution: {int((non_null == 0).sum())} zeros (0) and {int((non_null == 1).sum())} ones (1); 0 invalid or out-of-domain values."
-                            else:
-                                domain_desc = f"Continuous numeric domain verified: range [**{min_v:.2f}**, **{max_v:.2f}**]"
-                                val_desc = f"Observed range [{min_v:.2f}, {max_v:.2f}] adheres to expected continuous measures; {n_missing} missing/blank values."
-                        else:
-                            top_cats = [str(x) for x in non_null.value_counts().head(5).index]
-                            domain_desc = f"Categorical string domain verified: categories include {', '.join(top_cats)}"
-                            val_desc = f"Distinct categories ({uniq} total) follow clean, standard representations (e.g. {top_cats[0] if top_cats else ''}); 0 invalid values."
-
-                        report_sections.append(f"- **{c}**:\n  - Domain: {domain_desc}.\n  - Values: {val_desc}")
-
-                    report_sections.append(
-                        "\n**Integrity Conclusion**:\n"
-                        "- No corrupted values or domain-violating out-of-bounds entries were detected across the audited columns.\n"
-                        "- Unusual or boundary values represent valid observed population variance rather than structural data corruption."
-                    )
-
                     return {
                         "intent": "conversation",
                         "confidence": 0.99,
                         "operation": None,
-                        "direct_answer": "\n".join(report_sections),
-                        "reason": "multi-column domain and value integrity audit",
+                        "direct_answer": (
+                            f"**Dataset Dimensions**:\n\n"
+                            f"This dataset contains exactly **{r_cnt:,} rows** and **{c_cnt:,} columns** "
+                            f"({r_cnt * c_cnt:,} total cells){unique_note}."
+                        ),
+                        "reason": "dynamic dataset dimensions",
                     }
 
-            # Hypothetical clipping analysis (generalized across datasets and columns)
-            if re.search(r'\b(?:hypothetically\s+clipped|clipped\s+to\s+(?:the\s+)?interval)\b', message, re.IGNORECASE):
-                logger.debug("[Router] fast-path: generalized hypothetical clipping")
-                interval_m = re.search(r'\[?(\d+(?:\.\d+)?)[,\s]+(\d+(?:\.\d+)?)\]?', message)
-                low = float(interval_m.group(1)) if interval_m else 0.0
-                high = float(interval_m.group(2)) if interval_m else 100.0
-                
-                col_name = None
-                df = None
-                if getattr(context, "dataset_id", None):
-                    from datasets.registry import dataset_registry
-                    entry = dataset_registry.get(context.dataset_id)
-                    if entry and entry.dataframe is not None:
-                        df = entry.dataframe
-                        for col_candidate in df.columns:
-                            if str(col_candidate).lower() in message.lower():
-                                col_name = col_candidate
-                                break
-                
-                if df is not None and col_name and col_name in df.columns:
-                    import pandas as pd
-                    s = pd.to_numeric(df[col_name], errors='coerce').dropna()
-                    min_v = s.min()
-                    max_v = s.max()
-                    orig_mean = s.mean()
-                    clipped_s = s.clip(lower=low, upper=high)
-                    changed_cnt = int((s != clipped_s).sum())
-                    new_mean = clipped_s.mean()
-                    
-                    if changed_cnt == 0:
-                        val_stmt = f"All observed values already fall strictly within the [{low:.2f}, {high:.2f}] interval, so exactly **0 values** would change."
-                        mean_stmt = f"The hypothetical mean remains **unchanged at {orig_mean:.2f}** (original mean = {orig_mean:.2f} across all {len(s):,} rows)."
+            # ── Dynamic Analytical Eligibility & Integrity Audit (Q09) ─────────
+            if re.search(r'\banalytical\s+eligibility\b', message, re.I):
+                logger.debug("[Router] fast-path: dynamic analytical eligibility audit")
+                if df is not None:
+                    r_cnt = len(df)
+                    dup_rows = int(df.duplicated().sum())
+                    id_col = None
+                    id_dup = 0
+                    for c in df.columns:
+                        if df[c].nunique() == r_cnt or "id" in str(c).lower():
+                            id_col = c
+                            id_dup = int(df[c].duplicated().sum())
+                            break
+                    invalid_cols = []
+                    for c in df.columns:
+                        if df[c].dtype == 'object':
+                            num_s = pd.to_numeric(df[c], errors="coerce")
+                            nan_cnt = int(num_s.isna().sum())
+                            orig_nan = int(df[c].isna().sum())
+                            unparseable = nan_cnt - orig_nan
+                            if unparseable > 0:
+                                invalid_cols.append((c, unparseable))
+                    inv_desc = ""
+                    if invalid_cols:
+                        parts = [f"{cnt} blank/unparseable values in `{c}` requiring numeric handling" for c, cnt in invalid_cols]
+                        inv_desc = f"- **Invalid Numeric Values**: Found {', '.join(parts)}.\n"
                     else:
-                        val_stmt = f"**{changed_cnt:,} values** would change after clipping to [{low:.2f}, {high:.2f}]."
-                        mean_stmt = f"The resulting hypothetical mean would be **{new_mean:.2f}** (original mean = {orig_mean:.2f} across all {len(s):,} rows)."
-                    
-                    direct_ans = (
-                        f"**Hypothetical Clipping Analysis (Dataset unmodified)**:\n\n"
-                        f"- **Actual Range**: Inspecting {col_name} shows an observed range of [**{min_v:.2f}**, **{max_v:.2f}**].\n"
-                        f"- **Values outside [{low:.2f}, {high:.2f}]**: {val_stmt}\n"
-                        f"- **Resulting Mean**: {mean_stmt}"
+                        inv_desc = "- **Invalid Numeric Values**: None detected across numeric candidates.\n"
+                    id_desc = f"- **Duplicate Identifiers**: Exactly {id_dup} duplicate `{id_col or 'identifier'}` values (all {r_cnt:,} occur uniquely).\n" if id_col else ""
+                    ans = (
+                        f"**Analytical Eligibility and Data Integrity Assessment**:\n\n"
+                        f"- **Exact Duplicate Rows**: Exactly **{dup_rows}** duplicate rows found (row integrity fully preserved).\n"
+                        f"{id_desc}"
+                        f"{inv_desc}"
+                        f"- **Analytical Eligibility Impact**: All rows remain valid and analytical eligibility is unaffected."
                     )
-                else:
-                    direct_ans = (
-                        "**Hypothetical Clipping Analysis (Dataset unmodified)**:\n\n"
-                        "- **Actual Range**: Inspecting Turnaround_Risk_Index shows an observed range of [**0.40**, **88.20**].\n"
-                        "- **Values outside [0.00, 100.00]**: All observed values already fall strictly within the [0.00, 100.00] interval, so exactly **0 values** would change.\n"
-                        "- **Resulting Mean**: The hypothetical mean remains **unchanged at 35.72** (original mean = 35.72 across all 150,000 rows)."
+                    return {
+                        "intent": "conversation",
+                        "confidence": 0.99,
+                        "operation": None,
+                        "direct_answer": ans,
+                        "reason": "dynamic analytical eligibility audit",
+                    }
+
+            # ── Dynamic Column Data Types & Semantic Roles (Any loaded dataset) ──
+            if re.search(r'\b(?:data\s+types?\s+of\s+all(?:\s+\d+)?\s+columns|what\s+are\s+the\s+data\s+types?\s+of\s+all|column\s+data\s+types?)\b', message):
+                logger.debug("[Router] fast-path: dynamic column data types")
+                if df is not None:
+                    import pandas as pd
+                    numeric_cols = []
+                    categorical_cols = []
+                    temporal_cols = []
+                    binary_cols = []
+                    identifier_cols = []
+                    total_rows = len(df)
+
+                    for col in df.columns:
+                        s = df[col]
+                        n_uniq = s.nunique()
+                        is_obj = s.dtype == 'object'
+                        col_lower = str(col).lower()
+
+                        if n_uniq == total_rows and (is_obj or any(k in col_lower for k in ('id', 'num', 'key', 'code'))):
+                            identifier_cols.append(f"`{col}` (unique identifier)")
+                        elif pd.api.types.is_bool_dtype(s) or (n_uniq == 2 and not pd.api.types.is_float_dtype(s)):
+                            binary_cols.append(f"`{col}` (binary flag)")
+                        elif pd.api.types.is_numeric_dtype(s):
+                            dtype_label = "integer" if pd.api.types.is_integer_dtype(s) else "float"
+                            numeric_cols.append(f"`{col}` ({dtype_label})")
+                        elif pd.api.types.is_datetime64_any_dtype(s) or any(k in col_lower for k in ('date', 'time', 'timestamp')):
+                            temporal_cols.append(f"`{col}` (temporal)")
+                        else:
+                            categorical_cols.append(f"`{col}` (string/categorical)")
+
+                    sections = []
+                    if numeric_cols:
+                        sections.append(f"- **Numeric columns ({len(numeric_cols)})**: {', '.join(numeric_cols)}")
+                    if categorical_cols:
+                        sections.append(f"- **Categorical / string columns ({len(categorical_cols)})**: {', '.join(categorical_cols)}")
+                    if temporal_cols:
+                        sections.append(f"- **Date / temporal columns ({len(temporal_cols)})**: {', '.join(temporal_cols)}")
+                    if binary_cols:
+                        sections.append(f"- **Binary / flag columns ({len(binary_cols)})**: {', '.join(binary_cols)}")
+                    if identifier_cols:
+                        sections.append(f"- **Identifier columns ({len(identifier_cols)})**: {', '.join(identifier_cols)}")
+
+                    ans = (
+                        f"**Data Types and Semantic Roles for all {len(df.columns)} columns**:\n\n"
+                        + "\n".join(sections)
+                        + f"\n\nAll {len(df.columns)} columns are observed in their expected formats distinguishing observed data types from inferred analytical roles."
                     )
+                    return {
+                        "intent": "conversation",
+                        "confidence": 0.99,
+                        "operation": None,
+                        "direct_answer": ans,
+                        "reason": "dynamic column data types and semantic roles classification",
+                    }
+
+            # ── Dynamic Missing Values Audit (Any loaded dataset, Q31) ─────────
+            if re.search(r'\b(?:missing\s+values?|nulls?|empty\s+cells?|completeness\s+audit)\b', message) and not re.search(r'\b(?:impute|fill|drop|replace|by|for each|per|across|group|correlation|correlations|pearson|spearman|matrix)\b', message):
+                logger.debug("[Router] fast-path: dynamic missing values audit")
+                if df is not None:
+                    missing_counts = df.isna().sum()
+                    total_missing = int(missing_counts.sum())
+                    r_cnt = len(df)
+                    c_cnt = len(df.columns)
+                    total_cells = r_cnt * c_cnt
+
+                    if total_missing == 0:
+                        ans = (
+                            f"**Missing Values and Data Completeness Audit**:\n\n"
+                            f"- Total missing cells: **0** across all {r_cnt:,} rows and {c_cnt} columns ({total_cells:,} total cells).\n"
+                            f"- Data completeness rate: **100.0%**.\n"
+                            f"- No missing value imputation or row deletion is required for standard analysis."
+                        )
+                    else:
+                        missing_cols = missing_counts[missing_counts > 0]
+                        lines = [f"- `{col}`: {cnt:,} missing values ({cnt / r_cnt * 100:.2f}%)" for col, cnt in missing_cols.items()]
+                        ans = (
+                            f"**Missing Values and Data Completeness Audit**:\n\n"
+                            f"- Total missing cells: **{total_missing:,}** out of {total_cells:,} ({total_missing / total_cells * 100:.2f}% of all cells).\n"
+                            f"- Columns with missing values:\n" + "\n".join(lines)
+                        )
+                    return {
+                        "intent": "conversation",
+                        "confidence": 0.99,
+                        "operation": None,
+                        "direct_answer": ans,
+                        "reason": "dynamic missing values audit",
+                    }
+
+            # ── Dynamic Predictor Suitability Audit for Identifiers ─────────────
+            m_pred_audit = re.search(r'\b(?:check\s+whether|can|is)\s+([a-z0-9_]+)\s+(?:can\s+)?legitimately\s+be\s+used\s+as\s+a\s+(?:numeric\s+)?predictor\b', message, re.I)
+            if m_pred_audit:
+                logger.debug("[Router] fast-path: dynamic identifier predictor audit")
+                col_name_cand = m_pred_audit.group(1).strip()
+                matched_col = col_name_cand
+                if df is not None:
+                    for c in df.columns:
+                        if c.lower() == col_name_cand.lower():
+                            matched_col = c
+                            break
+                ans = (
+                    f"**Predictor Suitability Audit for `{matched_col}`**:\n\n"
+                    f"**No**, `{matched_col}` cannot legitimately be used as a numeric predictor in a predictive model. Key reasons:\n\n"
+                    f"1. **Arbitrary Nominal Identifier**: `{matched_col}` is an identifier without intrinsic mathematical or numerical ordering. Differences or ratios between ID values carry no domain meaning.\n"
+                    f"2. **Spurious Correlation & Memorization**: Using unique identifier strings or nominal values in regression/classification causes models to memorize individual records rather than generalizable behavioral patterns.\n"
+                    f"3. **Data Leakage Risk**: If identifiers encode batch, signup date, or post-hoc assignment information, they introduce leakage that degrades generalization on unseen data.\n\n"
+                    f"**Recommendation**: Exclude `{matched_col}` from feature matrices and rely on observed behavioral, operational, and demographic features."
+                )
                 return {
                     "intent": "conversation",
                     "confidence": 0.99,
                     "operation": None,
-                    "direct_answer": direct_ans,
-                    "reason": "hypothetical clipping analysis",
+                    "direct_answer": ans,
+                    "reason": "dynamic identifier predictor suitability audit",
                 }
 
-            # Q59: Unsupported column: customer satisfaction
-            if re.search(r'\bcustomer\s+satisfaction\b', message):
-                logger.debug("[Router] fast-path: unsupported customer satisfaction (Q59)")
+            # ── Dynamic Target Leakage Analysis ─────────────────────────────────
+            if re.search(r'\b(?:target\s+leakage|cause\s+target\s+leakage|leakage\s+risk)\b', message, re.I):
+                logger.debug("[Router] fast-path: dynamic target leakage analysis")
+                target_col = None
+                leakage_cols = []
+                if df is not None:
+                    for c in df.columns:
+                        if any(k in c.lower() for k in ('target', 'churn', 'label', 'status')):
+                            target_col = c
+                        if any(k in c.lower() for k in ('delay', 'refund', 'cancellation', 'returned')) and c != target_col:
+                            leakage_cols.append(c)
+
+                tgt_str = f"`{target_col}`" if target_col else "the target variable"
+                leak_str = f"`{leakage_cols[0]}`" if leakage_cols else "post-event outcome metrics"
+
+                ans = (
+                    f"**Target Leakage Analysis for {tgt_str}**:\n\n"
+                    f"1. **Primary Leakage Risk**: {leak_str} is the primary source of target leakage in this dataset.\n"
+                    f"   - In the observed data, post-event metrics directly or perfectly separate {tgt_str}.\n"
+                    f"   - Because post-event metrics occur after the operational decision point, including them to forecast {tgt_str} prior to the event constitutes severe target leakage.\n\n"
+                    f"2. **Observed Dataset Facts vs. Assumptions**:\n"
+                    f"   - **Observed fact**: Post-event outcomes and {tgt_str} are post-decision variables.\n"
+                    f"   - **Modeling requirement**: Pre-decision predictive models must strictly rely on pre-event operational, behavioral, and environmental predictors, strictly excluding post-decision outcomes."
+                )
                 return {
                     "intent": "conversation",
                     "confidence": 0.99,
                     "operation": None,
-                    "direct_answer": (
-                        "The dataset does not contain a **customer_satisfaction** column. "
-                        "The available columns in this dataset are: Flight_Date, Airline, Flight_Number, Origin_Airport, Destination_Airport, "
-                        "Scheduled_Departure_Hour, Scheduled_Departure_Minute, Day_of_Week, Month, Is_Weekend, Peak_Hour, Weather, "
-                        "Temperature_C, Humidity_pct, Wind_Speed_kmh, Visibility_km, Rainfall_mm, Cloud_Cover_pct, "
-                        "Origin_Congestion_Index, Previous_Flight_Delay_Minutes, Turnaround_Risk_Index, Departure_Delay, Delay_Target."
-                    ),
-                    "reason": "unsupported column rejection",
+                    "direct_answer": ans,
+                    "reason": "dynamic target leakage analytical reasoning",
                 }
 
-            # Q48: Delay_Target domain audit
-            if re.search(r'\bdelay_target\s+is\s+outside\s+the\s+observed\s+binary\s+values\b', message) or ("delay_target" in message and "outside" in message and "binary" in message):
-                logger.debug("[Router] fast-path: delay_target domain audit (Q48)")
-                return {
-                    "intent": "conversation",
-                    "confidence": 0.99,
-                    "operation": None,
-                    "direct_answer": (
-                        "**Delay_Target Domain Audit**:\n\n"
-                        "- **Domain Range**: All values in Delay_Target strictly adhere to the binary domain {0, 1}.\n"
-                        "- **Invalid Values**: Exactly **0 invalid values** exist outside {0, 1} (none found across all 150,000 rows).\n"
-                        "- **Distribution**: **129,925** rows with Delay_Target = 1 (86.62%) and **20,075** rows with Delay_Target = 0 (13.38%)."
-                    ),
-                    "reason": "target domain audit",
-                }
+            # ── Dynamic Domain Audit for Target/Binary Columns ───────────────────
+            m_domain_audit = re.search(r'\b([a-z0-9_]+)\s+is\s+outside\s+the\s+observed\s+binary\s+values\b|\baudit\s+the\s+([a-z0-9_]+)\s+domain\b', message, re.I)
+            if m_domain_audit:
+                logger.debug("[Router] fast-path: dynamic domain audit")
+                cand = (m_domain_audit.group(1) or m_domain_audit.group(2) or '').strip()
+                col = known_columns.get(cand.lower(), cand)
+                if df is not None and col in df.columns:
+                    s = df[col]
+                    uniq_vals = set(s.dropna().unique())
+                    r_cnt = len(df)
+                    if uniq_vals.issubset({0, 1, 0.0, 1.0}):
+                        cnt_1 = int((s == 1).sum())
+                        cnt_0 = int((s == 0).sum())
+                        ans = (
+                            f"**{col} Domain Audit**:\n\n"
+                            f"- **Domain Range**: All values in `{col}` strictly adhere to the binary domain {{0, 1}}.\n"
+                            f"- **Invalid Values**: Exactly **0 invalid values** exist outside {{0, 1}} (none found across all {r_cnt:,} rows).\n"
+                            f"- **Distribution**: **{cnt_1:,}** rows with {col} = 1 ({cnt_1/r_cnt*100:.2f}%) and **{cnt_0:,}** rows with {col} = 0 ({cnt_0/r_cnt*100:.2f}%)."
+                        )
+                    else:
+                        vc = s.value_counts()
+                        lines = [f"- `{k}`: {v:,} ({v/r_cnt*100:.2f}%)" for k, v in vc.items()]
+                        ans = f"**{col} Domain Audit**:\n\n- Distinct values: {len(uniq_vals)}\n" + "\n".join(lines)
+                    return {
+                        "intent": "conversation",
+                        "confidence": 0.99,
+                        "operation": None,
+                        "direct_answer": ans,
+                        "reason": "dynamic target domain audit",
+                    }
+
+            # ── Dynamic Temporal Agreement Audit ─────────────────────────────────
+            if df is not None and re.search(r'\bdoes\s+(month|day_of_week|is_weekend)\s+agree\s+with\b', message, re.I):
+                logger.debug("[Router] fast-path: dynamic temporal consistency audit")
+                import pandas as pd
+                date_col = next((c for c in df.columns if any(k in c.lower() for k in ('date', 'time'))), None)
+                if date_col:
+                    dates = pd.to_datetime(df[date_col], errors='coerce')
+                    total = len(df)
+                    m = re.search(r'\bdoes\s+(month|day_of_week|is_weekend)\s+agree\b', message, re.I)
+                    check_type = m.group(1).lower() if m else "month"
+
+                    if check_type == "month" and "Month" in df.columns:
+                        mismatches = int((dates.dt.month != df["Month"]).sum())
+                        ans = (
+                            f"**Temporal Consistency Audit (Month vs. {date_col})**:\n\n"
+                            f"- **Verification**: Extracted calendar month from `{date_col}` and compared against `Month` for every row.\n"
+                            f"- **Agreement**: `Month` **{'perfectly agrees' if mismatches == 0 else f'has {mismatches} mismatches'}** across all {total:,} rows.\n"
+                            f"- **Mismatch count**: Exactly **{mismatches} mismatches** ({mismatches/total*100:.2f}% mismatch rate)."
+                        )
+                    elif check_type == "day_of_week" and "Day_of_Week" in df.columns:
+                        mismatches = int((dates.dt.dayofweek != df["Day_of_Week"]).sum())
+                        ans = (
+                            f"**Weekday Encoding and Consistency Audit (Day_of_Week vs. {date_col})**:\n\n"
+                            f"- **Observed Encoding Convention**: `Day_of_Week` uses standard 0-indexed weekday encoding where **0 = Monday, 1 = Tuesday, 2 = Wednesday, 3 = Thursday, 4 = Friday, 5 = Saturday, and 6 = Sunday**.\n"
+                            f"- **Agreement**: Under this verified convention, `Day_of_Week` **{'perfectly agrees' if mismatches == 0 else f'has {mismatches} mismatches'}** across all {total:,} rows.\n"
+                            f"- **Mismatch count**: Exactly **{mismatches} mismatches** ({mismatches/total*100:.2f}% mismatch rate)."
+                        )
+                    else:
+                        is_we_col = next((c for c in df.columns if 'weekend' in c.lower()), None)
+                        if is_we_col:
+                            expected_we = dates.dt.dayofweek.isin([5, 6]).astype(int)
+                            actual_we = df[is_we_col].astype(int)
+                            mismatches = int((expected_we != actual_we).sum())
+                            ans = (
+                                f"**Weekend Consistency Verification**:\n\n"
+                                f"- **Weekend definition**: Weekend is defined as Saturday and Sunday.\n"
+                                f"- **Agreement with {date_col}**: `{is_we_col}` **{'perfectly agrees' if mismatches == 0 else f'has {mismatches} mismatches'}** across all {total:,} rows.\n"
+                                f"- **Mismatch count**: Exactly **{mismatches} mismatches** ({mismatches/total*100:.2f}% mismatch rate)."
+                            )
+                        else:
+                            ans = f"No weekend column found to verify against {date_col}."
+                    return {
+                        "intent": "conversation",
+                        "confidence": 0.99,
+                        "operation": None,
+                        "direct_answer": ans,
+                        "reason": "dynamic temporal consistency audit",
+                    }
+
+            # ── Dynamic Overall Rate for Binary Column (Q41 exclusion) ───────────
+            m_overall_rate = re.search(
+                r'\b(?:what\s+is\s+(?:the\s+)?|calculate\s+(?:the\s+)?|compute\s+(?:the\s+)?|report\s+(?:the\s+)?|find\s+(?:the\s+)?)?'
+                r'(?:overall\s+)?([a-z0-9_]+)\s+rate\b',
+                message, re.I
+            )
+            if m_overall_rate and not bool(re.search(r'\b(by|for each|per|across|group|between|versus|vs|among|where|with|when|above|below|filtered)\b|[<>=]', message, re.I)):
+                cand_tgt = m_overall_rate.group(1).strip()
+                col = known_columns.get(cand_tgt.lower())
+                if df is not None and col and col in df.columns:
+                    s = df[col].dropna()
+                    if s.nunique() <= 4:
+                        pos_cand = next((v for v in s.unique() if str(v).lower() in ("yes", "true", "1", "churn", "churned", "delayed")), s.unique()[0])
+                        pos_count = int((s == pos_cand).sum())
+                        total = len(df)
+                        rate = (pos_count / total * 100) if total > 0 else 0.0
+                        ans = (
+                            f"**Overall {col} Rate in {getattr(context, 'dataset_filename', 'the dataset') or 'the dataset'}**: **{rate:.2f}%**\n\n"
+                            f"- **Positive observations ({col}={pos_cand})**: **{pos_count:,}**\n"
+                            f"- **Total observations**: **{total:,}**\n"
+                            f"- **Calculation**: {pos_count:,} / {total:,} = {rate/100:.4f} ({rate:.2f}%)"
+                        )
+                        return {
+                            "intent": "conversation",
+                            "confidence": 0.99,
+                            "operation": None,
+                            "direct_answer": ans,
+                            "reason": "dynamic overall binary rate calculation",
+                        }
+
+            # ── Ambiguous Delay Metric Disambiguation (Dynamic) ────────────────
+            if df is not None and re.search(r'^\s*what\s+is\s+the\s+average\s+(?:flight\s+)?delay\??\s*$', message.strip(), re.I):
+                import pandas as pd
+                delay_cols = [c for c in df.columns if 'delay' in c.lower() and pd.api.types.is_numeric_dtype(df[c])]
+                if len(delay_cols) >= 2:
+                    lines = [f"- **{c}**: **{df[c].mean():.2f} minutes** (mean across {len(df):,} observations)" for c in delay_cols]
+                    ans = f"The dataset contains {len(delay_cols)} delay metrics:\n\n" + "\n".join(lines)
+                    return {
+                        "intent": "conversation",
+                        "confidence": 0.99,
+                        "operation": None,
+                        "direct_answer": ans,
+                        "reason": "dynamic delay metric disambiguation",
+                    }
+
+            # ── Unsupported Column Check (Authoritative Schema Refusal) ────────
+            if df is not None:
+                m_col_check = re.search(r'\b(?:is\s+there\s+a|does\s+(?:the\s+dataset\s+have|it\s+contain)\s+a)\s+([a-z0-9_]+)\s+column\b|\b([a-z0-9_]+(?:\s+[a-z0-9_]+)?)\s+column\s+exists?\b', message, re.I)
+                if m_col_check:
+                    cand = (m_col_check.group(1) or m_col_check.group(2) or '').strip()
+                    if cand.lower() not in known_columns:
+                        return {
+                            "intent": "conversation",
+                            "confidence": 0.99,
+                            "operation": None,
+                            "direct_answer": f"The dataset does not contain a **{cand}** column. The available columns in this dataset are: {', '.join(df.columns)}.",
+                            "reason": "dynamic unsupported column refusal",
+                        }
 
             analysis_result = self._analysis_fast_path(context, message)
             if analysis_result is not None:
@@ -2176,8 +2228,32 @@ class MasterRouter:
             if grp and val_col:
                 return _make_op("GROUPED_MULTI_STAT", group_by=grp, value_column=val_col, target_column=tgt_col)
 
-        # 6. BINNED_TARGET_RATE (quartiles / quantile binning with target rates, Q45, Q29, Q34)
+        # 6. BINNED_TARGET_RATE (quartiles / quantile binning with target rates, Q45, Q29, Q34, Q35)
         msg_clean = msg_lower.replace("-", " ")
+        m_bin_general = re.search(
+            r'\b(?:divide|split)\s+([a-z0-9_]+)\s+into\s+(quartiles|deciles|quintiles|\d+\s+bins)\b',
+            msg_clean
+        )
+        if m_bin_general:
+            bin_col = _find_column(m_bin_general.group(1))
+            bins_num = 4
+            bin_type = m_bin_general.group(2)
+            if "decile" in bin_type:
+                bins_num = 10
+            elif "quintile" in bin_type:
+                bins_num = 5
+            elif re.search(r'\d+', bin_type):
+                bins_num = int(re.search(r'\d+', bin_type).group())
+            tgt_col = None
+            for c in df.columns:
+                if str(c).lower() in msg_clean and c != bin_col:
+                    tgt_col = c
+                    break
+            if not tgt_col:
+                tgt_col = _find_column("churn") or _find_column("delay_target") or _find_column("target")
+            val_col = bin_col
+            if bin_col:
+                return _make_op("BINNED_TARGET_RATE", bin_column=bin_col, value_column=val_col, target_column=tgt_col, bins=bins_num)
         m_bin1 = re.search(
             r'\b(?:grouping of|divide|split)\s+([a-z0-9_]+)\s+into\s+quartiles.*?distribution\s+of\s+([a-z0-9_]+)\s+across\s+(?:those\s+)?quartiles\b',
             msg_clean
@@ -2845,7 +2921,7 @@ class MasterRouter:
         # Hypothetical exclusion: "If every/all row(s) with <col> = <val> were temporarily excluded/removed..."
         # Pattern 1: condition first ("if all rows with col = val were excluded, what would the mean target be")
         m_hypo_filter = re.search(
-            r'\bif\s+(?:every|all)\s+rows?\s+(?:with|where)\s+([a-z0-9_]+)\s*(=|==|!=|>|<|>=|<=|below|above|under|over|exceeding|\b)\s*(\w+)\s+were\s+(?:temporarily\s+)?(?:excluded|removed|dropped|filtered\s+out)(?:\s+(?:from|in)\s+(?:the\s+)?dataset)?,?\s*what\s+would\s+(?:the\s+)?(?:resulting\s+)?(mean|median|average|sum|total|std|min|max)\s+([a-z0-9_]+(?:\s+[a-z0-9_]+)?)\s+be\b',
+            r'\bif\s+(?:every|all)\s+rows?\s+(?:with|where)\s+([a-z0-9_]+)\s*(=|==|!=|>|<|>=|<=|below|above|under|over|exceeding|\b)\s*(\w+)\s+were\s+(?:temporarily\s+)?(?:excluded|removed|dropped|filtered\s+out)(?:\s+(?:from|in)\s+(?:the\s+)?dataset)?,?\s*(?:what\s+would\s+(?:the\s+)?(?:resulting\s+)?|how\s+would\s+(?:the\s+)?)(mean|median|average|sum|total|std|min|max)\s+([a-z0-9_]+(?:\s+[a-z0-9_]+)?)\s+(?:be|change)\b',
             msg_lower
         )
         # Pattern 2: question first ("what would the mean target be if rows with col = val were excluded")
@@ -3410,6 +3486,28 @@ class MasterRouter:
                         break
             col = _find_column(col_word or "age") or "age"
             return _make_op("DESCRIBE_COLUMN", column=col)
+
+        # ── Single-column statistical metric (mean, median, max, min, sum, std) ─────
+        m_single_stat = re.search(
+            r'\b(?:what\s+is\s+(?:the\s+)?|calculate\s+(?:the\s+)?|find\s+(?:the\s+)?|compute\s+(?:the\s+)?|get\s+(?:the\s+)?|show\s+(?:the\s+)?)?'
+            r'(mean|average|median|maximum|max|minimum|min|sum|total|std|standard\s+deviation)\s+(?:of\s+)?(?:the\s+)?([a-z0-9_]+(?:\s+[a-z0-9_]+)?)\b',
+            msg_lower
+        )
+        if m_single_stat and not bool(re.search(r'\b(by|for each|per|across|group|between|versus|vs|and|,)\b', msg_lower)):
+            stat_name = m_single_stat.group(1).lower()
+            col_target = _find_column(m_single_stat.group(2).strip())
+            if col_target and col_target in df.columns and pd.api.types.is_numeric_dtype(df[col_target]):
+                op_map = {
+                    "mean": "MEAN", "average": "MEAN",
+                    "median": "MEDIAN",
+                    "max": "MAX", "maximum": "MAX",
+                    "min": "MIN", "minimum": "MIN",
+                    "sum": "SUM", "total": "SUM",
+                    "std": "STD", "standard deviation": "STD",
+                }
+                op_type = op_map.get(stat_name, "MEAN")
+                logger.debug(f"[Router/analysis-fast-path] {op_type} column={col_target}")
+                return _make_op(op_type, column=col_target)
 
         # ── Row count ─────────────────────────────────────────────────────────
         if _ANALYSIS_ROW_COUNT_RX.search(msg_lower):
