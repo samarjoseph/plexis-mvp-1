@@ -519,7 +519,7 @@ def generate_title_endpoint():
         )
     else:
         prompt = (
-            f'User asked: "{message[:200]}". '
+            f'Message: "{message[:200]}". '
             'Generate a concise, natural conversation title in 2 to 5 words capturing the subject. '
             'Return ONLY the title text inside double quotes, e.g. "SaaS Revenue Trends".'
         )

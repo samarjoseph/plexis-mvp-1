@@ -55,12 +55,21 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body, #root {
-  width: 100%; height: 100%;
+html, body {
+  width: 100%;
   background: var(--bg); color: var(--text);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Dashboard needs full height for the fixed layout.
+   Landing page needs natural scroll — do NOT set height: 100% on #root globally. */
+#root {
+  width: 100%;
+  background: var(--bg);
+}
+
+/* When the dashboard shell is mounted it sets its own 100vh height */
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
