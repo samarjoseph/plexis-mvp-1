@@ -79,6 +79,50 @@ function MessageBubbleV2({
 
   /* ── System Error Messages ── */
   if (message.sender === 'system_error') {
+    if (message.isUploadLimitError) {
+      return (
+        <motion.div
+          className="v2-msg-system-error v2-msg-upload-limit"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <div
+            className="v2-error-limit-card glass-panel"
+            style={{
+              padding: '18px 22px',
+              borderRadius: '12px',
+              border: '1px solid rgba(234, 179, 8, 0.25)',
+              background: 'rgba(234, 179, 8, 0.04)',
+              maxWidth: '640px',
+              lineHeight: '1.65',
+              color: 'var(--text)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '10px',
+                color: '#eab308',
+                fontWeight: '600',
+                fontSize: '0.9rem',
+              }}
+            >
+              <AlertTriangle size={16} />
+              <span>Free-Tier Limit Notice</span>
+            </div>
+            <div className="v2-prose-container" style={{ fontSize: '0.92rem' }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.text}
+              </ReactMarkdown>
+            </div>
+          </div>
+        </motion.div>
+      );
+    }
+
     return (
       <motion.div
         className="v2-msg-system-error"
@@ -88,14 +132,18 @@ function MessageBubbleV2({
       >
         <div className="v2-error-compact">
           <AlertTriangle size={14} className="v2-error-icon-compact" />
-          <span className="v2-error-text-compact">Please check your internet connection and try again.</span>
-          <button
-            type="button"
-            className="v2-error-retry-compact"
-            onClick={() => onRetry?.(message)}
-          >
-            Retry
-          </button>
+          <span className="v2-error-text-compact">
+            {message.text || 'Please check your internet connection and try again.'}
+          </span>
+          {message.retryPayload && (
+            <button
+              type="button"
+              className="v2-error-retry-compact"
+              onClick={() => onRetry?.(message)}
+            >
+              Retry
+            </button>
+          )}
         </div>
       </motion.div>
     );

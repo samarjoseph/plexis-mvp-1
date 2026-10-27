@@ -22,6 +22,7 @@ export default function ChatInputBar({
   stagedFile,
   onStageFile,
   onCancelFile,
+  onFileSizeError = null,
   isLoading,
   initialText = '',
 }) {
@@ -126,7 +127,19 @@ export default function ChatInputBar({
             hidden
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file?.name.endsWith('.csv') && onStageFile) {
+              if (!file) {
+                e.target.value = '';
+                return;
+              }
+              const MAX_CSV_MB = 35;
+              if (file.name.endsWith('.csv') && file.size > MAX_CSV_MB * 1024 * 1024) {
+                if (onFileSizeError) {
+                  onFileSizeError(file, MAX_CSV_MB);
+                }
+                e.target.value = '';
+                return;
+              }
+              if (file.name.endsWith('.csv') && onStageFile) {
                 onStageFile(file);
               }
               e.target.value = '';

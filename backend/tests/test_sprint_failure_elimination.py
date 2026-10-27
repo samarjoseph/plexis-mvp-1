@@ -125,6 +125,15 @@ def test_hypothetical_clipping_generalization(router_and_context):
     assert "0 values" in ans2 or "none" in ans2
     assert "[0.00, 100.00]" in ans2
 
+    # Test with normalized_query where punctuation/brackets were stripped by pipeline
+    ctx2 = ExecutionContext(message=msg, dataset_id="synthetic_test")
+    ctx2.normalized_query = "if risk_score values were hypothetically clipped to interval 0 100 how many values would change and what would resulting mean be first inspect actual range do not apply transformation to source dataset"
+    res2 = router.route(ctx2)
+    assert res2.success is True
+    ans2 = res2.answer.lower()
+    assert "0 values" in ans2 or "none" in ans2
+    assert "[0.00, 100.00]" in ans2
+
 
 def test_target_leakage_generalization(router_and_context):
     router = router_and_context

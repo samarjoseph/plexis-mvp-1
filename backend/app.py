@@ -80,6 +80,7 @@ def create_app() -> Flask:
     Config.validate()
 
     app = Flask(__name__)
+    app.config['MAX_CONTENT_LENGTH'] = (Config.MAX_UPLOAD_SIZE_MB + 5) * 1024 * 1024
 
     CORS(app, origins=Config.CORS_ORIGINS, supports_credentials=True)
 

@@ -399,6 +399,37 @@ function DashboardInner() {
 
       try {
         const response = await PlexisAPI.uploadCSVStream(runtimeFile, runtimeText);
+        if (!response.ok) {
+          let errBody = {};
+          try { errBody = await response.json(); } catch (_) {}
+          const isFileTooLarge = response.status === 413 || errBody?.error_code === 'FILE_TOO_LARGE';
+          const limitMb = errBody?.limit_mb || 35;
+          const userText = isFileTooLarge
+            ? (errBody?.user_message || `**Need to upload a larger dataset?**\n\nPlexis is currently in its free development phase, with CSV uploads limited to ${limitMb} MB.\n\nWe're working toward expanded upload limits on our upcoming paid plans. We apologize for the inconvenience and appreciate your patience as we continue improving Plexis.`)
+            : (errBody?.error || errBody?.message || "Upload failed. Please try again.");
+
+          setStreamingMessageId(null);
+          setLoadingChatIds((prev) => {
+            const next = new Set(prev);
+            next.delete(targetId);
+            return next;
+          });
+          setConversations((prev) =>
+            updateConversation(prev, targetId, {
+              messages: [
+                ...(prev.find(c => c.id === targetId)?.messages.filter(m => m.id !== streamMsgId) ?? []),
+                {
+                  id: `err-${Date.now()}`,
+                  sender: 'system_error',
+                  isUploadLimitError: isFileTooLarge,
+                  text: userText,
+                  ...(!isFileTooLarge && { retryPayload: { text: runtimeText, file: runtimeFile } }),
+                },
+              ],
+            })
+          );
+          return;
+        }
         let accumulatedText = '';
         const { StreamController } = await import('../utils/streaming/StreamController.js');
         const controller = new StreamController();
@@ -638,6 +669,20 @@ function DashboardInner() {
     }
   };
 
+  const handleFileSizeError = useCallback((file, limitMb = 35) => {
+    const errMsg = {
+      id: `err-file-size-${Date.now()}`,
+      sender: 'system_error',
+      isUploadLimitError: true,
+      text: `**Need to upload a larger dataset?**\n\nPlexis is currently in its free development phase, with CSV uploads limited to ${limitMb} MB.\n\nWe're working toward expanded upload limits on our upcoming paid plans. We apologize for the inconvenience and appreciate your patience as we continue improving Plexis.`,
+    };
+    setConversations((prev) =>
+      updateConversation(prev, activeId, {
+        messages: [...(prev.find((c) => c.id === activeId)?.messages ?? []), errMsg],
+      })
+    );
+  }, [activeId]);
+
   const handleRetry = (msg) => {
     if (msg.retryPayload) handleSend(msg.retryPayload.text, msg.retryPayload.file, msg.id, { isRetry: true });
   };
@@ -795,6 +840,7 @@ function DashboardInner() {
           stagedFile={stagedFile}
           onStageFile={setStagedFile}
           onCancelFile={() => setStagedFile(null)}
+          onFileSizeError={handleFileSizeError}
           isLoading={isLoading}
           activeDatasetName={activeConversation?.activeDatasetName}
           activeDatasetId={activeConversation?.datasetId}

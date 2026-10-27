@@ -52,7 +52,7 @@ services:
       - key: B2_MAX_STORAGE_MB
         value: "9500"
       - key: MAX_UPLOAD_SIZE_MB
-        value: "100"
+        value: "35"
 
   # ── Frontend Static Site (Optional on Render / or use Vercel) ─────────────────
   - type: static

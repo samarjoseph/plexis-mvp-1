@@ -33,6 +33,7 @@ from core.events import (
     DatasetIntelligenceCompleteEvent, DatasetProfiledEvent
 )
 from core.errors import ValidationError
+from config import Config
 from utils.response import success_response, error_response
 
 # Presentation layer
@@ -305,6 +306,27 @@ def upload_dataset() -> Tuple[Any, int]:
         # 'seek of closed file' errors during PostgreSQL persistence.
         raw_bytes = file.read()
         file.seek(0)  # Reset so dataset_storage.save() can read from the start
+
+        # ── CSV File-size enforcement (Free-tier 35 MB limit) ────────────────
+        file_size_mb = len(raw_bytes) / (1024 * 1024)
+        ext_lower = ext.lower()
+        csv_limit_mb = Config.MAX_UPLOAD_SIZE_MB
+
+        if ext_lower == '.csv' and file_size_mb > csv_limit_mb:
+            return jsonify({
+                "error": "File too large",
+                "error_code": "FILE_TOO_LARGE",
+                "limit_mb": csv_limit_mb,
+                "file_size_mb": round(file_size_mb, 1),
+                "status": 413,
+                "user_message": (
+                    "**Need to upload a larger dataset?**\n\n"
+                    f"Plexis is currently in its free development phase, with CSV uploads limited to {csv_limit_mb} MB.\n\n"
+                    "We're working toward expanded upload limits on our upcoming paid plans. "
+                    "We apologize for the inconvenience and appreciate your patience as we continue improving Plexis."
+                ),
+            }), 413
+        # ────────────────────────────────────────────────────────────────────
 
         saved_path = dataset_storage.save(file, filename)
         event_bus.publish(DatasetUploadedEvent(filename=filename))

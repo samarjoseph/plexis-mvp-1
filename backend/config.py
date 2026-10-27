@@ -89,7 +89,7 @@ class Config:
     PLANNER_TEMPERATURE: float = float(os.environ.get("PLANNER_TEMPERATURE", "0.0"))
     CONVERSATION_TEMPERATURE: float = float(os.environ.get("CONVERSATION_TEMPERATURE", "0.7"))
 
-    MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
+    MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "35"))
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "DEBUG")
     ENABLE_DUCKDB_ENGINE: bool = os.environ.get("ENABLE_DUCKDB_ENGINE", "true").lower() in ("true", "1", "yes")
 
@@ -149,7 +149,7 @@ class Config:
     # Storage Quotas & Limits (Safeguards for zero-budget MVP)
     # Default maximum tracked storage: 10 GB (10,000 MB, Backblaze B2 free tier limit)
     B2_MAX_STORAGE_MB: int = int(os.environ.get("B2_MAX_STORAGE_MB", "10000"))
-    MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
+    MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "35"))
 
     # Spreadsheet Snapshot Compaction
     SNAPSHOT_INTERVAL_ACTIONS: int = int(os.environ.get("SNAPSHOT_INTERVAL_ACTIONS", "20"))

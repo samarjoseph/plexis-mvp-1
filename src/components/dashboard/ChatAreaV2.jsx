@@ -166,6 +166,7 @@ export default function ChatAreaV2({
   stagedFile,
   onStageFile,
   onCancelFile,
+  onFileSizeError,
   isLoading,
   activeDatasetName,
   activeDatasetId,
@@ -313,6 +314,7 @@ export default function ChatAreaV2({
         stagedFile={stagedFile}
         onStageFile={onStageFile}
         onCancelFile={onCancelFile}
+        onFileSizeError={onFileSizeError}
         isLoading={isLoading}
         initialText={inputText || ''}
       />

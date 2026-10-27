@@ -43,6 +43,24 @@ def register_error_handlers(app) -> None:
             response.update(error.payload)
         return jsonify(response), error.status_code
 
+    @app.errorhandler(413)
+    def handle_file_too_large(error):
+        from config import Config
+        limit_mb = Config.MAX_UPLOAD_SIZE_MB
+        return jsonify({
+            "error": "File too large",
+            "error_code": "FILE_TOO_LARGE",
+            "limit_mb": limit_mb,
+            "status": 413,
+            "user_message": (
+                f"**Need to upload a larger dataset?**\n\n"
+                f"Plexis is currently in its free development phase, with CSV uploads limited to {limit_mb} MB.\n\n"
+                "We're working toward expanded upload limits on our upcoming paid plans. "
+                "We apologize for the inconvenience and appreciate your patience as we continue improving Plexis."
+            ),
+            "request_id": getattr(g, "request_id", None)
+        }), 413
+
     @app.errorhandler(404)
     def handle_not_found(error):
         return jsonify({
