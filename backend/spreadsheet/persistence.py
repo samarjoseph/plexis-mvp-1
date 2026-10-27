@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import io
 import uuid
+import threading
 import logging
+from collections import OrderedDict
 from typing import Optional, Dict, Any, List, Tuple
 from uuid import UUID
 
@@ -29,6 +31,40 @@ from db.repositories.dataset_repository import dataset_repository
 from storage.manager import storage_manager
 
 logger = logging.getLogger(__name__)
+
+
+# ── Process-level L2 DataFrame cache ─────────────────────────────────────────
+# Prevents repeated B2 downloads when concurrent threads request the same
+# dataset before DatasetRegistry is warmed up. Keyed by dataset_id string.
+# Stores (revision, df). Max 4 slots; evicts LRU on overflow.
+_L2_CACHE: "OrderedDict[str, tuple]" = OrderedDict()
+_L2_LOCK = threading.Lock()
+_L2_MAX = 4
+
+
+def _l2_get(dataset_id: str, revision: int):
+    """Return cached DataFrame if revision matches, else None."""
+    with _L2_LOCK:
+        entry = _L2_CACHE.get(dataset_id)
+        if entry is not None and entry[0] == revision:
+            _L2_CACHE.move_to_end(dataset_id)
+            return entry[1]
+    return None
+
+
+def _l2_put(dataset_id: str, revision: int, df) -> None:
+    """Insert/update cache entry, evicting LRU when over capacity."""
+    with _L2_LOCK:
+        _L2_CACHE[dataset_id] = (revision, df)
+        _L2_CACHE.move_to_end(dataset_id)
+        while len(_L2_CACHE) > _L2_MAX:
+            _L2_CACHE.popitem(last=False)
+
+
+def _l2_invalidate(dataset_id: str) -> None:
+    """Evict a dataset from L2 (call after any mutation)."""
+    with _L2_LOCK:
+        _L2_CACHE.pop(dataset_id, None)
 
 
 class ConcurrencyConflictError(Exception):
@@ -71,13 +107,24 @@ class SpreadsheetHistoryManager:
         return dataset_repository.get_by_id_unsafe(db, d_id)
 
     def _get_or_restore_df(self, db: Session, dataset: Dataset) -> pd.DataFrame:
-        """Get dataframe from in-memory cache or trigger cold-start rehydration."""
+        """Get dataframe from L1 (DatasetRegistry) or L2 (process cache) before hitting B2."""
+        ds_id = str(dataset.id)
+        current_rev = dataset.current_revision or 0
+
+        # L1: in-memory DatasetRegistry (fastest)
         from datasets.registry import dataset_registry
-        entry = dataset_registry.get_by_id(str(dataset.id))
+        entry = dataset_registry.get_by_id(ds_id)
         if entry and entry.dataframe is not None and not (hasattr(entry.dataframe, 'empty') and entry.dataframe.empty):
             return entry.dataframe
 
-        logger.info("[SpreadsheetHistory] Cache miss for dataset %s — restoring state", dataset.id)
+        # L2: process-level cache keyed by (dataset_id, revision) — avoids redundant B2 downloads
+        cached_df = _l2_get(ds_id, current_rev)
+        if cached_df is not None:
+            logger.debug("[SpreadsheetHistory] L2 cache hit for dataset %s rev %d", ds_id, current_rev)
+            self._sync_registry(dataset, cached_df)
+            return cached_df
+
+        logger.info("[SpreadsheetHistory] Cache miss for dataset %s rev %d — restoring from B2", ds_id, current_rev)
         _, df = self.restore_dataset_state(db, dataset.id, dataset.user_id)
         if df is None:
             raise RuntimeError(f"Failed to restore dataframe for dataset {dataset.id}")
@@ -244,6 +291,7 @@ class SpreadsheetHistoryManager:
         db.refresh(action)
 
         self._sync_registry(dataset, df)
+        _l2_put(str(dataset.id), dataset.current_revision or 0, df)
 
         return {
             "success": True,
@@ -355,6 +403,7 @@ class SpreadsheetHistoryManager:
         db.refresh(action)
 
         self._sync_registry(dataset, df)
+        _l2_put(str(dataset.id), dataset.current_revision or 0, df)
 
         return {
             "success": True,
@@ -702,6 +751,7 @@ class SpreadsheetHistoryManager:
 
         # Step 5: Sync L1 cache
         self._sync_registry(dataset, df)
+        _l2_put(str(dataset.id), dataset.current_revision or 0, df)
         return dataset, df
 
     def get_history(
