@@ -227,14 +227,17 @@ export const PlexisAPI = {
 
   /**
    * Create a new chat for the current user.
-   * @param {string} [title] - Chat display title
+   * @param {string|Object} [titleOrData] - Chat display title or { title, dataset_id, messages }
    * @returns {Promise<{chat_id, slug, title}>}
    */
-  async createChat(title = 'New Chat') {
+  async createChat(titleOrData = 'New Chat') {
+    const payload = typeof titleOrData === 'object' && titleOrData !== null
+      ? titleOrData
+      : { title: titleOrData || 'New Chat' };
     const r = await fetch(`${BASE_URL}/api/chats`, {
       method: 'POST',
       headers: defaultHeaders(),
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(payload),
     });
     if (!r.ok) throw new Error(`createChat failed: ${r.status}`);
     return r.json();

@@ -71,25 +71,83 @@ def _serialize_message(msg) -> dict:
 
 @chats_bp.route("", methods=["POST"])
 def create_chat():
-    """Create a new chat for the current user."""
+    """Create a new chat for the current user, optionally with initial messages and dataset."""
     current_user, err = _resolve_identity()
     if err:
         return err
 
     db = get_db()
     body = request.get_json(silent=True) or {}
-    title = body.get("title", "New Chat")
+    title = (body.get("title") or "New Chat").strip()
+    dataset_id_raw = body.get("dataset_id")
+    messages = body.get("messages")
+
+    current_dataset_id = None
+    if dataset_id_raw:
+        try:
+            ds_uuid = UUID(str(dataset_id_raw))
+            ds = dataset_repository.get_by_id(db, ds_uuid, current_user.user_id)
+            if ds:
+                current_dataset_id = ds_uuid
+        except (ValueError, TypeError):
+            current_dataset_id = None
 
     try:
-        chat = chat_service.create_chat(db, user_id=current_user.user_id, title=title)
+        chat = chat_service.create_chat(
+            db,
+            user_id=current_user.user_id,
+            title=title,
+            current_dataset_id=current_dataset_id,
+        )
+
+        messages_created = 0
+        if isinstance(messages, list) and messages:
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
+                raw_role = (msg.get("role") or msg.get("sender") or "user").strip().lower()
+                if raw_role in ("user", "human"):
+                    role = "user"
+                elif raw_role in ("system", "system_error", "error"):
+                    role = "system"
+                else:
+                    role = "assistant"
+
+                content = msg.get("content") or msg.get("text") or ""
+                msg_type = msg.get("message_type") or msg.get("type") or "conversation"
+                metadata = msg.get("metadata") or {}
+                if not isinstance(metadata, dict):
+                    metadata = {}
+
+                message_repository.append_message(
+                    db,
+                    chat_id=chat.id,
+                    role=role,
+                    content=str(content),
+                    message_type=str(msg_type),
+                    metadata_json=metadata,
+                )
+                messages_created += 1
+
+            if messages_created > 0:
+                chat_repository.update_last_message(db, chat.id)
+
         db.commit()
-        logger.info("[CHATS_API] Created chat slug=%s user=%s", chat.slug, current_user.email)
-        return jsonify({"chat_id": str(chat.id), "slug": chat.slug, "title": chat.title}), 201
+        logger.info(
+            "[CHATS_API] Created chat slug=%s user=%s messages=%d",
+            chat.slug, current_user.email, messages_created
+        )
+        return jsonify({
+            "chat_id": str(chat.id),
+            "slug": chat.slug,
+            "title": chat.title,
+            "current_dataset_id": str(chat.current_dataset_id) if chat.current_dataset_id else None,
+            "messages_count": messages_created,
+        }), 201
     except Exception as e:
         db.rollback()
         logger.error("[CHATS_API] create_chat failed: %s", e)
         return jsonify({"error": str(e)}), 500
-
 
 # ---------------------------------------------------------------------------
 # GET /api/chats — list user's chats

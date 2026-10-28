@@ -68,6 +68,9 @@ function DashboardInner() {
     if (stored.length > 0) {
       setConversations(stored);
       setActiveId((prev) => (prev && stored.some((c) => c.id === prev) ? prev : stored[0].id));
+    } else {
+      setConversations([]);
+      setActiveId(null);
     }
 
     async function syncRemoteChats() {
@@ -79,11 +82,22 @@ function DashboardInner() {
 
         const remoteConvs = res.chats.map((chat) => {
           const cached = storedMap.get(chat.id);
+          const hasDbTitle = chat.title && chat.title !== 'New Chat';
+          const hasCachedTitle = cached?.title && cached.title !== 'New Chat';
+          const finalTitle = hasDbTitle ? chat.title : (hasCachedTitle ? cached.title : (chat.title || 'New Chat'));
+
+          // Auto-heal DB title if local cache had generated AI title but DB had 'New Chat'
+          if (!hasDbTitle && hasCachedTitle) {
+            PlexisAPI.renameChat(chat.id, cached.title).catch((e) =>
+              console.warn('[Dashboard] Auto-healing chat title in DB:', e)
+            );
+          }
+
           return {
             id: chat.id,
             chatId: chat.id,
             slug: chat.slug,
-            title: chat.title || 'New Chat',
+            title: finalTitle,
             pinned: cached?.pinned || false,
             datasetId: chat.current_dataset_id || cached?.datasetId || null,
             activeDatasetName: cached?.activeDatasetName || (chat.current_dataset_id ? 'Active Dataset' : 'No active dataset'),
@@ -92,27 +106,78 @@ function DashboardInner() {
             chartData: cached?.chartData || { labels: [], datasets: [] },
             createdAt: chat.created_at ? new Date(chat.created_at).getTime() : Date.now(),
             updatedAt: chat.last_message_at ? new Date(chat.last_message_at).getTime() : Date.now(),
-            named: true,
+            named: finalTitle !== 'New Chat',
           };
         });
 
-        // Retain any unsynced local conversations that have actual user messages
+        // Retain un-synced local legacy conversations (never had a DB chatId or UUID)
         const localOnly = (stored || []).filter(
           (c) =>
-            !res.chats.some((rc) => rc.id === c.id || rc.id === c.chatId) &&
+            !c.chatId &&
+            !isUUID(c.id) &&
             c.messages &&
             c.messages.some((m) => m.sender === 'user')
         );
 
-        const merged = [...remoteConvs, ...localOnly];
-        if (merged.length > 0) {
-          setConversations(merged);
-          saveConversations(userId, merged);
-          setActiveId((prev) => (prev && merged.some((c) => c.id === prev) ? prev : merged[0].id));
+        const initialMerged = [...remoteConvs, ...localOnly];
+        if (initialMerged.length > 0) {
+          setConversations(initialMerged);
+          saveConversations(userId, initialMerged);
+          setActiveId((prev) => (prev && initialMerged.some((c) => c.id === prev) ? prev : initialMerged[0].id));
         } else if (res.chats.length === 0 && localOnly.length === 0) {
           setConversations([]);
           saveConversations(userId, []);
           setActiveId(null);
+        }
+
+        // Migrate local-only chats to PostgreSQL in the background
+        if (localOnly.length > 0) {
+          for (const localChat of localOnly) {
+            if (!isMounted) break;
+            const messagesToUpload = (localChat.messages || [])
+              .filter((m) => m.id !== 'welcome')
+              .map((m) => ({
+                role: m.sender === 'user' ? 'user' : (m.sender === 'system_error' ? 'system' : 'assistant'),
+                content: m.text || '',
+                message_type: 'conversation',
+                metadata: {
+                  has_chart: m.hasChart || false,
+                  chart_data: m.chartData || null,
+                  evidence: m.evidence || null,
+                  isFileCard: m.isFileCard || false,
+                  fileName: m.fileName || null,
+                  fileSize: m.fileSize || null,
+                },
+              }));
+
+            try {
+              const created = await PlexisAPI.createChat({
+                title: localChat.title || 'New Chat',
+                dataset_id: localChat.datasetId || null,
+                messages: messagesToUpload,
+              });
+              if (created?.chat_id && isMounted) {
+                const oldId = localChat.id;
+                const newId = created.chat_id;
+                localChat.id = newId;
+                localChat.chatId = newId;
+                localChat.slug = created.slug;
+
+                setConversations((prev) => {
+                  const updated = prev.map((item) =>
+                    item.id === oldId
+                      ? { ...item, id: newId, chatId: newId, slug: created.slug }
+                      : item
+                  );
+                  saveConversations(userId, updated);
+                  return updated;
+                });
+                setActiveId((prev) => (prev === oldId ? newId : prev));
+              }
+            } catch (migErr) {
+              console.warn('[Dashboard] Error migrating local-only chat to DB:', migErr);
+            }
+          }
         }
       } catch (err) {
         console.warn('[Dashboard] Could not sync remote chats (using cached):', err);
@@ -174,14 +239,16 @@ function DashboardInner() {
           },
         ];
 
-        setConversations((prev) =>
-          updateConversation(prev, activeId, {
+        setConversations((prev) => {
+          const next = updateConversation(prev, activeId, {
             messages: finalMessages,
             chatId: fullChat.chat?.id || conv.chatId || activeId,
             datasetId: fullChat.current_dataset_id || conv.datasetId || null,
             title: fullChat.chat?.title || conv.title,
-          })
-        );
+          });
+          saveConversations(userId, next);
+          return next;
+        });
       } catch (err) {
         console.warn('[Dashboard] Could not load chat messages for', lookupTarget, err);
       }
@@ -465,14 +532,24 @@ function DashboardInner() {
     // Ensure we create a persistent backend chat record if none exists yet
     if (!currentConv.chatId && !isUUID(targetId)) {
       try {
-        const created = await PlexisAPI.createChat(currentConv.title || 'New Chat');
+        const initialTitle = currentConv.title || 'New Chat';
+        const created = await PlexisAPI.createChat(initialTitle);
         if (created?.chat_id) {
           const newChatId = created.chat_id;
           currentConv.chatId = newChatId;
+          currentConv.id = newChatId;
           currentConv.slug = created.slug;
-          setConversations((prev) =>
-            prev.map((c) => (c.id === targetId ? { ...c, chatId: newChatId, slug: created.slug } : c))
-          );
+          targetId = newChatId;
+          setConversations((prev) => {
+            const next = prev.map((c) =>
+              c.id === targetId || c.id === currentConv.id
+                ? { ...c, id: newChatId, chatId: newChatId, slug: created.slug }
+                : c
+            );
+            saveConversations(userId, next);
+            return next;
+          });
+          setActiveId(newChatId);
         }
       } catch (err) {
         console.warn('[Dashboard] createChat pre-creation skipped, backend will resolve in /api/ask:', err);
@@ -517,11 +594,22 @@ function DashboardInner() {
       PlexisAPI.generateChatTitle({
         message: runtimeText,
         filename: runtimeFile?.name || '',
-      }).then((aiTitle) => {
+      }).then(async (aiTitle) => {
         if (aiTitle && aiTitle !== 'New Chat') {
-          setConversations((prev) =>
-            updateConversation(prev, targetId, { title: aiTitle, named: true })
-          );
+          currentConv.title = aiTitle;
+          setConversations((prev) => {
+            const next = updateConversation(prev, targetId, { title: aiTitle, named: true });
+            saveConversations(userId, next);
+            return next;
+          });
+          const dbId = currentConv?.chatId || (isUUID(targetId) ? targetId : null);
+          if (dbId) {
+            try {
+              await PlexisAPI.renameChat(dbId, aiTitle);
+            } catch (err) {
+              console.warn('[Dashboard] renameChat after generateChatTitle error:', err);
+            }
+          }
         }
       }).catch((err) => {
         console.warn('[Dashboard] Title generation failed:', err);
@@ -708,14 +796,25 @@ function DashboardInner() {
       if (apiResult?.chat_id && currentConv.chatId !== apiResult.chat_id) {
         const finalChatId = apiResult.chat_id;
         currentConv.chatId = finalChatId;
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === targetId || c.chatId === finalChatId
+        currentConv.id = finalChatId;
+        const currentTitle = currentConv.title;
+        setConversations((prev) => {
+          const next = prev.map((c) =>
+            c.id === targetId || c.chatId === finalChatId || c.id === currentConv.id
               ? { ...c, chatId: finalChatId, id: finalChatId }
               : c
-          )
-        );
+          );
+          saveConversations(userId, next);
+          return next;
+        });
         setActiveId(finalChatId);
+
+        // If the conversation already has a non-default title, persist it to finalChatId in DB
+        if (currentTitle && currentTitle !== 'New Chat') {
+          PlexisAPI.renameChat(finalChatId, currentTitle).catch((e) =>
+            console.warn('[Dashboard] Error syncing title to new chat:', e)
+          );
+        }
       }
       const evidence = apiResult?.evidence || null;
 

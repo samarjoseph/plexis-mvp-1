@@ -222,3 +222,86 @@ def test_rename_and_delete_chat(test_client, user_a_email):
         headers={"X-User-Email": user_a_email},
     )
     assert res_get_del.status_code == 404
+
+
+def test_create_chat_with_legacy_messages_migration(test_client, user_a_email):
+    """POST /api/chats accepts legacy messages and dataset_id for migration to PostgreSQL."""
+    legacy_payload = {
+        "title": "Migrated Local Legacy Chat",
+        "messages": [
+            {
+                "sender": "user",
+                "content": "Can you analyze revenue by month?",
+                "metadata": {"source": "legacy_migration"},
+            },
+            {
+                "sender": "ai",
+                "content": "Sure! Here is the revenue breakdown...",
+                "metadata": {
+                    "has_chart": True,
+                    "chart_data": {"labels": ["Jan", "Feb"], "values": [100, 200]},
+                },
+            },
+        ],
+    }
+
+    res = test_client.post(
+        "/api/chats",
+        headers={"X-User-Email": user_a_email, "Content-Type": "application/json"},
+        json=legacy_payload,
+    )
+    assert res.status_code == 201
+    data = res.get_json()
+    chat_id = data["chat_id"]
+    assert data["title"] == "Migrated Local Legacy Chat"
+    assert data["messages_count"] == 2
+
+    # Load from another device session (same user)
+    res_load = test_client.get(
+        f"/api/chats/{chat_id}",
+        headers={"X-User-Email": user_a_email},
+    )
+    assert res_load.status_code == 200
+    loaded = res_load.get_json()
+    assert loaded["chat"]["title"] == "Migrated Local Legacy Chat"
+    msgs = loaded["messages"]
+    assert len(msgs) == 2
+    assert msgs[0]["role"] == "user"
+    assert msgs[0]["content"] == "Can you analyze revenue by month?"
+    assert msgs[0]["sequence_number"] == 1
+    assert msgs[1]["role"] == "assistant"
+    assert msgs[1]["content"] == "Sure! Here is the revenue breakdown..."
+    assert msgs[1]["sequence_number"] == 2
+    assert msgs[1]["metadata"]["has_chart"] is True
+
+
+def test_cross_device_title_sync(test_client, user_a_email):
+    """Device 1 renames a chat; Device 2 immediately sees the updated title."""
+    # Create chat
+    res = test_client.post(
+        "/api/chats",
+        headers={"X-User-Email": user_a_email, "Content-Type": "application/json"},
+        json={"title": "New Chat"},
+    )
+    assert res.status_code == 201
+    chat_id = res.get_json()["chat_id"]
+
+    # Device 1 generates AI title and updates DB
+    res_patch = test_client.patch(
+        f"/api/chats/{chat_id}",
+        headers={"X-User-Email": user_a_email, "Content-Type": "application/json"},
+        json={"title": "Customer Churn Analysis"},
+    )
+    assert res_patch.status_code == 200
+
+    # Device 2 queries chat list
+    res_list = test_client.get(
+        "/api/chats",
+        headers={"X-User-Email": user_a_email},
+    )
+    assert res_list.status_code == 200
+    chats = res_list.get_json().get("chats", [])
+    target = next((c for c in chats if c["id"] == chat_id), None)
+    assert target is not None
+    assert target["title"] == "Customer Churn Analysis"
+
