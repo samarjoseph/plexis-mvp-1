@@ -11,6 +11,14 @@
 import { useState, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+const markdownComponents = {
+  table: ({ node, ...props }) => (
+    <div className="v2-table-wrap">
+      <table {...props} />
+    </div>
+  ),
+};
 import { motion } from 'framer-motion';
 import { Globe, ExternalLink, FileSpreadsheet, Copy, Check, AlertTriangle } from 'lucide-react';
 import PlexisLogo from '../brand/PlexisLogo';
@@ -114,7 +122,7 @@ function MessageBubbleV2({
               <span>Free-Tier Limit Notice</span>
             </div>
             <div className="v2-prose-container" style={{ fontSize: '0.92rem' }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {message.text}
               </ReactMarkdown>
             </div>
@@ -176,7 +184,7 @@ function MessageBubbleV2({
         <div className="v2-msg-ai-body">
           {message.text && (
             <div className="v2-prose" style={{ marginBottom: '12px' }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {message.text}
               </ReactMarkdown>
             </div>
@@ -203,7 +211,7 @@ function MessageBubbleV2({
         <div className="v2-msg-ai-body">
           {message.text && (
             <div className="v2-prose" style={{ marginBottom: '12px' }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {message.text}
               </ReactMarkdown>
             </div>
@@ -287,7 +295,7 @@ function MessageBubbleV2({
         */}
         {hasContent && (
           <div className="v2-prose">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {displayProse}
             </ReactMarkdown>
           </div>

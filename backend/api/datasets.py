@@ -48,111 +48,14 @@ from presentation import (
 from presentation.presentation_engine import SOURCE_LLM, SOURCE_FALLBACK
 from presentation.domain.errors import BundleExpiredError, ModuleNotAvailableError
 
-# DB persistence layer (gracefully degraded if DATABASE_URL not set)
-def _try_persist_dataset_to_db(raw_bytes: bytes, filename: str, dataset_id: str, dko, df, chat_id=None):
-    """
-    Persist dataset to PostgreSQL after successful analysis.
-    Wrapped in try/except — DB errors NEVER break the SSE upload stream.
-
-    CRITICAL: This function receives pre-read raw_bytes (not a file object).
-    The file is read immediately at upload time, before any streaming begins,
-    to avoid 'seek of closed file' errors when the request file is consumed
-    by dataset_storage.save().
-
-    Flow:
-        1. Resolve user via X-User-Email header
-        2. User-scoped dedup: UNIQUE(user_id, file_hash)
-        3. If new: store BYTEA + register dataset_id override in registry
-        4. Persist DKO as JSONB
-        5. Associate chat's current_dataset_id if chat_id provided
-    """
-    from config import Config
-    if not Config.DATABASE_URL:
-        return  # No DB configured — in-memory only mode
-
-    try:
-        from db.session import db_session
-        from db.services.dataset_service import dataset_service
-        from db.repositories.chat_repository import chat_repository
-
-        # Resolve user from request header
-        email = (request.headers.get('X-User-Email') or '').strip().lower()
-        if not email:
-            email = 'dev@plexis.local'
-
-        import io as _io
-        with db_session() as db:
-            from db.repositories.user_repository import user_repository
-            user = user_repository.get_or_create_by_email(db, email)
-
-            # Persist dataset (user-scoped dedup by file_hash)
-            # Use BytesIO so dataset_service can seek/read as needed
-            file_like = _io.BytesIO(raw_bytes)
-            file_like.name = filename  # Some code reads .name attribute
-            db_dataset = dataset_service.persist_dataset(
-                db, user.id, file_like, filename
-            )
-
-            # Override in-memory dataset_id with the DB-assigned one for new datasets
-            db_dataset_id = str(db_dataset.id)
-
-            # CRITICAL FIX: Rekey the in-memory registry so ExecutionContext.dataset_id
-            # matches the PostgreSQL datasets.id, preventing FK violations in
-            # analysis_sessions.dataset_id → datasets.id
-            dataset_registry.rekey(dataset_id, db_dataset_id)
-
-            # Persist metadata (row_count, column_count, schema)
-            schema_json = {
-                'columns': [{'name': c, 'dtype': str(df[c].dtype)} for c in df.columns]
-            } if df is not None else None
-            dataset_service.update_metadata(
-                db, db_dataset.id, user.id,
-                schema_json=schema_json,
-                row_count=len(df) if df is not None else None,
-                column_count=len(df.columns) if df is not None else None,
-            )
-
-            # Persist DKO
-            if dko is not None:
-                dataset_service.update_dko(db, db_dataset.id, user.id, dko)
-
-            # Associate chat with this dataset if chat_id provided
-            if chat_id:
-                try:
-                    import uuid as _uuid
-                    chat_repository.update_current_dataset(
-                        db, _uuid.UUID(str(chat_id)), db_dataset.id, user.id
-                    )
-                except Exception:
-                    pass  # chat_id may not be valid UUID yet
-
-            logger.info(
-                '[DB] Dataset persisted: db_id=%s in-memory-id=%s user=%s',
-                db_dataset_id, dataset_id, email,
-            )
-            logger.info(
-                '[DATASET_PERSISTENCE_COMMITTED] dataset_id=%s fingerprint=%s',
-                db_dataset_id, getattr(db_dataset, 'file_hash', '?'),
-            )
-            
-            return db_dataset_id
-
-    except Exception as e:
-        logger.warning('[DATASET_PERSISTENCE_FAILED] reason=%s', e)
-        return None
-
-
-
-
 logger = logging.getLogger(__name__)
 
 datasets_bp = Blueprint('datasets', __name__, url_prefix='/api')
 
 ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls'}
 
-
 # ---------------------------------------------------------------------------
-# SSE Helpers
+# SSE Streaming Helpers
 # ---------------------------------------------------------------------------
 
 def _sse(event_type: str, data: dict) -> str:
@@ -179,9 +82,127 @@ def _sse_module_ready(module_id: str, display_name: str, richness: float, previe
     })
 
 
-# ---------------------------------------------------------------------------
-# Deterministic Upload Summary Builder
-# ---------------------------------------------------------------------------
+# DB persistence layer (gracefully degraded if DATABASE_URL not set)
+def _try_persist_dataset_to_db(raw_bytes: bytes, filename: str, dataset_id: str, dko, df, chat_id=None, summary_text=""):
+    """
+    Persist dataset to PostgreSQL after successful analysis and bind to user's chat.
+    Also persists the user's file card and the assistant's upload summary message
+    so chat history never vanishes upon reload or device sync.
+    """
+    from config import Config
+    if not Config.DATABASE_URL:
+        return None, str(chat_id) if chat_id else None, None
+
+    try:
+        from db.session import db_session
+        from db.services.dataset_service import dataset_service
+        from db.services.chat_service import chat_service
+        from db.repositories.chat_repository import chat_repository
+        from db.repositories.message_repository import message_repository
+        from db.isolation import compute_account_tag, compute_chat_tag
+
+        email = (request.headers.get('X-User-Email') or '').strip().lower()
+        if not email:
+            email = 'dev@plexis.local'
+
+        import io as _io
+        with db_session() as db:
+            from db.repositories.user_repository import user_repository
+            user = user_repository.get_or_create_by_email(db, email)
+
+            file_like = _io.BytesIO(raw_bytes)
+            file_like.name = filename
+            db_dataset = dataset_service.persist_dataset(
+                db, user.id, file_like, filename
+            )
+
+            db_dataset_id = str(db_dataset.id)
+            dataset_registry.rekey(dataset_id, db_dataset_id)
+
+            schema_json = {
+                'columns': [{'name': c, 'dtype': str(df[c].dtype)} for c in df.columns]
+            } if df is not None else None
+            dataset_service.update_metadata(
+                db, db_dataset.id, user.id,
+                schema_json=schema_json,
+                row_count=len(df) if df is not None else None,
+                column_count=len(df.columns) if df is not None else None,
+            )
+
+            if dko is not None:
+                dataset_service.update_dko(db, db_dataset.id, user.id, dko)
+
+            # Resolve or auto-create chat
+            resolved_chat = None
+            if chat_id:
+                try:
+                    import uuid as _uuid
+                    chat_uuid = _uuid.UUID(str(chat_id))
+                    resolved_chat = chat_repository.get_by_id(db, chat_uuid, user.id)
+                except Exception:
+                    resolved_chat = chat_repository.get_by_slug(db, str(chat_id), user.id)
+
+            if not resolved_chat:
+                chat_title = f"Dataset: {filename}"
+                resolved_chat = chat_service.create_chat(
+                    db,
+                    user_id=user.id,
+                    title=chat_title,
+                    current_dataset_id=db_dataset.id,
+                )
+            else:
+                chat_repository.update_current_dataset(
+                    db, resolved_chat.id, db_dataset.id, user.id
+                )
+
+            # 1. Persist User's File Card Message
+            message_repository.append_message(
+                db,
+                chat_id=resolved_chat.id,
+                role="user",
+                content="",
+                message_type="conversation",
+                metadata_json={
+                    "isFileCard": True,
+                    "fileName": filename,
+                    "fileSize": f"{len(raw_bytes) / 1024:.1f} KB",
+                    "dataset_id": db_dataset_id,
+                },
+            )
+
+            # 2. Persist Assistant's Dataset Summary Message
+            if summary_text:
+                message_repository.append_message(
+                    db,
+                    chat_id=resolved_chat.id,
+                    role="assistant",
+                    content=summary_text,
+                    message_type="conversation",
+                    metadata_json={
+                        "dataset_id": db_dataset_id,
+                        "filename": filename,
+                        "row_count": len(df) if df is not None else None,
+                        "column_count": len(df.columns) if df is not None else None,
+                    },
+                )
+
+            chat_repository.update_last_message(db, resolved_chat.id)
+            db.commit()
+
+            acc_tag = compute_account_tag(resolved_chat.user_id)
+            c_tag = compute_chat_tag(resolved_chat.id)
+            canonical_slug = resolved_chat.slug or f"{acc_tag}-{c_tag}"
+
+            logger.info(
+                '[DB] Dataset and messages persisted: db_id=%s chat_id=%s slug=%s user=%s',
+                db_dataset_id, resolved_chat.id, canonical_slug, email,
+            )
+
+            return db_dataset_id, str(resolved_chat.id), canonical_slug
+
+    except Exception as e:
+        logger.error('[DB] Dataset persistence failed (non-fatal): %s', e, exc_info=True)
+        return None, str(chat_id) if chat_id else None, None
 
 def _build_deterministic_upload_summary(dko, filename: str, df) -> str:
     """
@@ -423,7 +444,13 @@ def upload_dataset() -> Tuple[Any, int]:
                 # Persist to PostgreSQL (non-blocking — errors never break SSE)
                 # Pass pre-read raw_bytes — not the file object (which is closed by now)
                 chat_id = request.form.get('chat_id') or request.args.get('chat_id')
-                db_id = _try_persist_dataset_to_db(raw_bytes, filename, dataset_id, dko, df, chat_id=chat_id)
+                persist_res = _try_persist_dataset_to_db(
+                    raw_bytes, filename, dataset_id, dko, df, chat_id=chat_id, summary_text=summary_text
+                )
+                db_id = persist_res[0] if isinstance(persist_res, tuple) else persist_res
+                resolved_chat_id = persist_res[1] if isinstance(persist_res, tuple) else (str(chat_id) if chat_id else None)
+                resolved_chat_slug = persist_res[2] if isinstance(persist_res, tuple) else None
+
                 final_dataset_id = db_id or dataset_id
 
                 yield _sse_done({
@@ -431,6 +458,8 @@ def upload_dataset() -> Tuple[Any, int]:
                     "dataset_info": frontend_payload,
                     "presentation_source": presentation_source,
                     "trigger_investigation": True,  # Signal frontend to open Investigation tab
+                    "chat_id": resolved_chat_id,
+                    "slug": resolved_chat_slug,
                 })
                 
                 # After yielding done event, auto-start investigation

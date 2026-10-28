@@ -5593,7 +5593,7 @@ body.is-dragging * {
 }
 
 /* Universal Table Horizontal Scroll Contract — markdown tables & data tables */
-.v2-prose table {
+.v2-table-wrap {
   display: block !important;
   width: 100% !important;
   max-width: 100% !important;
@@ -5602,12 +5602,45 @@ body.is-dragging * {
   -webkit-overflow-scrolling: touch !important;
   scrollbar-width: thin !important;
   scrollbar-color: rgba(255, 255, 255, 0.28) transparent !important;
-  margin: 12px 0 !important;
-  border-collapse: collapse !important;
+  margin: 14px 0 !important;
   box-sizing: border-box !important;
 }
 
-.v2-prose table::-webkit-scrollbar,
+.v2-prose table,
+.v2-table-wrap table {
+  display: table !important;
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 0 !important;
+  font-size: 0.86rem !important;
+  table-layout: auto !important;
+}
+
+.v2-prose th,
+.v2-table-wrap th {
+  text-align: left !important;
+  padding: 10px 18px !important;
+  border-bottom: 1px solid var(--dash-border, rgba(255, 255, 255, 0.12)) !important;
+  color: var(--dash-muted, #94a3b8) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  white-space: nowrap !important;
+}
+
+.v2-prose td,
+.v2-table-wrap td {
+  padding: 10px 18px !important;
+  border-bottom: 1px solid var(--dash-border-subtle, rgba(255, 255, 255, 0.06)) !important;
+  color: var(--dash-text, #e2e8f0) !important;
+  white-space: nowrap !important;
+}
+
+.v2-prose tr:hover td,
+.v2-table-wrap tr:hover td {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+.v2-table-wrap::-webkit-scrollbar,
 .tpc-table-wrap::-webkit-scrollbar,
 .trc-table-wrap::-webkit-scrollbar,
 .inv-table-wrap::-webkit-scrollbar,
@@ -5615,7 +5648,7 @@ body.is-dragging * {
   height: 6px !important;
 }
 
-.v2-prose table::-webkit-scrollbar-thumb,
+.v2-table-wrap::-webkit-scrollbar-thumb,
 .tpc-table-wrap::-webkit-scrollbar-thumb,
 .trc-table-wrap::-webkit-scrollbar-thumb,
 .inv-table-wrap::-webkit-scrollbar-thumb,
@@ -5624,7 +5657,7 @@ body.is-dragging * {
   border-radius: 3px !important;
 }
 
-.v2-prose table::-webkit-scrollbar-track,
+.v2-table-wrap::-webkit-scrollbar-track,
 .tpc-table-wrap::-webkit-scrollbar-track,
 .trc-table-wrap::-webkit-scrollbar-track {
   background: transparent !important;

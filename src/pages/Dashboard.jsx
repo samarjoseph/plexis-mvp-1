@@ -730,6 +730,7 @@ function DashboardInner() {
           const newChatId = created.chat_id;
           const oldTargetId = targetId;
           targetId = newChatId;
+          streamingTargetIdRef.current = newChatId;
           currentConv.chatId = newChatId;
           currentConv.id = newChatId;
           currentConv.slug = created.slug;
@@ -831,8 +832,8 @@ function DashboardInner() {
             next.delete(targetId);
             return next;
           });
-          setConversations((prev) =>
-            updateConversation(prev, targetId, {
+          setConversations((prev) => {
+            const next = updateConversation(prev, targetId, {
               messages: [
                 ...(prev.find(c => c.id === targetId)?.messages.filter(m => m.id !== streamMsgId) ?? []),
                 {
@@ -843,8 +844,10 @@ function DashboardInner() {
                   ...(!isFileTooLarge && { retryPayload: { text: runtimeText, file: runtimeFile } }),
                 },
               ],
-            })
-          );
+            });
+            saveConversations(userId, next);
+            return next;
+          });
           return;
         }
         let accumulatedText = '';
@@ -862,32 +865,44 @@ function DashboardInner() {
           .on('chunk', ({ text: chunk }) => {
             if (!chunk) return;
             accumulatedText += chunk;
-            setConversations((prev) =>
-              updateConversation(prev, streamingTargetIdRef.current, {
-                messages: prev
-                  .find(c => c.id === streamingTargetIdRef.current)
-                  ?.messages.map(m => m.id === streamMsgId ? { ...m, text: accumulatedText } : m) ?? [],
-              })
-            );
+            const activeTargetId = streamingTargetIdRef.current || targetId;
+            setConversations((prev) => {
+              const conv = prev.find(c => c.id === activeTargetId || c.chatId === activeTargetId);
+              if (!conv) return prev;
+              return updateConversation(prev, conv.id, {
+                messages: conv.messages.map(m => m.id === streamMsgId ? { ...m, text: accumulatedText } : m),
+              });
+            });
           })
           .on('done', (data) => {
             const datasetInfo = data?.dataset_info || {};
             const datasetId = data?.dataset_id || null;
+            const finalChatId = data?.chat_id || streamingTargetIdRef.current || targetId;
+            const finalSlug = data?.slug || currentConv.slug;
             const nextDatasetName = runtimeFile.name;
             const nextDatasetStats = datasetInfo.row_count
               ? { rows: datasetInfo.row_count, columns: datasetInfo.column_count, memory: datasetInfo.memory_usage_bytes }
               : null;
 
+            if (data?.chat_id) {
+              streamingTargetIdRef.current = data.chat_id;
+              currentConv.chatId = data.chat_id;
+              currentConv.id = data.chat_id;
+              if (data.slug) {
+                currentConv.slug = data.slug;
+                currentConv.shareSlug = data.slug;
+              }
+            }
+
             // Notify workspace and EvidenceRegistry of new dataset
             if (datasetId) {
-              setDataset(datasetId, streamingTargetIdRef.current);
+              setDataset(datasetId, finalChatId);
               EventBus.emit(Events.DATASET_LOADED, { datasetId, filename: nextDatasetName });
               EvidenceRegistry.setCurrentFingerprint(datasetInfo.schema_fingerprint || datasetId);
             }
 
-            // Auto-open Investigation workspace after upload
-            // ARCHITECTURE: Upload → Investigation tab opens with deterministic stats
-            if (datasetId && data?.trigger_investigation) {
+            // Auto-open Investigation workspace after upload (desktop only)
+            if (datasetId && data?.trigger_investigation && typeof window !== 'undefined' && window.innerWidth >= 1024) {
               EventBus.emit(Events.INVESTIGATION_REQUESTED, { datasetId });
               setAnalyticsCollapsed(false);
             }
@@ -896,20 +911,35 @@ function DashboardInner() {
             setLoadingChatIds((prev) => {
               const next = new Set(prev);
               next.delete(targetId);
+              if (data?.chat_id) next.delete(data.chat_id);
+              if (finalChatId) next.delete(finalChatId);
               return next;
             });
-            setConversations((prev) =>
-              updateConversation(prev, targetId, {
-                messages: prev
-                  .find(c => c.id === targetId)
-                  ?.messages.map(m => m.id === streamMsgId ? { ...m, text: accumulatedText, isStreaming: false } : m) ?? [],
+
+            setConversations((prev) => {
+              const conv = prev.find(c => c.id === finalChatId || c.chatId === finalChatId || c.id === targetId);
+              const targetConvId = conv ? conv.id : finalChatId;
+              const next = updateConversation(prev, targetConvId, {
+                ...(data?.chat_id && { id: data.chat_id, chatId: data.chat_id }),
+                ...(data?.slug && { slug: data.slug, shareSlug: data.slug }),
+                messages: (conv?.messages || prev.find(c => c.id === targetConvId)?.messages || [])
+                  .map(m => m.id === streamMsgId ? { ...m, text: accumulatedText, isStreaming: false } : m),
                 activeDatasetName: nextDatasetName,
                 datasetName: nextDatasetName,
                 datasetId,
                 ...(nextDatasetStats && { datasetStats: nextDatasetStats }),
-                title: prev.find(c => c.id === targetId)?.title || `Dataset: ${runtimeFile.name}`,
-              })
-            );
+                title: conv?.title && conv.title !== 'New Chat' ? conv.title : `Dataset: ${runtimeFile.name}`,
+              });
+              saveConversations(userId, next);
+              return next;
+            });
+
+            if (finalChatId && activeId !== finalChatId) {
+              setActiveId(finalChatId);
+            }
+            if (finalSlug) {
+              navigate(`/dashboard/${finalSlug}`, { replace: true });
+            }
           })
           .on('error', ({ message }) => {
             setStreamingMessageId(null);
