@@ -74,6 +74,14 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/dashboard/:chatRef"
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/early-access" element={<EarlyAccessPage />} />
       <Route path="/early-access/admin" element={<EarlyAccessAdmin />} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -43,9 +43,17 @@ def _resolve_identity():
 
 
 def _serialize_chat(chat) -> dict:
+    from db.isolation import compute_account_tag, compute_chat_tag
+    account_tag = compute_account_tag(chat.user_id)
+    chat_tag = compute_chat_tag(chat.id)
+    isolation_slug = f"{account_tag}-{chat_tag}"
+    canonical_slug = chat.slug if (chat.slug and "-" in chat.slug and len(chat.slug.split("-")[0]) == 6) else isolation_slug
     return {
         "id": str(chat.id),
-        "slug": chat.slug,
+        "slug": canonical_slug,
+        "account_tag": account_tag,
+        "chat_tag": chat_tag,
+        "share_slug": canonical_slug,
         "title": chat.title,
         "current_dataset_id": str(chat.current_dataset_id) if chat.current_dataset_id else None,
         "created_at": chat.created_at.isoformat() if chat.created_at else None,
@@ -137,9 +145,16 @@ def create_chat():
             "[CHATS_API] Created chat slug=%s user=%s messages=%d",
             chat.slug, current_user.email, messages_created
         )
+        from db.isolation import compute_account_tag, compute_chat_tag
+        acc_tag = compute_account_tag(chat.user_id)
+        c_tag = compute_chat_tag(chat.id)
+        canonical_slug = chat.slug or f"{acc_tag}-{c_tag}"
         return jsonify({
             "chat_id": str(chat.id),
-            "slug": chat.slug,
+            "slug": canonical_slug,
+            "account_tag": acc_tag,
+            "chat_tag": c_tag,
+            "share_slug": canonical_slug,
             "title": chat.title,
             "current_dataset_id": str(chat.current_dataset_id) if chat.current_dataset_id else None,
             "messages_count": messages_created,
@@ -237,7 +252,9 @@ def update_chat(chat_id: str):
         if not updated:
             return jsonify({"error": "Chat not found or not owned"}), 404
         db.commit()
-        return jsonify({"updated": True, "title": str(title).strip()}), 200
+        chat = chat_repository.get_by_id(db, chat_uuid, current_user.user_id)
+        final_title = chat.title if chat else str(title).strip()
+        return jsonify({"updated": True, "title": final_title}), 200
     except ValueError:
         return jsonify({"error": "Invalid UUID format"}), 400
     except Exception as e:

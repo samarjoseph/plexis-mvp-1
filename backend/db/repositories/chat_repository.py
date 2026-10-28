@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from db.models.chat import Chat
+from db.isolation import compute_account_tag, compute_chat_tag, generate_chat_slug
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,35 @@ class ChatRepository:
     Ownership is verified on every resource-fetch method.
     """
 
+    def ensure_unique_title(
+        self,
+        db: Session,
+        user_id: UUID,
+        desired_title: str,
+        exclude_chat_id: Optional[UUID] = None,
+    ) -> str:
+        """
+        Ensure chat title is unique within the user's account.
+        If a chat with the same title already exists, increments suffix:
+        e.g., 'Sales Overview' -> 'Sales Overview 2', 'Sales Overview 3'.
+        """
+        base = (desired_title or "New Chat").strip()
+        query = db.query(Chat.title).filter(
+            Chat.user_id == user_id,
+            Chat.archived_at.is_(None),
+        )
+        if exclude_chat_id:
+            query = query.filter(Chat.id != exclude_chat_id)
+        existing = {row[0].strip().lower() for row in query.all()}
+
+        if base.lower() not in existing:
+            return base
+
+        counter = 2
+        while f"{base} {counter}".lower() in existing or f"{base} ({counter})".lower() in existing:
+            counter += 1
+        return f"{base} {counter}"
+
     def create_chat(
         self,
         db: Session,
@@ -41,7 +71,7 @@ class ChatRepository:
         current_dataset_id: Optional[UUID] = None,
     ) -> Chat:
         """
-        Create a new Chat for a user.
+        Create a new Chat for a user with isolated slug and unique title.
 
         Args:
             db: SQLAlchemy session
@@ -52,40 +82,60 @@ class ChatRepository:
         Returns:
             Newly created Chat
         """
-        uid = uuid.uuid4().hex
-        slug = _generate_slug(title, uid)
+        unique_title = self.ensure_unique_title(db, user_id=user_id, desired_title=title)
+        new_id = uuid.uuid4()
+        slug = generate_chat_slug(user_id, new_id)
 
-        # Ensure slug uniqueness (retry with longer suffix on collision)
+        # Ensure slug uniqueness (retry with fallback suffix on rare collision)
         attempts = 0
-        while db.query(Chat).filter(Chat.slug == slug).first() is not None:
-            slug = f"{slug}-{uuid.uuid4().hex[:4]}"
+        while db.query(Chat.id).filter(Chat.slug == slug).first() is not None:
+            slug = f"{slug[:-2]}{uuid.uuid4().hex[:2]}"
             attempts += 1
             if attempts > 10:
                 break
 
         chat = Chat(
-            id=uuid.uuid4(),
+            id=new_id,
             user_id=user_id,
-            title=title,
+            title=unique_title,
             slug=slug,
             current_dataset_id=current_dataset_id,
         )
         db.add(chat)
         db.flush()
-        logger.info("[CHAT_REPO] Created chat slug=%s user=%s", slug, user_id)
+        logger.info("[CHAT_REPO] Created chat slug=%s user=%s title=%s", slug, user_id, unique_title)
         return chat
 
     def get_by_slug(self, db: Session, slug: str, user_id: UUID) -> Optional[Chat]:
         """
-        Fetch a Chat by its slug, verifying ownership.
+        Fetch a Chat by its slug or isolated tag, verifying ownership.
 
         Returns None if not found OR if owned by a different user.
         """
-        return (
+        chat = (
             db.query(Chat)
             .filter(Chat.slug == slug, Chat.user_id == user_id)
             .first()
         )
+        if chat:
+            return chat
+
+        # Fallback 1: check if slug is formatted as accountTag-chatTag
+        if "-" in slug:
+            parts = slug.split("-", 1)
+            chat_tag_target = parts[1]
+            user_chats = db.query(Chat).filter(Chat.user_id == user_id).all()
+            for c in user_chats:
+                if compute_chat_tag(c.id) == chat_tag_target:
+                    return c
+
+        # Fallback 2: check if slug matches chat_tag directly
+        user_chats = db.query(Chat).filter(Chat.user_id == user_id).all()
+        for c in user_chats:
+            if compute_chat_tag(c.id) == slug:
+                return c
+
+        return None
 
     def get_by_id(self, db: Session, chat_id: UUID, user_id: UUID) -> Optional[Chat]:
         """
@@ -144,11 +194,12 @@ class ChatRepository:
         title: str,
         user_id: UUID,
     ) -> bool:
-        """Update title of a chat. Verifies ownership."""
+        """Update title of a chat. Verifies ownership and enforces title uniqueness per user."""
+        unique_title = self.ensure_unique_title(db, user_id=user_id, desired_title=title, exclude_chat_id=chat_id)
         rows = (
             db.query(Chat)
             .filter(Chat.id == chat_id, Chat.user_id == user_id)
-            .update({"title": title}, synchronize_session=False)
+            .update({"title": unique_title}, synchronize_session=False)
         )
         return rows > 0
 

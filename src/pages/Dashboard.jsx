@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PlexisAPI } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +29,8 @@ function isUUID(str) {
 
 // Inner component — must be inside WorkspaceProvider to use useWorkspace
 function DashboardInner() {
+  const { chatRef } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const userId = user?.id || 'anonymous';
   const { isOpen: workspaceOpen, setDataset, buildWorkspaceSummaryPayload } = useWorkspace();
@@ -93,10 +96,15 @@ function DashboardInner() {
             );
           }
 
+          const isolationSlug = chat.slug || chat.share_slug || cached?.slug;
+
           return {
             id: chat.id,
             chatId: chat.id,
-            slug: chat.slug,
+            slug: isolationSlug,
+            shareSlug: isolationSlug,
+            accountTag: chat.account_tag || cached?.accountTag || null,
+            chatTag: chat.chat_tag || cached?.chatTag || null,
             title: finalTitle,
             pinned: cached?.pinned || false,
             datasetId: chat.current_dataset_id || cached?.datasetId || null,
@@ -123,7 +131,20 @@ function DashboardInner() {
         if (initialMerged.length > 0) {
           setConversations(initialMerged);
           saveConversations(userId, initialMerged);
-          setActiveId((prev) => (prev && initialMerged.some((c) => c.id === prev) ? prev : initialMerged[0].id));
+
+          // If chatRef is in URL, prioritize matching chat
+          if (chatRef) {
+            const matched = initialMerged.find(
+              (c) => c.slug === chatRef || c.shareSlug === chatRef || c.id === chatRef || c.chatId === chatRef
+            );
+            if (matched) {
+              setActiveId(matched.id);
+            } else {
+              setActiveId((prev) => (prev && initialMerged.some((c) => c.id === prev) ? prev : initialMerged[0].id));
+            }
+          } else {
+            setActiveId((prev) => (prev && initialMerged.some((c) => c.id === prev) ? prev : initialMerged[0].id));
+          }
         } else if (res.chats.length === 0 && localOnly.length === 0) {
           setConversations([]);
           saveConversations(userId, []);
@@ -189,6 +210,88 @@ function DashboardInner() {
       isMounted = false;
     };
   }, [userId]);
+
+  // ── Sync URL chatRef param to active chat & load direct links ─────────
+  useEffect(() => {
+    if (!chatRef) return;
+    const target = conversations.find(
+      (c) => c.slug === chatRef || c.shareSlug === chatRef || c.id === chatRef || c.chatId === chatRef
+    );
+    if (target) {
+      if (activeId !== target.id) {
+        setActiveId(target.id);
+      }
+      return;
+    }
+
+    // Direct link to chat not yet in local state -> load from backend
+    let isMounted = true;
+    async function loadDirectChat() {
+      try {
+        const fullChat = await PlexisAPI.loadChat(chatRef);
+        if (!isMounted || !fullChat || !fullChat.chat) return;
+
+        const backendMsgs = (fullChat.messages || []).map((m) => {
+          const isUser = m.role === 'user';
+          const meta = m.metadata || {};
+          return {
+            id: m.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            sender: isUser ? 'user' : (m.role === 'system' ? 'system_error' : 'ai'),
+            text: m.content || '',
+            hasChart: Boolean(meta.evidence?.has_chart || meta.chart_data),
+            chartData: meta.chart_data || null,
+            evidence: meta.evidence || null,
+            createdAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+            ...(meta.isFileCard && {
+              isFileCard: true,
+              fileName: meta.fileName,
+              fileSize: meta.fileSize,
+            }),
+          };
+        });
+
+        const newConv = {
+          id: fullChat.chat.id,
+          chatId: fullChat.chat.id,
+          slug: fullChat.chat.slug || chatRef,
+          shareSlug: fullChat.chat.slug || chatRef,
+          title: fullChat.chat.title || 'New Chat',
+          pinned: false,
+          datasetId: fullChat.current_dataset_id || null,
+          activeDatasetName: fullChat.current_dataset_id ? 'Active Dataset' : 'No active dataset',
+          datasetName: fullChat.current_dataset_id ? 'Active Dataset' : null,
+          messages: backendMsgs.length > 0 ? backendMsgs : [
+            {
+              id: 'welcome',
+              sender: 'ai',
+              text: '# Welcome to Plexis\nUpload a dataset or ask a question to begin your analysis session.',
+              hasChart: false,
+            },
+          ],
+          chartData: { labels: [], datasets: [] },
+          createdAt: fullChat.chat.created_at ? new Date(fullChat.chat.created_at).getTime() : Date.now(),
+          updatedAt: fullChat.chat.last_message_at ? new Date(fullChat.chat.last_message_at).getTime() : Date.now(),
+          named: fullChat.chat.title !== 'New Chat',
+        };
+
+        setConversations((prev) => {
+          const exists = prev.some((c) => c.id === newConv.id);
+          const next = exists ? prev : [newConv, ...prev];
+          saveConversations(userId, next);
+          return next;
+        });
+        setActiveId(newConv.id);
+      } catch (err) {
+        console.warn('[Dashboard] Direct link load failed for', chatRef, err);
+        navigate('/dashboard', { replace: true });
+      }
+    }
+
+    loadDirectChat();
+    return () => {
+      isMounted = false;
+    };
+  }, [chatRef, conversations, activeId, userId, navigate]);
 
   // ── Load full messages for active chat from backend if not yet loaded ──
   useEffect(() => {
@@ -502,11 +605,17 @@ function DashboardInner() {
     EventBus.emit(Events.CLEAR_CHAT_INPUT);
     setStagedFile(null);
     setSidebarMobileOpen(false);
+    navigate('/dashboard');
   };
 
   const handleSelectChat = (id) => {
     setActiveId(id);
     setSidebarMobileOpen(false);
+    const conv = conversations.find((c) => c.id === id);
+    const targetSlug = conv?.slug || conv?.shareSlug;
+    if (targetSlug && targetSlug.includes('-')) {
+      navigate(`/dashboard/${targetSlug}`);
+    }
   };
 
   // ── Send Message ───────────────────────────────────────────
@@ -540,16 +649,20 @@ function DashboardInner() {
           currentConv.id = newChatId;
           currentConv.slug = created.slug;
           targetId = newChatId;
+          currentConv.shareSlug = created.share_slug || created.slug;
           setConversations((prev) => {
             const next = prev.map((c) =>
               c.id === targetId || c.id === currentConv.id
-                ? { ...c, id: newChatId, chatId: newChatId, slug: created.slug }
+                ? { ...c, id: newChatId, chatId: newChatId, slug: created.slug, shareSlug: created.share_slug || created.slug }
                 : c
             );
             saveConversations(userId, next);
             return next;
           });
           setActiveId(newChatId);
+          if (created.slug && created.slug.includes('-')) {
+            navigate(`/dashboard/${created.slug}`, { replace: true });
+          }
         }
       } catch (err) {
         console.warn('[Dashboard] createChat pre-creation skipped, backend will resolve in /api/ask:', err);
@@ -808,6 +921,10 @@ function DashboardInner() {
           return next;
         });
         setActiveId(finalChatId);
+
+        if (currentConv.slug && currentConv.slug.includes('-')) {
+          navigate(`/dashboard/${currentConv.slug}`, { replace: true });
+        }
 
         // If the conversation already has a non-default title, persist it to finalChatId in DB
         if (currentTitle && currentTitle !== 'New Chat') {
@@ -1086,7 +1203,15 @@ function DashboardInner() {
           const next = deleteConversation(conversations, id);
           setConversations(next);
           saveConversations(userId, next);
-          if (activeId === id) setActiveId(next.length > 0 ? next[0].id : null);
+          if (activeId === id) {
+            const nextActive = next.length > 0 ? next[0] : null;
+            setActiveId(nextActive ? nextActive.id : null);
+            if (nextActive?.slug && nextActive.slug.includes('-')) {
+              navigate(`/dashboard/${nextActive.slug}`);
+            } else {
+              navigate('/dashboard');
+            }
+          }
           const dbId = target?.chatId || (isUUID(id) ? id : null);
           if (dbId) {
             try {

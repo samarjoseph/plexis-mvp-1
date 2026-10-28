@@ -107,10 +107,11 @@ def _try_persist_messages(chat_id, user_message, assistant_answer, evidence_dict
                     chat_uuid = _uuid.UUID(str(chat_id))
                     chat = chat_repository.get_by_id(db, chat_uuid, user.id)
                 except (ValueError, TypeError):
-                    chat = None
+                    chat = chat_repository.get_by_slug(db, str(chat_id), user.id)
 
             if not chat:
-                chat_title = user_message[:40] if user_message else "New Chat"
+                chat_title = _smart_fallback_title(user_message, getattr(ctx, 'filename', None))
+                chat_title = chat_repository.ensure_unique_title(db, user.id, chat_title)
                 ds_uuid = None
                 if getattr(ctx, 'dataset_id', None):
                     try:
@@ -523,13 +524,50 @@ def ask():
         return jsonify(err_dict), status
 
 
+def _smart_fallback_title(message: str, filename: str = None) -> str:
+    """
+    Generate a natural contextual fallback title without blindly echoing user words.
+    Never returns verbatim greetings like 'Hello Bro' or 'Hi'.
+    """
+    import os
+    import re
+    if filename:
+        name_part = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
+        return f"{name_part[:25]} Analysis"
+
+    msg = (message or "").strip().lower()
+    words = re.findall(r'[a-z0-9]+', msg)
+
+    greeting_patterns = {'hello', 'hi', 'hey', 'sup', 'yo', 'bro', 'goodmorning', 'goodevening', 'howdy', 'greetings', 'morning', 'evening'}
+    if not words:
+        return "Casual Greeting"
+    if all(w in greeting_patterns for w in words) or (words[0] in greeting_patterns and len(words) <= 3):
+        return "Casual Greeting"
+
+    test_patterns = {'test', 'testing', 'check', '123', 'ping'}
+    if any(t in words for t in test_patterns) and len(words) <= 3:
+        return "System Verification"
+
+    help_patterns = {'help', 'whoareyou', 'features', 'capabilities', 'whatcan'}
+    if any(p in "".join(words) for p in help_patterns):
+        return "Assistant Overview"
+
+    stopwords = {'the', 'a', 'an', 'is', 'can', 'you', 'me', 'what', 'how', 'why', 'show', 'please', 'i', 'do', 'we', 'are', 'this', 'that', 'of', 'for', 'in', 'on', 'with', 'analyze', 'analysis', 'tell'}
+    clean_words = [w for w in words if w not in stopwords]
+    if clean_words:
+        return " ".join(clean_words[:3]).title() + " Analysis"
+    return "General Discussion"
+
+
 @chat_bp.route('/title', methods=['POST'])
 @chat_bp.route('/chat/title', methods=['POST'])
 def generate_title_endpoint():
     """
     Fast endpoint for initial conversation naming using a small, lightweight LLM.
-    Generates a natural 2-5 word title based on the user's initial message
+    Generates a natural 2-4 word contextual topic title based on the user's initial message
     and/or uploaded dataset filename.
+    Strictly forbids verbatim echoing of user queries or greetings.
+    Guarantees no two chats share the same title in one user account.
     """
     import re
     import os
@@ -540,67 +578,92 @@ def generate_title_endpoint():
     if not message and not filename:
         return jsonify({"title": "New Chat", "status": "ok"})
 
+    from config import Config
     from providers.domain.contracts import AIRequest
     from providers.engine import provider_engine
+
+    system_prompt = (
+        "You are an expert conversation title generator. Your task is to output a concise, professional 2-to-4 word contextual topic title.\n"
+        "STRICT CONSTRAINTS:\n"
+        "1. NEVER repeat, verbatim copy, or merely Title-Case the user's prompt or greeting.\n"
+        "2. The title must capture the broader conceptual topic, analytical goal, or domain.\n"
+        "3. For casual greetings, chitchat, or generic pleasantries (e.g. 'hello bro', 'hi', 'hey there', 'what can you do', 'test', 'ping'): output conceptual titles like 'Casual Greeting', 'Friendly Introduction', 'General Discussion', 'Introductory Inquiry', or 'Assistant Overview'. NEVER use the words 'Hello', 'Bro', 'Hi', or 'Hey' in the title.\n"
+        "4. For analytical inquiries (e.g. 'can you summarize column A'): synthesize the analytical domain (e.g., 'Summary Statistics Review', 'Column Distribution Analysis').\n"
+        "5. Output ONLY the title inside double quotes, 2 to 4 words. No additional text."
+    )
 
     if filename and message:
         base_name = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
         prompt = (
-            f'A user uploaded a spreadsheet dataset named "{filename}" ({base_name}) and asked: "{message[:200]}". '
-            'Create a short, natural, professional conversation title in 2 to 4 words summarizing this session (for example "Flight Delay Analysis" or "Q3 Sales Overview"). '
-            'Do NOT include file extensions like .csv or .xlsx in the title. '
-            'Return ONLY the title text inside double quotes.'
+            f'A user uploaded a dataset named "{filename}" ({base_name}) and asked: "{message[:200]}".\n'
+            'Generate a concise, professional 2-to-4 word contextual topic title summarizing this session (e.g. "Flight Delay Analysis", "Quarterly Revenue Trends").\n'
+            'Do NOT echo the user question verbatim. Return ONLY the title text inside double quotes.'
         )
     elif filename:
         base_name = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
         prompt = (
-            f'A user uploaded a spreadsheet dataset named "{filename}" ({base_name}). '
-            'Create a short, natural, professional conversation title in 2 to 4 words summarizing this dataset session (for example "Sales Performance Report" or "Customer Churn Analysis"). '
-            'Do NOT include file extensions like .csv or .xlsx in the title. '
-            'Return ONLY the title text inside double quotes.'
+            f'A user uploaded a spreadsheet dataset named "{filename}" ({base_name}).\n'
+            'Create a short, professional conversation title in 2 to 4 words summarizing this dataset session (e.g. "Sales Performance Report", "Customer Churn Analysis").\n'
+            'Do NOT include file extensions like .csv or .xlsx. Return ONLY the title text inside double quotes.'
         )
     else:
         prompt = (
-            f'Message: "{message[:200]}". '
-            'Generate a concise, natural conversation title in 2 to 5 words capturing the subject. '
-            'Return ONLY the title text inside double quotes, e.g. "SaaS Revenue Trends".'
+            f'User message: "{message[:200]}".\n'
+            'Generate a concise 2-to-4 word contextual topic title capturing the underlying subject or intent.\n'
+            'CRITICAL: Do NOT copy or title-case the user\'s exact words. If the message is a casual greeting like "hello bro" or "hi", use a topic descriptor like "Casual Greeting" or "Friendly Introduction".\n'
+            'Return ONLY the title text inside double quotes.'
         )
 
+    cleaned = None
     try:
         response = provider_engine.generate(
             AIRequest(
                 task='title',
                 messages=[{"role": "user", "content": prompt}],
-                system_prompt="You generate concise 2-5 word conversation titles. Put the title inside double quotes.",
+                system_prompt=system_prompt,
                 temperature=0.3,
                 max_tokens=40,
             )
         )
         if response.success and response.text:
             raw_text = response.text.strip()
-            # Extract quoted text if present
-            quoted = re.findall(r'["\']([^"\']{2,40})["\']', raw_text)
+            quoted = re.findall(r"""["']([^"']{2,40})["']""", raw_text)
             if quoted and len(quoted[-1].split()) <= 7:
-                cleaned = quoted[-1].strip()
+                candidate = quoted[-1].strip()
             else:
                 lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
                 last_line = lines[-1] if lines else raw_text
-                last_line = re.sub(r'^(title|so something like|suggested title|here is a title):\s*', '', last_line, flags=re.I).strip(' "\'#*')
+                last_line = re.sub(r"^(title|so something like|suggested title|here is a title):\s*", "", last_line, flags=re.I).strip(' "' + "\'#*")
                 words = last_line.split()
-                cleaned = " ".join(words[:5]) if len(words) > 5 else last_line
+                candidate = " ".join(words[:4]) if len(words) > 4 else last_line
 
-            if cleaned:
-                cleaned = re.sub(r'\.(csv|xlsx|xls)$', '', cleaned, flags=re.I).strip()
-                return jsonify({"title": cleaned, "status": "ok"})
+            if candidate:
+                candidate = re.sub(r'\.(csv|xlsx|xls)$', '', candidate, flags=re.I).strip()
+                # Ensure LLM did not verbatim echo user words (e.g. 'Hello Bro' from 'hello bro')
+                msg_norm = re.sub(r'[^a-z0-9]', '', message.lower())
+                cand_norm = re.sub(r'[^a-z0-9]', '', candidate.lower())
+                greeting_words = {'hello', 'hi', 'hey', 'bro', 'yo', 'sup'}
+                cand_words = set(re.findall(r'[a-z0-9]+', candidate.lower()))
+                if cand_norm == msg_norm or (cand_words.issubset(greeting_words) and len(cand_words) > 0):
+                    candidate = _smart_fallback_title(message, filename)
+                cleaned = candidate
     except Exception as e:
         logger.warning("[chat] generate_title_endpoint failed: %s", e)
 
-    # Fallback if LLM fails
-    if filename:
-        name_part = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
-        return jsonify({"title": f"{name_part[:25]} Analysis", "status": "fallback"})
-    elif message:
-        words = message.split()[:4]
-        return jsonify({"title": " ".join(words).title(), "status": "fallback"})
+    if not cleaned:
+        cleaned = _smart_fallback_title(message, filename)
 
-    return jsonify({"title": "New Chat", "status": "default"})
+    # Enforce title uniqueness per user account in database
+    email = (request.headers.get("X-User-Email") or "").strip().lower()
+    if email and Config.DATABASE_URL:
+        try:
+            from db.session import db_session
+            from db.repositories.user_repository import user_repository
+            from db.repositories.chat_repository import chat_repository
+            with db_session() as db:
+                user = user_repository.get_or_create_by_email(db, email)
+                cleaned = chat_repository.ensure_unique_title(db, user.id, cleaned)
+        except Exception as ue:
+            logger.debug("[chat] ensure_unique_title in /api/title error: %s", ue)
+
+    return jsonify({"title": cleaned, "status": "ok"})
