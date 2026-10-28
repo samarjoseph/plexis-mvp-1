@@ -38,6 +38,8 @@ function DashboardInner() {
   // ── State ──────────────────────────────────────────────────
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
+  const [isChatRouteLoading, setIsChatRouteLoading] = useState(() => Boolean(chatRef));
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
   const [analyticsCollapsed, setAnalyticsCollapsed] = useState(true);
@@ -70,7 +72,14 @@ function DashboardInner() {
     const stored = loadConversations(userId);
     if (stored.length > 0) {
       setConversations(stored);
-      setActiveId((prev) => (prev && stored.some((c) => c.id === prev) ? prev : stored[0].id));
+      if (chatRef) {
+        const matched = stored.find(
+          (c) => c.slug === chatRef || c.shareSlug === chatRef || c.id === chatRef || c.chatId === chatRef
+        );
+        setActiveId(matched ? matched.id : null);
+      } else {
+        setActiveId(null);
+      }
     } else {
       setConversations([]);
       setActiveId(null);
@@ -132,18 +141,14 @@ function DashboardInner() {
           setConversations(initialMerged);
           saveConversations(userId, initialMerged);
 
-          // If chatRef is in URL, prioritize matching chat
+          // If chatRef is in URL, activate matching chat; otherwise keep activeId null (home page)
           if (chatRef) {
             const matched = initialMerged.find(
               (c) => c.slug === chatRef || c.shareSlug === chatRef || c.id === chatRef || c.chatId === chatRef
             );
-            if (matched) {
-              setActiveId(matched.id);
-            } else {
-              setActiveId((prev) => (prev && initialMerged.some((c) => c.id === prev) ? prev : initialMerged[0].id));
-            }
+            setActiveId(matched ? matched.id : null);
           } else {
-            setActiveId((prev) => (prev && initialMerged.some((c) => c.id === prev) ? prev : initialMerged[0].id));
+            setActiveId(null);
           }
         } else if (res.chats.length === 0 && localOnly.length === 0) {
           setConversations([]);
@@ -213,7 +218,14 @@ function DashboardInner() {
 
   // ── Sync URL chatRef param to active chat & load direct links ─────────
   useEffect(() => {
-    if (!chatRef) return;
+    if (!chatRef) {
+      setIsChatRouteLoading(false);
+      if (activeId !== null) {
+        setActiveId(null);
+      }
+      return;
+    }
+
     const target = conversations.find(
       (c) => c.slug === chatRef || c.shareSlug === chatRef || c.id === chatRef || c.chatId === chatRef
     );
@@ -221,11 +233,16 @@ function DashboardInner() {
       if (activeId !== target.id) {
         setActiveId(target.id);
       }
+      if (target.messages && target.messages.length > 0) {
+        setIsChatRouteLoading(false);
+      }
       return;
     }
 
     // Direct link to chat not yet in local state -> load from backend
     let isMounted = true;
+    setIsChatRouteLoading(true);
+
     async function loadDirectChat() {
       try {
         const fullChat = await PlexisAPI.loadChat(chatRef);
@@ -284,6 +301,10 @@ function DashboardInner() {
       } catch (err) {
         console.warn('[Dashboard] Direct link load failed for', chatRef, err);
         navigate('/dashboard', { replace: true });
+      } finally {
+        if (isMounted) {
+          setIsChatRouteLoading(false);
+        }
       }
     }
 
@@ -1270,6 +1291,7 @@ function DashboardInner() {
           onCancelFile={() => setStagedFile(null)}
           onFileSizeError={handleFileSizeError}
           isLoading={isLoading}
+          isChatRouteLoading={isChatRouteLoading}
           activeDatasetName={activeConversation?.activeDatasetName}
           activeDatasetId={activeConversation?.datasetId}
           activeSessionId={activeId}

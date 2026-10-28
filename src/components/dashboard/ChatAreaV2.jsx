@@ -6,6 +6,8 @@ import {
 import PlexisLogo from '../brand/PlexisLogo';
 import MessageBubbleV2 from './MessageBubbleV2';
 import AIThinkingIndicator from './AIThinkingIndicator';
+import ConversationLoadingScreen from './ConversationLoadingScreen';
+
 import ChatInputBar from './ChatInputBar';
 import { useAuth } from '../../context/AuthContext';
 import { LogoToggle } from './SidebarV2';
@@ -168,6 +170,7 @@ export default function ChatAreaV2({
   onCancelFile,
   onFileSizeError,
   isLoading,
+  isChatRouteLoading = false,
   activeDatasetName,
   activeDatasetId,
   activeSessionId,
@@ -212,9 +215,26 @@ export default function ChatAreaV2({
     return () => el.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const prevSessionIdRef = useRef(activeSessionId);
+  const isInitialLoadRef = useRef(true);
+
   useEffect(() => {
-    if (!userScrolledUp) {
-      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (prevSessionIdRef.current !== activeSessionId) {
+      prevSessionIdRef.current = activeSessionId;
+      isInitialLoadRef.current = true;
+    }
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!userScrolledUp && scrollRef.current) {
+      if (isInitialLoadRef.current) {
+        scrollRef.current.scrollIntoView({ behavior: 'auto' });
+        if (messages.length > 0) {
+          isInitialLoadRef.current = false;
+        }
+      } else {
+        scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
     }
   }, [messages, isLoading, userScrolledUp]);
 
@@ -230,7 +250,7 @@ export default function ChatAreaV2({
   }, [onInputChange]);
 
   const firstName = user?.name?.split(' ')[0] || '';
-  const showWelcome = messages.length === 0 && !isLoading;
+  const showWelcome = messages.length === 0 && !isLoading && !isChatRouteLoading;
 
   return (
     <main className="v2-chat">
@@ -287,6 +307,11 @@ export default function ChatAreaV2({
           </AnimatePresence>
         </div>
       </header>
+
+      {/* ── AI-ish Loading Transition ── */}
+      <AnimatePresence>
+        {isChatRouteLoading && <ConversationLoadingScreen />}
+      </AnimatePresence>
 
       {/* ── Messages feed (memoized) ── */}
       <ChatMessageList

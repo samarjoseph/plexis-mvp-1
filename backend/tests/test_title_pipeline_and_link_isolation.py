@@ -168,3 +168,18 @@ def test_chat_url_link_isolation(test_client, user_a_email, user_b_email):
         headers={"X-User-Email": user_b_email},
     )
     assert res_load_b.status_code == 404
+
+
+def test_title_pipeline_avoids_conversational_greeting_response(test_client, user_a_email):
+    """Title generation for 'hi' must NOT be a dialogue response like 'Hello There' or 'Hi'."""
+    res = test_client.post(
+        "/api/title",
+        headers={"X-User-Email": user_a_email, "Content-Type": "application/json"},
+        json={"message": "hi"},
+    )
+    assert res.status_code == 200
+    title = res.get_json().get("title")
+    assert title is not None
+    assert "hello there" not in title.lower()
+    assert title.lower() != "hi"
+    assert not any(w in title.lower().split() for w in ["hi", "hello", "there", "hey"])

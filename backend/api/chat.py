@@ -541,11 +541,11 @@ def _smart_fallback_title(message: str, filename: str = None) -> str:
     msg = (message or "").strip().lower()
     words = re.findall(r'[a-z0-9]+', msg)
 
-    greeting_patterns = {'hello', 'hi', 'hey', 'sup', 'yo', 'bro', 'goodmorning', 'goodevening', 'howdy', 'greetings', 'morning', 'evening'}
+    greeting_patterns = {'hello', 'hi', 'hey', 'sup', 'yo', 'bro', 'goodmorning', 'goodevening', 'howdy', 'greetings', 'morning', 'evening', 'there'}
     if not words:
-        return "Casual Greeting"
+        return "Introductory Conversation"
     if all(w in greeting_patterns for w in words) or (words[0] in greeting_patterns and len(words) <= 3):
-        return "Casual Greeting"
+        return "Introductory Conversation"
 
     test_patterns = {'test', 'testing', 'check', '123', 'ping'}
     if any(t in words for t in test_patterns) and len(words) <= 3:
@@ -605,14 +605,14 @@ def generate_title_endpoint():
         avoid_clause = f"\nExisting titles in this account: [{titles_sample}]. Pick a distinct title that is not already in this list."
 
     system_prompt = (
-        "You are an intelligent title generator for Plexis, a data analytics platform.\n"
-        "Your objective is to synthesize the essence of the user's opening message (and optional dataset filename) into a concise, natural, professional conversation title in 2 to 4 words.\n\n"
-        "Principles:\n"
-        "1. Do not verbatim copy or merely title-case the user's exact words.\n"
-        "2. Understand the context and intent of the conversation. Decide on your own what title is most fitting, natural, and descriptive.\n"
-        "3. For casual greetings, pleasantries, or testing, choose a natural, engaging conversation title reflecting an opening exchange without directly echoing slang or greetings.\n"
-        "4. If a list of existing chat titles is provided, ensure your proposed title is unique and distinct from all of them.\n"
-        "5. Output ONLY the title text inside double quotes. No introductory or explanatory text."
+        "You are an intelligent session title generator for Plexis, a modern data analytics platform.\n"
+        "Your task is to generate a concise, professional 2-to-4 word TOPICAL HEADLINE describing the subject matter or user's analytical intent.\n\n"
+        "CRITICAL RULES:\n"
+        "1. A title is a TOPICAL HEADLINE or LABEL, NEVER a conversational reply, greeting, or dialogue response (e.g. NEVER output 'Hello There', 'Hi There', 'Hey Friend', 'Nice To Meet You', 'How Can I Help', 'Welcome').\n"
+        "2. For casual greetings, pleasantries, or testing (e.g. 'hi', 'hello', 'hey bro', 'test'): output professional descriptive topic titles such as 'Introductory Conversation', 'Initial Inquiry', 'General Discussion', or 'Platform Overview'. NEVER use conversational words like 'Hello', 'Hi', 'Hey', 'Bro', 'There', 'Yo' in the title.\n"
+        "3. For analytical inquiries: formulate a clear topical headline summarizing the analytical goal (e.g. 'Revenue Trend Analysis', 'Customer Churn Factors', 'Flight Delay Overview').\n"
+        "4. If a list of existing chat titles is provided, choose a distinct title not in that list.\n"
+        "5. Output ONLY the title text inside double quotes, 2 to 4 words. No additional text."
     )
 
     if filename and message:
@@ -664,9 +664,13 @@ def generate_title_endpoint():
                 # Ensure LLM did not verbatim echo user words (e.g. 'Hello Bro' from 'hello bro')
                 msg_norm = re.sub(r'[^a-z0-9]', '', message.lower())
                 cand_norm = re.sub(r'[^a-z0-9]', '', candidate.lower())
-                greeting_words = {'hello', 'hi', 'hey', 'bro', 'yo', 'sup'}
+                conversational_words = {
+                    'hello', 'hi', 'hey', 'bro', 'yo', 'sup', 'howdy', 'there',
+                    'greetings', 'morning', 'afternoon', 'evening', 'welcome', 'friend',
+                    'buddy', 'dude', 'mate'
+                }
                 cand_words = set(re.findall(r'[a-z0-9]+', candidate.lower()))
-                if cand_norm == msg_norm or (cand_words.issubset(greeting_words) and len(cand_words) > 0):
+                if cand_norm == msg_norm or any(w in conversational_words for w in cand_words):
                     candidate = _smart_fallback_title(message, filename)
                 cleaned = candidate
     except Exception as e:
