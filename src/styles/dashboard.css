@@ -715,6 +715,7 @@
 
 /* ── CHAT AREA ──────────────────────────────────────────────── */
 .v2-chat {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -785,7 +786,6 @@
   flex: 1;
   overflow-y: auto;
   padding: 24px 24px 8px;
-  scroll-behavior: smooth;
 }
 
 /* Welcome State */

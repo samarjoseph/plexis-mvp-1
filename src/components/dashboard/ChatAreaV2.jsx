@@ -215,28 +215,38 @@ export default function ChatAreaV2({
     return () => el.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const prevSessionIdRef = useRef(activeSessionId);
-  const isInitialLoadRef = useRef(true);
+  const activeSessionRef = useRef(activeSessionId);
+  const lastMsgCountRef = useRef(messages.length);
 
+  // Synchronously snap directly to bottom on mount or when switching chats (never animate from top)
   useEffect(() => {
-    if (prevSessionIdRef.current !== activeSessionId) {
-      prevSessionIdRef.current = activeSessionId;
-      isInitialLoadRef.current = true;
-    }
-  }, [activeSessionId]);
-
-  useEffect(() => {
-    if (!userScrolledUp && scrollRef.current) {
-      if (isInitialLoadRef.current) {
-        scrollRef.current.scrollIntoView({ behavior: 'auto' });
-        if (messages.length > 0) {
-          isInitialLoadRef.current = false;
-        }
-      } else {
-        scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (activeSessionRef.current !== activeSessionId) {
+      activeSessionRef.current = activeSessionId;
+      lastMsgCountRef.current = messages.length;
+      if (chatBodyRef.current) {
+        chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
       }
     }
-  }, [messages, isLoading, userScrolledUp]);
+  }, [activeSessionId, messages.length]);
+
+  // Keep scroll at bottom without animating entire history
+  useEffect(() => {
+    const el = chatBodyRef.current;
+    if (!el || userScrolledUp) return;
+
+    // While route is loading or initial chat display: snap directly to bottom without animation
+    if (isChatRouteLoading || messages.length <= lastMsgCountRef.current) {
+      el.scrollTop = el.scrollHeight;
+      lastMsgCountRef.current = messages.length;
+      return;
+    }
+
+    // Only when new message arrives in current chat during generation: smooth scroll
+    if (isLoading || messages.length > lastMsgCountRef.current) {
+      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+      lastMsgCountRef.current = messages.length;
+    }
+  }, [messages, isLoading, isChatRouteLoading, userScrolledUp]);
 
   const handleUploadClick = useCallback(() => {
     document.getElementById('dataset-upload-input')?.click();

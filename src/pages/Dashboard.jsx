@@ -226,6 +226,9 @@ function DashboardInner() {
       return;
     }
 
+    const MIN_LOAD_MS = 500;
+    const loadStart = Date.now();
+
     const target = conversations.find(
       (c) => c.slug === chatRef || c.shareSlug === chatRef || c.id === chatRef || c.chatId === chatRef
     );
@@ -233,10 +236,12 @@ function DashboardInner() {
       if (activeId !== target.id) {
         setActiveId(target.id);
       }
-      if (target.messages && target.messages.length > 0) {
+      const elapsed = Date.now() - loadStart;
+      const delay = Math.max(100, MIN_LOAD_MS - elapsed);
+      const timer = setTimeout(() => {
         setIsChatRouteLoading(false);
-      }
-      return;
+      }, delay);
+      return () => clearTimeout(timer);
     }
 
     // Direct link to chat not yet in local state -> load from backend
@@ -302,9 +307,11 @@ function DashboardInner() {
         console.warn('[Dashboard] Direct link load failed for', chatRef, err);
         navigate('/dashboard', { replace: true });
       } finally {
-        if (isMounted) {
-          setIsChatRouteLoading(false);
-        }
+        const elapsed = Date.now() - loadStart;
+        const delay = Math.max(100, MIN_LOAD_MS - elapsed);
+        setTimeout(() => {
+          if (isMounted) setIsChatRouteLoading(false);
+        }, delay);
       }
     }
 
@@ -630,12 +637,20 @@ function DashboardInner() {
   };
 
   const handleSelectChat = (id) => {
+    if (id !== activeId) {
+      setIsChatRouteLoading(true);
+      setTimeout(() => {
+        setIsChatRouteLoading(false);
+      }, 550);
+    }
     setActiveId(id);
     setSidebarMobileOpen(false);
     const conv = conversations.find((c) => c.id === id);
     const targetSlug = conv?.slug || conv?.shareSlug;
     if (targetSlug && targetSlug.includes('-')) {
       navigate(`/dashboard/${targetSlug}`);
+    } else {
+      navigate('/dashboard');
     }
   };
 
