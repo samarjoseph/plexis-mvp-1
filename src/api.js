@@ -17,7 +17,15 @@ const BASE_URL = RAW_BASE_URL
  * Set via: localStorage.setItem('plexis_user_email', 'user@example.com')
  */
 export function getPlexisUserEmail() {
-  return localStorage.getItem('plexis_user_email') || 'dev@plexis.local';
+  try {
+    const authSession = localStorage.getItem('plexis_auth_session');
+    if (authSession) {
+      const parsed = JSON.parse(authSession);
+      if (parsed?.user?.email) return parsed.user.email.trim().toLowerCase();
+    }
+  } catch (_) {}
+  const raw = localStorage.getItem('plexis_user_email');
+  return (raw ? raw.trim().toLowerCase() : '') || 'dev@plexis.local';
 }
 
 /** Default headers for all API requests. */
@@ -60,12 +68,18 @@ export const PlexisAPI = {
    */
   async askQuestion(message, datasetContextId = '', options = {}) {
     const { workspaceState = null, workspaceAction = null, sessionId = null, chatId = null } = options;
+    const cleanDatasetId = (
+      datasetContextId &&
+      typeof datasetContextId === 'string' &&
+      !['no active dataset', 'none', 'null', 'undefined'].includes(datasetContextId.trim().toLowerCase())
+    ) ? datasetContextId.trim() : null;
+
     const response = await fetch(`${BASE_URL}/api/ask`, {
       method: 'POST',
       headers: defaultHeaders(),
       body: JSON.stringify({
         message,
-        dataset_id: datasetContextId,
+        dataset_id: cleanDatasetId,
         session_id: sessionId,
         workspace_state: workspaceState,
         workspace_action: workspaceAction,

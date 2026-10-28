@@ -124,10 +124,8 @@ class OpenRouterProvider(IProviderAdapter):
             msg = choices[0].get('message', {}) if choices else {}
             raw_content = msg.get('content')
             text = (raw_content or '').strip()
-            if not text:
-                reasoning = msg.get('reasoning')
-                if reasoning:
-                    text = str(reasoning).strip()
+            # Security: NEVER fall back to msg.get('reasoning').
+            # Internal model reasoning traces must never be treated as user-visible content.
 
             usage = data.get('usage', {})
             input_tokens = usage.get('prompt_tokens', 0)

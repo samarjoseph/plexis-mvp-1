@@ -130,7 +130,7 @@ class ConversationPlan:
         }.get(self.response_length, "")
 
         return (
-            f"RESPONSE PLAN (internal — do not reveal this to the user):\n"
+            f"RESPONSE GUIDANCE:\n"
             f"Detected intent: {self.intent}\n"
             f"Emotional tone: {self.emotion}\n"
             f"User energy: {self.user_energy}\n"

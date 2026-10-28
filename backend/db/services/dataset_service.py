@@ -295,6 +295,33 @@ class DatasetService:
         try:
             from datasets.registry import dataset_registry, DatasetEntry
             from datetime import datetime, timezone
+            # Deserialize DKO from PostgreSQL JSONB if present
+            dko = None
+            if hasattr(dataset, 'dko_json') and dataset.dko_json:
+                try:
+                    from db.dko_serializer import dko_serializer
+                    dko = dko_serializer.deserialize(dataset.dko_json)
+                except Exception as dko_err:
+                    logger.debug("[DATASET_SVC] DKO deserialization failed: %s", dko_err)
+
+            schema_profile = []
+            column_profiles = {}
+            if dko and hasattr(dko, 'columns') and dko.columns:
+                schema_profile = [c.to_dict() for c in dko.columns.values()]
+                for k, v in dko.columns.items():
+                    if hasattr(v, 'numeric_stats') and v.numeric_stats:
+                        column_profiles[k] = v.numeric_stats.to_dict()
+                    elif hasattr(v, 'categorical_stats') and v.categorical_stats:
+                        column_profiles[k] = v.categorical_stats.to_dict()
+                    elif hasattr(v, 'datetime_stats') and v.datetime_stats:
+                        column_profiles[k] = v.datetime_stats.to_dict()
+                    else:
+                        column_profiles[k] = {}
+            elif df is not None:
+                schema_profile = [{'name': c, 'dtype': str(df[c].dtype)} for c in df.columns]
+
+            profile = dataset.profile_json or (dko.to_dict() if dko and hasattr(dko, 'to_dict') else {})
+
             entry = DatasetEntry(
                 dataset_id=str(dataset.id),
                 filename=dataset.original_filename,
@@ -305,11 +332,11 @@ class DatasetService:
                 file_fingerprint=dataset.file_hash or "",
                 schema_fingerprint=dataset.file_hash or "",
                 dataframe=df,
-                profile={},
-                schema_profile=[],
-                column_profiles={},
+                profile=profile,
+                schema_profile=schema_profile,
+                column_profiles=column_profiles,
                 ontology=None,
-                dko=None,  # DKO will be loaded/regenerated separately
+                dko=dko,
             )
             dataset_registry.register(entry)
             logger.debug("[DATASET_SVC] Re-registered dataset %s in L1 cache", dataset.id)

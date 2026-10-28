@@ -357,6 +357,22 @@ def ask():
             chat_id=chat_id,    # enables chat-scoped dataset restore on L1 cache miss
         )
 
+        # 1b. Check if dataset metadata exists but data access failed (recoverable error)
+        if getattr(ctx, 'dataset_access_failed', False):
+            err_msg = getattr(ctx, 'dataset_resolution_error', None) or (
+                f"Dataset '{getattr(ctx, 'dataset_filename', 'active dataset')}' is recognized, but its underlying data "
+                "could not be loaded from storage. Please re-upload or select the dataset again."
+            )
+            logger.warning("[ChatAPI] Returning recoverable dataset storage error: %s", err_msg)
+            return success_response(
+                answer=err_msg,
+                intent="conversation",
+                confidence=1.0,
+                session_id=ctx.session_id,
+                execution_class="Class_C",
+                error=err_msg,
+            )
+
         # 2. Route to the correct engine
         result = master_router.route(ctx)
 
@@ -366,10 +382,10 @@ def ask():
         final_result = response_composer.compose(ctx, result)
         ctx.complete_stage(comp_stage)
 
-        # 3b. Strict final sanitization against chain-of-thought and prompt leakage
-        from utils.text_sanitizer import strip_thinking_and_internal_reasoning
+        # 3b. Strict final sanitization and response boundary against chain-of-thought and prompt leakage
+        from utils.response_boundary import enforce_response_boundary
         if final_result and final_result.answer:
-            final_result.answer = strip_thinking_and_internal_reasoning(final_result.answer)
+            final_result.answer = enforce_response_boundary(final_result.answer, ctx)
 
         # 4. Record in conversation memory
         request_pipeline.record_response(ctx, message, final_result.answer)

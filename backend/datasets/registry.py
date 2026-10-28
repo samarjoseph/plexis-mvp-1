@@ -74,9 +74,14 @@ class DatasetRegistry:
             from db.session import get_db
             from db.services.dataset_service import dataset_service
             
+            try:
+                ds_uuid = uuid.UUID(str(dataset_id))
+            except (ValueError, TypeError):
+                return None
+
             db = get_db()
             if db:
-                dataset, df = dataset_service.restore_dataset_df(db, uuid.UUID(dataset_id), user_id)
+                dataset, df = dataset_service.restore_dataset_df(db, ds_uuid, user_id)
                 if dataset is not None and df is not None:
                     return self._datasets.get(dataset_id)
         except Exception as e:

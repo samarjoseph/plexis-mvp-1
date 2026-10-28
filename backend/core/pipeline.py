@@ -32,7 +32,14 @@ class RequestPipeline:
 
         # Stage 1: Request ID
         stage = ctx.start_stage('request_id_generation')
-        ctx.request_id = getattr(g, 'request_id', '')
+        try:
+            from flask import has_request_context, has_app_context
+            if has_request_context() or has_app_context():
+                ctx.request_id = getattr(g, 'request_id', '')
+            else:
+                ctx.request_id = ''
+        except Exception:
+            ctx.request_id = ''
         ctx.complete_stage(stage)
 
         # Stage 2: Session Resolution
@@ -112,20 +119,29 @@ class RequestPipeline:
         chat_id: Optional[str] = None,
     ) -> None:
         """
-        Resolve the dataset for this request.
+        Resolve the authoritative dataset for this user/session request.
 
         Resolution order (first match wins):
           1. Explicit dataset_id → L1 registry lookup
           2. Explicit dataset_id → L2 DB restore (server restart / cold cache)
-          3. chat_id → DB current_dataset_id → L2 restore  ← NEW: chat-scoped durable restore
-          4. session.active_dataset_id → L1 lookup
-          5. Registry last active dataset (global fallback)
+          3. chat_id → DB current_dataset_id → L2 restore (chat-scoped durable restore)
+          4. session.active_dataset_id → L1 lookup or L2 restore
 
-        The L2 restore path (steps 2 & 3) uses dataset_service.restore_dataset_df()
-        which reads compressed bytes directly from PostgreSQL BYTEA storage.
-        No file path dependency — survives server restart and storage resets.
+        NO GLOBAL FALLBACK: To prevent state cross-contamination across users or sessions,
+        we never silently fall back to an unrelated active dataset.
         """
         entry = None
+
+        # Sanitize explicit dataset_id
+        requested_dataset_id = None
+        if dataset_id:
+            cleaned_ds = str(dataset_id).strip()
+            if cleaned_ds.lower() not in ("no active dataset", "none", "null", "undefined", ""):
+                dataset_id = cleaned_ds
+                requested_dataset_id = cleaned_ds
+            else:
+                dataset_id = None
+        ctx.requested_dataset_id = requested_dataset_id
 
         # ── Step 1: Explicit dataset_id → L1 ─────────────────────────────────
         if dataset_id:
@@ -142,10 +158,6 @@ class RequestPipeline:
                 )
 
         # ── Step 3: chat_id → DB current_dataset → L2 restore ────────────────
-        # This is the core restart-safe behavior:
-        # When L1 is cold (server just restarted), look up the chat's
-        # current_dataset_id from PostgreSQL and restore it automatically.
-        # This is chat-scoped: each chat remembers its own active dataset.
         if not entry and chat_id:
             entry = self._try_restore_from_chat(chat_id)
             if entry:
@@ -157,10 +169,36 @@ class RequestPipeline:
         # ── Step 4: Session cache ─────────────────────────────────────────────
         if not entry and session.active_dataset_id:
             entry = dataset_registry.get(session.active_dataset_id)
+            if not entry:
+                entry = self._try_restore_from_db(session.active_dataset_id, chat_id)
 
-        # ── Step 5: Last active (global fallback) ─────────────────────────────
-        if not entry:
-            entry = dataset_registry.get_active_dataset()
+        # ── Step 4b: Check if metadata exists but data access failed ──────────
+        if not entry and requested_dataset_id:
+            try:
+                from db.session import db_session
+                from db.repositories.dataset_repository import dataset_repository
+                from db.repositories.user_repository import user_repository
+                from flask import request as flask_request
+                import uuid as _uuid
+                email = ((flask_request.headers.get('X-User-Email') or '').strip().lower() or 'dev@plexis.local') if has_request_context() else 'dev@plexis.local'
+                with db_session() as db:
+                    user = user_repository.get_or_create_by_email(db, email)
+                    try:
+                        ds_uuid = _uuid.UUID(str(requested_dataset_id))
+                        db_ds = dataset_repository.get_by_id(db, ds_uuid, user.id)
+                        if db_ds:
+                            # Dataset metadata exists for this user, but DataFrame retrieval failed
+                            ctx.dataset_id = str(db_ds.id)
+                            ctx.dataset_filename = db_ds.original_filename
+                            ctx.dataset_access_failed = True
+                            ctx.dataset_resolution_error = (
+                                f"Dataset '{db_ds.original_filename}' is registered, but its underlying data "
+                                "could not be retrieved from storage. Please re-upload or select the dataset again."
+                            )
+                    except (ValueError, TypeError):
+                        pass
+            except Exception as ex:
+                logger.debug("[Pipeline] Metadata availability check failed: %s", ex)
 
         # ── Hydrate context ───────────────────────────────────────────────────
         if entry:
@@ -197,13 +235,23 @@ class RequestPipeline:
             from flask import request as flask_request
             import uuid as _uuid
 
-            email = (
-                flask_request.headers.get('X-User-Email') or ''
-            ).strip().lower() or 'dev@plexis.local'
+            from flask import has_request_context
+            if has_request_context():
+                email = (flask_request.headers.get('X-User-Email') or '').strip().lower() or 'dev@plexis.local'
+            else:
+                email = 'dev@plexis.local'
 
             with db_session() as db:
                 user = user_repository.get_or_create_by_email(db, email)
-                ds_uuid = _uuid.UUID(str(dataset_id))
+                try:
+                    ds_uuid = _uuid.UUID(str(dataset_id))
+                except (ValueError, TypeError):
+                    from db.models.dataset import Dataset
+                    db_ds = db.query(Dataset).filter(Dataset.user_id == user.id, Dataset.original_filename == str(dataset_id)).order_by(Dataset.created_at.desc()).first()
+                    if db_ds:
+                        ds_uuid = db_ds.id
+                    else:
+                        return None
                 _dataset, df = dataset_service.restore_dataset_df(db, ds_uuid, user.id)
 
             if df is not None:
@@ -240,13 +288,23 @@ class RequestPipeline:
             from flask import request as flask_request
             import uuid as _uuid
 
-            email = (
-                flask_request.headers.get('X-User-Email') or ''
-            ).strip().lower() or 'dev@plexis.local'
+            from flask import has_request_context
+            if has_request_context():
+                email = (flask_request.headers.get('X-User-Email') or '').strip().lower() or 'dev@plexis.local'
+            else:
+                email = 'dev@plexis.local'
 
             with db_session() as db:
                 user = user_repository.get_or_create_by_email(db, email)
-                chat_uuid = _uuid.UUID(str(chat_id))
+                try:
+                    chat_uuid = _uuid.UUID(str(chat_id))
+                except (ValueError, TypeError):
+                    from db.models.chat import Chat
+                    chat_obj = db.query(Chat).filter(Chat.user_id == user.id, Chat.slug == str(chat_id)).first()
+                    chat_uuid = chat_obj.id if chat_obj else None
+
+                if not chat_uuid:
+                    return None
 
                 # Ownership-verified chat lookup
                 chat = chat_repository.get_by_id(db, chat_uuid, user.id)

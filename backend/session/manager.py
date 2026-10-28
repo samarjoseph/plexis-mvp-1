@@ -23,12 +23,12 @@ class SessionManager:
     def __init__(self) -> None:
         self._sessions: Dict[str, Session] = {}
     
-    def create_session(self, user_id: Optional[str] = None) -> Session:
+    def create_session(self, user_id: Optional[str] = None, session_id: Optional[str] = None) -> Session:
         """Create a new session."""
-        session_id = str(uuid.uuid4())
-        session = Session(session_id=session_id, user_id=user_id)
-        self._sessions[session_id] = session
-        logger.info(f"Created session {session_id}")
+        sid = session_id or str(uuid.uuid4())
+        session = Session(session_id=sid, user_id=user_id)
+        self._sessions[sid] = session
+        logger.info(f"Created session {sid}")
         return session
     
     def get_session(self, session_id: str) -> Optional[Session]:
@@ -44,6 +44,7 @@ class SessionManager:
             session = self.get_session(session_id)
             if session:
                 return session
+            return self.create_session(session_id=session_id)
         return self.create_session()
     
     def update_dataset(self, session_id: str, dataset_id: str) -> None:

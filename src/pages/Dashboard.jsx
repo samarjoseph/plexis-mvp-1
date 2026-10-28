@@ -398,7 +398,7 @@ function DashboardInner() {
       uploadStream.reset();
 
       try {
-        const response = await PlexisAPI.uploadCSVStream(runtimeFile, runtimeText);
+        const response = await PlexisAPI.uploadCSVStream(runtimeFile, runtimeText, currentConv?.chatId || null);
         if (!response.ok) {
           let errBody = {};
           try { errBody = await response.json(); } catch (_) {}
@@ -548,7 +548,7 @@ function DashboardInner() {
 
       const apiResult = await PlexisAPI.askQuestion(
         runtimeText,
-        currentConv.datasetId || currentConv.activeDatasetName || '',
+        currentConv.datasetId || (currentConv.datasetName && currentConv.datasetName !== 'No active dataset' && !currentConv.datasetName.startsWith('New Chat') ? currentConv.datasetName : '') || '',
         {
           workspaceState: workspaceOpen ? workspaceState : null,
           workspaceAction,

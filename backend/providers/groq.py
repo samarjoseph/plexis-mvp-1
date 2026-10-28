@@ -162,11 +162,9 @@ class GroqProvider(IProviderAdapter):
             latency_ms = (time.time() - start_time) * 1000
             choices = data.get("choices", [])
             msg = choices[0].get("message", {}) if choices else {}
-            content = msg.get("content") or ""
-            if not content.strip():
-                reasoning = msg.get("reasoning")
-                if reasoning:
-                    content = str(reasoning).strip()
+            content = (msg.get("content") or "").strip()
+            # Security: NEVER fall back to msg.get("reasoning").
+            # Internal model reasoning traces must never be treated as user-visible content.
 
             usage = data.get("usage", {})
             input_tokens = usage.get("prompt_tokens", 0)

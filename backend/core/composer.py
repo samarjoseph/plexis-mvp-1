@@ -107,8 +107,8 @@ class ResponseComposer:
         )
 
         if response.success:
-            from utils.text_sanitizer import strip_thinking_and_internal_reasoning
-            clean_text = strip_thinking_and_internal_reasoning(response.text)
+            from utils.response_boundary import enforce_response_boundary
+            clean_text = enforce_response_boundary(response.text, context)
             result.answer = clean_text
             result.provider = response.provider
 
@@ -214,6 +214,10 @@ class ResponseComposer:
                     result.composer_failed = True
 
             result.error = response.error
+
+        if result and result.answer:
+            from utils.response_boundary import enforce_response_boundary
+            result.answer = enforce_response_boundary(result.answer, context)
 
         return result
 

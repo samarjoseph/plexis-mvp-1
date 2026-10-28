@@ -204,8 +204,8 @@ class ConversationEngine(BaseEngine):
         )
 
         if response.success:
-            from utils.text_sanitizer import strip_thinking_and_internal_reasoning
-            clean_answer = strip_thinking_and_internal_reasoning(response.text)
+            from utils.response_boundary import enforce_response_boundary
+            clean_answer = enforce_response_boundary(response.text, context)
             return EngineResult(
                 answer=clean_answer,
                 source='conversation',
@@ -241,6 +241,20 @@ class ConversationEngine(BaseEngine):
         message = getattr(context, 'normalized_query', getattr(context, 'message', ''))
         conversation_history = getattr(context, 'conversation_history', [])
         dataset_filename = getattr(context, 'dataset_filename', None)
+
+        # 0. DIRECT ANSWER: If the router produced a grounded direct answer (e.g. column not found,
+        # schema inquiry, or deterministic calculation), return it immediately without calling LLM
+        route_payload = getattr(context, 'route_payload', None) or {}
+        direct_answer = route_payload.get('direct_answer')
+        if direct_answer and isinstance(direct_answer, str) and direct_answer.strip():
+            from utils.response_boundary import enforce_response_boundary
+            return EngineResult(
+                answer=enforce_response_boundary(direct_answer, context),
+                source='conversation',
+                provider='deterministic',
+                success=True,
+                should_compose=False,
+            )
 
         # 1. PLAN: Determine conversational shape BEFORE generation
         plan = response_planner.plan(
@@ -322,8 +336,8 @@ class ConversationEngine(BaseEngine):
         )
 
         if response.success and response.text and response.text.strip():
-            from utils.text_sanitizer import strip_thinking_and_internal_reasoning
-            cleaned_text = strip_thinking_and_internal_reasoning(response.text)
+            from utils.response_boundary import enforce_response_boundary
+            cleaned_text = enforce_response_boundary(response.text, context)
             return EngineResult(
                 answer=cleaned_text,
                 source='conversation',

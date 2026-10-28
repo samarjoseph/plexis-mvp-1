@@ -241,8 +241,10 @@ class AnalysisEngine(BaseEngine):
             try:
                 db = self._get_db()
                 from db.services.dataset_service import dataset_service
+                import uuid
                 user_id = getattr(context, "user_id", None)
-                df = dataset_service.restore_dataset_df(db, dataset_id, user_id)
+                ds_uuid = uuid.UUID(str(dataset_id)) if not isinstance(dataset_id, uuid.UUID) else dataset_id
+                _dataset, df = dataset_service.restore_dataset_df(db, ds_uuid, user_id)
                 if df is not None:
                     logger.info("[AnalysisEngine] L2 restore: dataset_id=%s", dataset_id)
                     return df

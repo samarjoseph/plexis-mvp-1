@@ -814,6 +814,21 @@ class MasterRouter:
 
         stage = context.start_stage('intent_classification')
 
+        # Handle case where dataset metadata exists but underlying data access failed
+        if getattr(context, 'dataset_access_failed', False):
+            err_msg = getattr(context, 'dataset_resolution_error', None) or (
+                f"Dataset '{getattr(context, 'dataset_filename', 'active dataset')}' is recognized, but its underlying data "
+                "could not be loaded from storage. Please re-upload or select the dataset again."
+            )
+            context.complete_stage(stage)
+            return EngineResult(
+                answer=err_msg,
+                source="conversation",
+                success=False,
+                error=err_msg,
+                should_compose=False,
+            )
+
         # Check for explicit clarification action first (e.g. user selected a ranking interpretation)
         workspace_action = getattr(context, 'workspace_action', None) or {}
         if workspace_action.get('type') in ('RANKING_CLARIFICATION', 'TRANSFORMATION_CLARIFICATION') and workspace_action.get('chosen_operation'):
@@ -909,8 +924,9 @@ class MasterRouter:
         context.interpretation_reason = payload.get("reason", "")
 
         if payload.get('direct_answer'):
+            from utils.response_boundary import enforce_response_boundary
             return EngineResult(
-                answer=payload['direct_answer'],
+                answer=enforce_response_boundary(payload['direct_answer'], context),
                 source='conversation' if intent == 'conversation' else 'transform',
                 provider='system',
                 success=True,

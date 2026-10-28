@@ -38,6 +38,9 @@ export function AuthProvider({ children }) {
       loginAt: Date.now(),
     };
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+    if (profile?.email) {
+      localStorage.setItem('plexis_user_email', profile.email.trim().toLowerCase());
+    }
     setUser(profile);
     return profile;
   }, []);
@@ -57,6 +60,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem('plexis_user_email');
     setUser(null);
   }, []);
 
