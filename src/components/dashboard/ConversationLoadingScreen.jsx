@@ -8,7 +8,7 @@ const LOADING_STEPS = [
   'Loading chat history…',
 ];
 
-const STEP_INTERVAL_MS = 1400;
+const STEP_INTERVAL_MS = 750;
 
 export default function ConversationLoadingScreen() {
   const [stepIdx, setStepIdx] = useState(0);

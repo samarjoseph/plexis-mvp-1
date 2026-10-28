@@ -226,7 +226,7 @@ function DashboardInner() {
       return;
     }
 
-    const MIN_LOAD_MS = 500;
+    const MIN_LOAD_MS = 2400;
     const loadStart = Date.now();
 
     const target = conversations.find(
@@ -641,7 +641,7 @@ function DashboardInner() {
       setIsChatRouteLoading(true);
       setTimeout(() => {
         setIsChatRouteLoading(false);
-      }, 550);
+      }, 2200);
     }
     setActiveId(id);
     setSidebarMobileOpen(false);
