@@ -22,7 +22,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
     success,
   } = result;
 
-  if (!success) return null;
+  if (result.success === false) return null;
 
   return (
     <div className="tresult-card">

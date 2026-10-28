@@ -105,7 +105,7 @@ function DashboardInner() {
             );
           }
 
-          const isolationSlug = chat.slug || chat.share_slug || cached?.slug;
+          const isolationSlug = chat.slug || chat.share_slug || (chat.account_tag && chat.chat_tag ? `${chat.account_tag}-${chat.chat_tag}` : cached?.slug) || chat.id;
 
           return {
             id: chat.id,
@@ -646,8 +646,8 @@ function DashboardInner() {
     setActiveId(id);
     setSidebarMobileOpen(false);
     const conv = conversations.find((c) => c.id === id);
-    const targetSlug = conv?.slug || conv?.shareSlug;
-    if (targetSlug && targetSlug.includes('-')) {
+    const targetSlug = conv?.slug || conv?.shareSlug || conv?.chatId || conv?.id;
+    if (targetSlug) {
       navigate(`/dashboard/${targetSlug}`);
     } else {
       navigate('/dashboard');
@@ -976,13 +976,18 @@ function DashboardInner() {
       // Store auto-created DB chat_id so subsequent queries pass it to the backend
       if (apiResult?.chat_id && currentConv.chatId !== apiResult.chat_id) {
         const finalChatId = apiResult.chat_id;
+        const finalSlug = apiResult.slug || currentConv.slug;
         currentConv.chatId = finalChatId;
         currentConv.id = finalChatId;
+        if (finalSlug) {
+          currentConv.slug = finalSlug;
+          currentConv.shareSlug = finalSlug;
+        }
         const currentTitle = currentConv.title;
         setConversations((prev) => {
           const next = prev.map((c) =>
             c.id === targetId || c.chatId === finalChatId || c.id === currentConv.id
-              ? { ...c, chatId: finalChatId, id: finalChatId }
+              ? { ...c, chatId: finalChatId, id: finalChatId, slug: finalSlug || c.slug, shareSlug: finalSlug || c.shareSlug }
               : c
           );
           saveConversations(userId, next);
@@ -990,8 +995,8 @@ function DashboardInner() {
         });
         setActiveId(finalChatId);
 
-        if (currentConv.slug && currentConv.slug.includes('-')) {
-          navigate(`/dashboard/${currentConv.slug}`, { replace: true });
+        if (finalSlug) {
+          navigate(`/dashboard/${finalSlug}`, { replace: true });
         }
 
         // If the conversation already has a non-default title, persist it to finalChatId in DB
@@ -1048,7 +1053,7 @@ function DashboardInner() {
         // Transformation plan — set by TransformEngine
         ...(apiResult?.transform_plan && {
           transformPlan: apiResult.transform_plan,
-          datasetId: currentConv.datasetId || '',
+          datasetId: apiResult?.dataset_id || apiResult?.transform_plan?.dataset_id || currentConv.datasetId || '',
         }),
         ...(apiResult?.transformation_clarification && {
           transformationClarification: apiResult.transformation_clarification,
@@ -1058,8 +1063,8 @@ function DashboardInner() {
         }),
       };
 
-      // Open Investigation tab if backend flags it
-      if (apiResult?.trigger_investigation && currentConv.datasetId) {
+      // Open Investigation tab if backend flags it (desktop only, don't cover mobile chat view)
+      if (apiResult?.trigger_investigation && currentConv.datasetId && typeof window !== 'undefined' && window.innerWidth >= 1024) {
         EventBus.emit(Events.INVESTIGATION_REQUESTED, { datasetId: currentConv.datasetId });
         setAnalyticsCollapsed(false);
       }
@@ -1124,7 +1129,8 @@ function DashboardInner() {
   const handleApplyTransform = useCallback(async (planId, datasetId) => {
     setIsApplyingTransform(true);
     try {
-      const result = await PlexisAPI.applyTransformation(planId, datasetId);
+      const resolvedDatasetId = datasetId || activeConversation?.datasetId;
+      const result = await PlexisAPI.applyTransformation(planId, resolvedDatasetId);
       const ts = Date.now();
       if (result.error) {
         const errText = result.conflict
@@ -1173,7 +1179,8 @@ function DashboardInner() {
 
   const handleUndoTransform = useCallback(async (datasetId) => {
     try {
-      const result = await PlexisAPI.undoTransformation(datasetId);
+      const resolvedDatasetId = datasetId || activeConversation?.datasetId;
+      const result = await PlexisAPI.undoTransformation(resolvedDatasetId);
       const ts = Date.now();
       setConversations((prev) =>
         updateConversation(prev, activeId, {
@@ -1198,7 +1205,8 @@ function DashboardInner() {
 
   const handleExportDataset = useCallback(async (datasetId) => {
     try {
-      await PlexisAPI.exportDataset(datasetId);
+      const resolvedDatasetId = datasetId || activeConversation?.datasetId;
+      await PlexisAPI.exportDataset(resolvedDatasetId);
     } catch (e) {
       console.error('[handleExportDataset]', e);
     }

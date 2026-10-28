@@ -5571,3 +5571,195 @@ body.is-dragging * {
   background: linear-gradient(90deg, transparent, #6366f1, #06b6d4, transparent);
   border-radius: 999px;
 }
+
+
+/* ============================================================
+   UNIVERSAL MOBILE RESPONSIVENESS & HORIZONTAL SCROLL CONTRACT
+   Apply horizontal scroll on all tables, transformations, code blocks,
+   and anything that exceeds container width.
+   ============================================================ */
+
+.v2-chat-messages {
+  overflow-x: hidden !important;
+}
+
+.v2-msg-ai,
+.v2-msg-ai-body,
+.v2-msg-user-wrap,
+.v2-msg-user {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* Universal Table Horizontal Scroll Contract — markdown tables & data tables */
+.v2-prose table {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent !important;
+  margin: 12px 0 !important;
+  border-collapse: collapse !important;
+  box-sizing: border-box !important;
+}
+
+.v2-prose table::-webkit-scrollbar,
+.tpc-table-wrap::-webkit-scrollbar,
+.trc-table-wrap::-webkit-scrollbar,
+.inv-table-wrap::-webkit-scrollbar,
+.mg-table-wrap::-webkit-scrollbar {
+  height: 6px !important;
+}
+
+.v2-prose table::-webkit-scrollbar-thumb,
+.tpc-table-wrap::-webkit-scrollbar-thumb,
+.trc-table-wrap::-webkit-scrollbar-thumb,
+.inv-table-wrap::-webkit-scrollbar-thumb,
+.mg-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-radius: 3px !important;
+}
+
+.v2-prose table::-webkit-scrollbar-track,
+.tpc-table-wrap::-webkit-scrollbar-track,
+.trc-table-wrap::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+/* Universal Code Block Horizontal Scroll */
+.v2-prose pre,
+.v2-chat-messages pre,
+.trc-code-block code.trc-code,
+.arc-code-block pre {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent !important;
+  box-sizing: border-box !important;
+}
+
+.v2-prose pre::-webkit-scrollbar,
+.trc-code-block code.trc-code::-webkit-scrollbar {
+  height: 6px !important;
+}
+
+.v2-prose pre::-webkit-scrollbar-thumb,
+.trc-code-block code.trc-code::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-radius: 3px !important;
+}
+
+/* Universal Word Wrap to prevent line blowout */
+.v2-prose,
+.v2-prose p,
+.v2-prose li,
+.v2-msg-user-bubble,
+.tpc-col-name,
+.tpc-col-action,
+.trc-col-name,
+.trc-before,
+.trc-after,
+.arc-record-title {
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Transformation Cards: mobile layout & horizontal scroll */
+.tpc-card,
+.trc-card,
+.tresult-card,
+.tcc-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.tpc-table-wrap,
+.trc-table-wrap {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent !important;
+}
+
+.tpc-table {
+  width: 100% !important;
+  min-width: 270px !important;
+  border-collapse: collapse !important;
+}
+
+.trc-table {
+  width: 100% !important;
+  min-width: 320px !important;
+  border-collapse: collapse !important;
+}
+
+.tpc-actions,
+.trc-actions,
+.tresult-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+
+.tpc-btn,
+.trc-btn,
+.tresult-btn {
+  white-space: nowrap !important;
+  max-width: 100% !important;
+}
+
+@media (max-width: 768px) {
+  .tpc-card,
+  .trc-card,
+  .tresult-card,
+  .tcc-card {
+    border-radius: 10px !important;
+    font-size: 0.78rem !important;
+    margin: 8px 0 !important;
+  }
+
+  .tpc-header,
+  .trc-header,
+  .tresult-header {
+    padding: 10px 12px 8px !important;
+  }
+
+  .tpc-table-wrap,
+  .trc-table-wrap {
+    padding: 0 10px !important;
+  }
+
+  .tpc-summary,
+  .tresult-stats {
+    padding: 8px 12px !important;
+    font-size: 0.78rem !important;
+  }
+
+  .tpc-actions,
+  .trc-actions,
+  .tresult-actions {
+    padding: 8px 12px 10px !important;
+    gap: 6px !important;
+  }
+
+  .tpc-btn,
+  .trc-btn,
+  .tresult-btn {
+    padding: 6px 10px !important;
+    font-size: 0.75rem !important;
+  }
+}

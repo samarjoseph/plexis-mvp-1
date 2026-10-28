@@ -223,9 +223,9 @@ export default function ChatAreaV2({
     if (activeSessionRef.current !== activeSessionId) {
       activeSessionRef.current = activeSessionId;
       lastMsgCountRef.current = messages.length;
-      if (chatBodyRef.current) {
-        chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
-      }
+    }
+    if (chatBodyRef.current) {
+      chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
     }
   }, [activeSessionId, messages.length]);
 
@@ -260,7 +260,7 @@ export default function ChatAreaV2({
   }, [onInputChange]);
 
   const firstName = user?.name?.split(' ')[0] || '';
-  const showWelcome = messages.length === 0 && !isLoading && !isChatRouteLoading;
+  const showWelcome = (activeSessionId === null || !activeSessionId) && messages.length === 0 && !isLoading && !isChatRouteLoading;
 
   return (
     <main className="v2-chat">

@@ -174,6 +174,13 @@ function MessageBubbleV2({
           <PlexisLogo width={17} height={17} />
         </div>
         <div className="v2-msg-ai-body">
+          {message.text && (
+            <div className="v2-prose" style={{ marginBottom: '12px' }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.text}
+              </ReactMarkdown>
+            </div>
+          )}
           <TransformPlanCard
             plan={message.transformPlan}
             datasetId={message.datasetId}
@@ -194,6 +201,13 @@ function MessageBubbleV2({
           <PlexisLogo width={17} height={17} />
         </div>
         <div className="v2-msg-ai-body">
+          {message.text && (
+            <div className="v2-prose" style={{ marginBottom: '12px' }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.text}
+              </ReactMarkdown>
+            </div>
+          )}
           <TransformResultCard
             result={message.transformResult}
             datasetId={message.datasetId}

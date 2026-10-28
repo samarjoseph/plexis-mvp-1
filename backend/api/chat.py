@@ -127,8 +127,13 @@ def _try_persist_messages(chat_id, user_message, assistant_answer, evidence_dict
                 logger.info("[DB] Auto-created chat id=%s for user=%s in /api/ask", chat.id, email)
 
             chat_uuid = chat.id
-            if chat and hasattr(chat, 'slug') and chat.slug:
-                setattr(ctx, 'chat_slug', chat.slug)
+            if chat:
+                from db.isolation import compute_account_tag, compute_chat_tag
+                acc_tag = compute_account_tag(chat.user_id)
+                c_tag = compute_chat_tag(chat.id)
+                isolation_slug = f"{acc_tag}-{c_tag}"
+                canonical_slug = chat.slug if (chat.slug and "-" in chat.slug and len(chat.slug.split("-")[0]) == 6) else isolation_slug
+                setattr(ctx, 'chat_slug', canonical_slug)
 
             # Persist user message
             message_repository.append_message(
