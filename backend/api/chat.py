@@ -127,6 +127,8 @@ def _try_persist_messages(chat_id, user_message, assistant_answer, evidence_dict
                 logger.info("[DB] Auto-created chat id=%s for user=%s in /api/ask", chat.id, email)
 
             chat_uuid = chat.id
+            if chat and hasattr(chat, 'slug') and chat.slug:
+                setattr(ctx, 'chat_slug', chat.slug)
 
             # Persist user message
             message_repository.append_message(
@@ -492,6 +494,7 @@ def ask():
             resolved_chat_id = persisted_chat_id
 
         response['chat_id'] = str(resolved_chat_id) if resolved_chat_id else None
+        response['slug'] = getattr(ctx, 'chat_slug', None)
 
         # Add pipeline trace metadata for debugging
         response['_debug'] = {

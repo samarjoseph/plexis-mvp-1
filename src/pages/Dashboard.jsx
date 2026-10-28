@@ -626,7 +626,7 @@ function DashboardInner() {
 
     if (!runtimeText?.trim() && !runtimeFile) return;
 
-    // Lazy conversation creation
+    // 1. Resolve or immediately create optimistic conversation
     let currentConv = activeConversation;
     let targetId = activeId;
 
@@ -634,42 +634,10 @@ function DashboardInner() {
       currentConv = createConversation();
       currentConv.messages = [];
       targetId = currentConv.id;
-      setConversations((prev) => [currentConv, ...prev]);
-      setActiveId(targetId);
     }
 
-    // Ensure we create a persistent backend chat record if none exists yet
-    if (!currentConv.chatId && !isUUID(targetId)) {
-      try {
-        const initialTitle = currentConv.title || 'New Chat';
-        const created = await PlexisAPI.createChat(initialTitle);
-        if (created?.chat_id) {
-          const newChatId = created.chat_id;
-          currentConv.chatId = newChatId;
-          currentConv.id = newChatId;
-          currentConv.slug = created.slug;
-          targetId = newChatId;
-          currentConv.shareSlug = created.share_slug || created.slug;
-          setConversations((prev) => {
-            const next = prev.map((c) =>
-              c.id === targetId || c.id === currentConv.id
-                ? { ...c, id: newChatId, chatId: newChatId, slug: created.slug, shareSlug: created.share_slug || created.slug }
-                : c
-            );
-            saveConversations(userId, next);
-            return next;
-          });
-          setActiveId(newChatId);
-          if (created.slug && created.slug.includes('-')) {
-            navigate(`/dashboard/${created.slug}`, { replace: true });
-          }
-        }
-      } catch (err) {
-        console.warn('[Dashboard] createChat pre-creation skipped, backend will resolve in /api/ask:', err);
-      }
-    }
-
-    let updatedMessages = currentConv.messages;
+    // 2. Build updated messages with user's new message(s)
+    let updatedMessages = currentConv.messages || [];
     if (errorMsgIdToRemove) {
       updatedMessages = updatedMessages.filter(m => m.id !== errorMsgIdToRemove);
     }
@@ -689,6 +657,9 @@ function DashboardInner() {
         userMessages.push({ id: `text-${Date.now()}`, sender: 'user', text: runtimeText });
       }
       updatedMessages = [...updatedMessages, ...userMessages];
+      currentConv.messages = updatedMessages;
+
+      // INSTANTLY clear input bar and staged file
       setInputText('');
       setStagedFile(null);
     }
@@ -696,26 +667,87 @@ function DashboardInner() {
     // Prevent sending another message on this specific chat while its response is generating
     if (targetId && loadingChatIds.has(targetId)) return;
 
-    setConversations((prev) => updateConversation(prev, targetId, { messages: updatedMessages }));
+    // 3. INSTANTLY transition UI to active chat mode (0ms latency)
+    // Synchronously update activeId, loadingChatIds, and conversations so
+    // showWelcome immediately flips to false and the chat view + message bubble + thinking spinner render.
+    setActiveId(targetId);
     setLoadingChatIds((prev) => new Set(prev).add(targetId));
+    setConversations((prev) => {
+      const exists = prev.some((c) => c.id === targetId);
+      const next = exists
+        ? updateConversation(prev, targetId, { messages: updatedMessages })
+        : [{ ...currentConv, messages: updatedMessages }, ...prev];
+      saveConversations(userId, next);
+      return next;
+    });
 
-    // Dynamic AI title generation (only once at the start of conversation)
+    // 4. Ensure backend chat record exists
+    if (!currentConv.chatId && !isUUID(targetId)) {
+      try {
+        const initialTitle = currentConv.title || 'New Chat';
+        const created = await PlexisAPI.createChat(initialTitle);
+        if (created?.chat_id) {
+          const newChatId = created.chat_id;
+          const oldTargetId = targetId;
+          targetId = newChatId;
+          currentConv.chatId = newChatId;
+          currentConv.id = newChatId;
+          currentConv.slug = created.slug;
+          currentConv.shareSlug = created.share_slug || created.slug;
+
+          setConversations((prev) => {
+            const next = prev.map((c) =>
+              c.id === oldTargetId || c.id === newChatId
+                ? { ...c, id: newChatId, chatId: newChatId, slug: created.slug, shareSlug: created.share_slug || created.slug }
+                : c
+            );
+            saveConversations(userId, next);
+            return next;
+          });
+          setActiveId(newChatId);
+          setLoadingChatIds((prev) => {
+            const next = new Set(prev);
+            next.delete(oldTargetId);
+            next.add(newChatId);
+            return next;
+          });
+
+          if (created.slug && created.slug.includes('-')) {
+            navigate(`/dashboard/${created.slug}`, { replace: true });
+          }
+        }
+      } catch (err) {
+        console.warn('[Dashboard] createChat pre-creation skipped, backend will resolve in /api/ask:', err);
+      }
+    }
+
+    // 5. Dynamic AI title generation (only once at the start of conversation)
     const shouldNameChat = (!currentConv.named && (currentConv.title === 'New Chat' || !currentConv.title));
     if (shouldNameChat) {
       currentConv.named = true;
-      setConversations((prev) => updateConversation(prev, targetId, { named: true }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === targetId || c.id === currentConv.id || (currentConv.chatId && c.chatId === currentConv.chatId)
+            ? { ...c, named: true }
+            : c
+        )
+      );
       PlexisAPI.generateChatTitle({
         message: runtimeText,
         filename: runtimeFile?.name || '',
       }).then(async (aiTitle) => {
         if (aiTitle && aiTitle !== 'New Chat') {
           currentConv.title = aiTitle;
+          const dbId = currentConv?.chatId || (isUUID(targetId) ? targetId : null);
           setConversations((prev) => {
-            const next = updateConversation(prev, targetId, { title: aiTitle, named: true });
+            const next = prev.map((c) =>
+              c.id === targetId || c.id === currentConv.id || (dbId && c.chatId === dbId)
+                ? { ...c, title: aiTitle, named: true, updatedAt: Date.now() }
+                : c
+            );
             saveConversations(userId, next);
             return next;
           });
-          const dbId = currentConv?.chatId || (isUUID(targetId) ? targetId : null);
           if (dbId) {
             try {
               await PlexisAPI.renameChat(dbId, aiTitle);
