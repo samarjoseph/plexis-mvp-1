@@ -18,6 +18,12 @@ const markdownComponents = {
       <table {...props} />
     </div>
   ),
+  th: ({ node, style, ...props }) => (
+    <th style={{ ...style, textAlign: 'left' }} {...props} />
+  ),
+  td: ({ node, style, ...props }) => (
+    <td style={{ ...style, textAlign: 'left' }} {...props} />
+  ),
 };
 import { motion } from 'framer-motion';
 import { Globe, ExternalLink, FileSpreadsheet, Copy, Check, AlertTriangle } from 'lucide-react';

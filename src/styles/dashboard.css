@@ -5629,6 +5629,7 @@ body.is-dragging * {
 
 .v2-prose td,
 .v2-table-wrap td {
+  text-align: left !important;
   padding: 10px 18px !important;
   border-bottom: 1px solid var(--dash-border-subtle, rgba(255, 255, 255, 0.06)) !important;
   color: var(--dash-text, #e2e8f0) !important;

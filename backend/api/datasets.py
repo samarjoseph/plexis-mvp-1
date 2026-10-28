@@ -265,7 +265,7 @@ def _build_deterministic_upload_summary(dko, filename: str, df) -> str:
     # Column table (compact)
     parts.append("")
     parts.append("| Column | Type | Missing | Unique |")
-    parts.append("|--------|------|--------:|-------:|")
+    parts.append("|:-------|:-----|:--------|:-------|")
     for col_name in df.columns:
         col_type = "numeric" if col_name in numeric_cols else "text"
         n_missing = int(missing_by_col[col_name])
