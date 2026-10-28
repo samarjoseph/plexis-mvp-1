@@ -139,7 +139,15 @@ function DashboardInner() {
 
         const initialMerged = [...remoteConvs, ...localOnly];
         if (initialMerged.length > 0) {
-          setConversations(initialMerged);
+          setConversations((prev) => {
+            return initialMerged.map((remote) => {
+              const existing = prev.find((c) => c.id === remote.id || c.chatId === remote.id);
+              if (existing && existing.messages && existing.messages.length > remote.messages.length) {
+                return { ...remote, messages: existing.messages };
+              }
+              return remote;
+            });
+          });
           saveConversations(userId, initialMerged);
 
           // If chatRef is in URL, activate matching chat; otherwise keep activeId null (home page)
@@ -241,6 +249,39 @@ function DashboardInner() {
       if (activeId !== target.id) {
         setActiveId(target.id);
       }
+      // Re-hydrate messages from backend to ensure multi-device & reload consistency
+      PlexisAPI.loadChat(chatRef).then((fullChat) => {
+        if (!fullChat?.messages?.length) return;
+        const backendMsgs = fullChat.messages.map((m) => {
+          const isUser = m.role === 'user';
+          const meta = m.metadata || {};
+          return {
+            id: m.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            sender: isUser ? 'user' : (m.role === 'system' ? 'system_error' : 'ai'),
+            text: m.content || '',
+            hasChart: Boolean(meta.evidence?.has_chart || meta.chart_data),
+            chartData: meta.chart_data || null,
+            evidence: meta.evidence || null,
+            createdAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+            ...(meta.isFileCard && {
+              isFileCard: true,
+              fileName: meta.fileName,
+              fileSize: meta.fileSize,
+            }),
+          };
+        });
+        setConversations((prev) => {
+          const c = prev.find((x) => x.id === target.id || x.chatId === target.id);
+          if (!c) return prev;
+          if (backendMsgs.length >= (c.messages?.length || 0)) {
+            const next = updateConversation(prev, c.id, { messages: backendMsgs });
+            saveConversations(userId, next);
+            return next;
+          }
+          return prev;
+        });
+      }).catch((e) => console.warn('[Dashboard] Background loadChat sync error:', e));
+
       const elapsed = Date.now() - loadStart;
       const delay = Math.max(100, MIN_LOAD_MS - elapsed);
       const timer = setTimeout(() => {
@@ -916,14 +957,21 @@ function DashboardInner() {
               return next;
             });
 
+            const finalSummaryText = accumulatedText || data?.summary_text || `**${runtimeFile.name}**\n\nDataset loaded successfully (${(runtimeFile.size / 1024).toFixed(1)} KB).\n\nInvestigation ready.`;
+
             setConversations((prev) => {
               const conv = prev.find(c => c.id === finalChatId || c.chatId === finalChatId || c.id === targetId);
               const targetConvId = conv ? conv.id : finalChatId;
+              const currentMsgs = conv?.messages || prev.find(c => c.id === targetConvId)?.messages || [];
+              const hasStreamMsg = currentMsgs.some(m => m.id === streamMsgId);
+              const finalMsgs = hasStreamMsg
+                ? currentMsgs.map(m => m.id === streamMsgId ? { ...m, text: finalSummaryText, isStreaming: false } : m)
+                : [...currentMsgs, { id: streamMsgId, sender: 'ai', text: finalSummaryText, isStreaming: false }];
+
               const next = updateConversation(prev, targetConvId, {
                 ...(data?.chat_id && { id: data.chat_id, chatId: data.chat_id }),
                 ...(data?.slug && { slug: data.slug, shareSlug: data.slug }),
-                messages: (conv?.messages || prev.find(c => c.id === targetConvId)?.messages || [])
-                  .map(m => m.id === streamMsgId ? { ...m, text: accumulatedText, isStreaming: false } : m),
+                messages: finalMsgs,
                 activeDatasetName: nextDatasetName,
                 datasetName: nextDatasetName,
                 datasetId,

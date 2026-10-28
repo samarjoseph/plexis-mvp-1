@@ -460,6 +460,7 @@ def upload_dataset() -> Tuple[Any, int]:
                     "trigger_investigation": True,  # Signal frontend to open Investigation tab
                     "chat_id": resolved_chat_id,
                     "slug": resolved_chat_slug,
+                    "summary_text": summary_text,
                 })
                 
                 # After yielding done event, auto-start investigation
