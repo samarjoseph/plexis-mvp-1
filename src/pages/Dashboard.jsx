@@ -39,6 +39,7 @@ function DashboardInner() {
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [isChatRouteLoading, setIsChatRouteLoading] = useState(() => Boolean(chatRef));
+  const prevChatRef = useRef(chatRef);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
@@ -218,9 +219,13 @@ function DashboardInner() {
 
   // ── Sync URL chatRef param to active chat & load direct links ─────────
   useEffect(() => {
+    const hadChatRef = Boolean(prevChatRef.current);
+    prevChatRef.current = chatRef;
+
     if (!chatRef) {
       setIsChatRouteLoading(false);
-      if (activeId !== null) {
+      // ONLY reset activeId if the user explicitly navigated from a chat route back to /dashboard (e.g. browser back button)
+      if (hadChatRef && activeId !== null) {
         setActiveId(null);
       }
       return;
@@ -717,11 +722,10 @@ function DashboardInner() {
       return next;
     });
 
-    // 4. Ensure backend chat record exists
+    // 4. Ensure backend chat record exists (non-blocking for instantaneous 0ms UI transition)
     if (!currentConv.chatId && !isUUID(targetId)) {
-      try {
-        const initialTitle = currentConv.title || 'New Chat';
-        const created = await PlexisAPI.createChat(initialTitle);
+      const initialTitle = currentConv.title || 'New Chat';
+      PlexisAPI.createChat(initialTitle).then((created) => {
         if (created?.chat_id) {
           const newChatId = created.chat_id;
           const oldTargetId = targetId;
@@ -740,7 +744,7 @@ function DashboardInner() {
             saveConversations(userId, next);
             return next;
           });
-          setActiveId(newChatId);
+          setActiveId((prev) => (prev === oldTargetId ? newChatId : prev));
           setLoadingChatIds((prev) => {
             const next = new Set(prev);
             next.delete(oldTargetId);
@@ -748,13 +752,13 @@ function DashboardInner() {
             return next;
           });
 
-          if (created.slug && created.slug.includes('-')) {
+          if (created.slug) {
             navigate(`/dashboard/${created.slug}`, { replace: true });
           }
         }
-      } catch (err) {
-        console.warn('[Dashboard] createChat pre-creation skipped, backend will resolve in /api/ask:', err);
-      }
+      }).catch((err) => {
+        console.warn('[Dashboard] createChat background pre-creation skipped, backend will resolve in /api/ask:', err);
+      });
     }
 
     // 5. Dynamic AI title generation (only once at the start of conversation)
