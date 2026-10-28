@@ -137,6 +137,21 @@ class ChatRepository:
         )
         return rows > 0
 
+    def update_title(
+        self,
+        db: Session,
+        chat_id: UUID,
+        title: str,
+        user_id: UUID,
+    ) -> bool:
+        """Update title of a chat. Verifies ownership."""
+        rows = (
+            db.query(Chat)
+            .filter(Chat.id == chat_id, Chat.user_id == user_id)
+            .update({"title": title}, synchronize_session=False)
+        )
+        return rows > 0
+
     def update_last_message(self, db: Session, chat_id: UUID) -> None:
         """Update last_message_at to now for a chat."""
         from sqlalchemy.sql import func

@@ -83,29 +83,49 @@ def sanitize_for_json(obj):
 def _try_persist_messages(chat_id, user_message, assistant_answer, evidence_dict, ctx):
     """
     Persist user + assistant messages to PostgreSQL.
+    Returns the resolved or auto-created chat_id string, or None on failure.
     Wrapped in try/except — DB errors NEVER affect the /api/ask response.
     """
     from config import Config
-    if not Config.DATABASE_URL or not chat_id:
-        return
+    if not Config.DATABASE_URL:
+        return None
     try:
         from db.session import db_session
         from db.repositories.user_repository import user_repository
         from db.repositories.message_repository import message_repository
         from db.repositories.chat_repository import chat_repository
+        from db.services.chat_service import chat_service
+        import uuid as _uuid
 
         email = (request.headers.get('X-User-Email') or '').strip().lower() or 'dev@plexis.local'
 
         with db_session() as db:
             user = user_repository.get_or_create_by_email(db, email)
-            import uuid as _uuid
-            chat_uuid = _uuid.UUID(str(chat_id))
+            chat = None
+            if chat_id:
+                try:
+                    chat_uuid = _uuid.UUID(str(chat_id))
+                    chat = chat_repository.get_by_id(db, chat_uuid, user.id)
+                except (ValueError, TypeError):
+                    chat = None
 
-            # Verify ownership
-            chat = chat_repository.get_by_id(db, chat_uuid, user.id)
             if not chat:
-                logger.debug('[DB] chat_id=%s not found for user=%s — skipping message persist', chat_id, email)
-                return
+                chat_title = user_message[:40] if user_message else "New Chat"
+                ds_uuid = None
+                if getattr(ctx, 'dataset_id', None):
+                    try:
+                        ds_uuid = _uuid.UUID(str(ctx.dataset_id))
+                    except (ValueError, TypeError):
+                        pass
+                chat = chat_service.create_chat(
+                    db,
+                    user_id=user.id,
+                    title=chat_title,
+                    current_dataset_id=ds_uuid
+                )
+                logger.info("[DB] Auto-created chat id=%s for user=%s in /api/ask", chat.id, email)
+
+            chat_uuid = chat.id
 
             # Persist user message
             message_repository.append_message(
@@ -127,10 +147,13 @@ def _try_persist_messages(chat_id, user_message, assistant_answer, evidence_dict
 
             # Update chat's last_message_at
             chat_repository.update_last_message(db, chat_uuid)
+            db.commit()
 
-            logger.debug('[DB] Messages persisted for chat=%s', chat_id)
+            logger.debug('[DB] Messages persisted for chat=%s', chat_uuid)
+            return str(chat_uuid)
     except Exception as e:
         logger.warning('[DB] Message persistence failed (non-fatal): %s', e)
+        return None
 
 
 def _build_response_actions(intent: str, result_block: dict | None = None) -> dict:
@@ -461,6 +484,12 @@ def ask():
         # Expose chat_id to frontend — may have been auto-created by the
         # analytics pipeline to satisfy FK constraints on analysis_sessions
         resolved_chat_id = getattr(ctx, 'chat_id', None) or chat_id
+
+        # Persist messages to DB (non-blocking — errors never break response)
+        persisted_chat_id = _try_persist_messages(resolved_chat_id, message, final_result.answer, evidence_dict, ctx)
+        if persisted_chat_id:
+            resolved_chat_id = persisted_chat_id
+
         response['chat_id'] = str(resolved_chat_id) if resolved_chat_id else None
 
         # Add pipeline trace metadata for debugging
@@ -476,12 +505,9 @@ def ask():
             'workspace_summary': ctx.workspace_summary or None,
         }
 
-        # Persist messages to DB (non-blocking — errors never break response)
-        _try_persist_messages(chat_id, message, final_result.answer, evidence_dict, ctx)
-
         # Register chat_id in ConversationMemory for L2 DB fallback
         # This allows get_history() to reconstruct from PostgreSQL on server restart
-        if chat_id and ctx.session_id:
+        if resolved_chat_id and ctx.session_id:
             try:
                 from memory.conversation import conversation_memory
                 conversation_memory.register_chat_id(ctx.session_id, str(chat_id))

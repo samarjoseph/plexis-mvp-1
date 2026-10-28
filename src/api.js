@@ -281,6 +281,21 @@ export const PlexisAPI = {
   },
 
   /**
+   * Rename a chat.
+   * @param {string} chatId - Chat UUID
+   * @param {string} title - New chat display title
+   */
+  async renameChat(chatId, title) {
+    const r = await fetch(`${BASE_URL}/api/chats/${chatId}`, {
+      method: 'PATCH',
+      headers: defaultHeaders(),
+      body: JSON.stringify({ title }),
+    });
+    if (!r.ok) throw new Error(`renameChat failed: ${r.status}`);
+    return r.json();
+  },
+
+  /**
    * Update the currently active dataset for a chat.
    * @param {string} chatId - Chat UUID
    * @param {string} datasetId - Dataset UUID

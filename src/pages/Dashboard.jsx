@@ -22,6 +22,10 @@ import LocateResultSelector from '../components/dashboard/LocateResultSelector.j
 import '../styles/dashboard.css';
 import '../styles/workspace.css';
 
+function isUUID(str) {
+  return typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
 // Inner component — must be inside WorkspaceProvider to use useWorkspace
 function DashboardInner() {
   const { user } = useAuth();
@@ -57,14 +61,137 @@ function DashboardInner() {
 
   const activeConversation = conversations.find((c) => c.id === activeId) || null;
 
-  // ── Load from storage ──────────────────────────────────────
+  // ── Load from storage & Remote DB ───────────────────────────
   useEffect(() => {
+    let isMounted = true;
     const stored = loadConversations(userId);
     if (stored.length > 0) {
       setConversations(stored);
-      setActiveId(stored[0].id);
+      setActiveId((prev) => (prev && stored.some((c) => c.id === prev) ? prev : stored[0].id));
     }
+
+    async function syncRemoteChats() {
+      try {
+        const res = await PlexisAPI.listChats();
+        if (!isMounted || !res || !Array.isArray(res.chats)) return;
+
+        const storedMap = new Map((stored || []).map((c) => [c.chatId || c.id, c]));
+
+        const remoteConvs = res.chats.map((chat) => {
+          const cached = storedMap.get(chat.id);
+          return {
+            id: chat.id,
+            chatId: chat.id,
+            slug: chat.slug,
+            title: chat.title || 'New Chat',
+            pinned: cached?.pinned || false,
+            datasetId: chat.current_dataset_id || cached?.datasetId || null,
+            activeDatasetName: cached?.activeDatasetName || (chat.current_dataset_id ? 'Active Dataset' : 'No active dataset'),
+            datasetName: cached?.datasetName || (chat.current_dataset_id ? 'Active Dataset' : null),
+            messages: cached?.messages?.length ? cached.messages : [],
+            chartData: cached?.chartData || { labels: [], datasets: [] },
+            createdAt: chat.created_at ? new Date(chat.created_at).getTime() : Date.now(),
+            updatedAt: chat.last_message_at ? new Date(chat.last_message_at).getTime() : Date.now(),
+            named: true,
+          };
+        });
+
+        // Retain any unsynced local conversations that have actual user messages
+        const localOnly = (stored || []).filter(
+          (c) =>
+            !res.chats.some((rc) => rc.id === c.id || rc.id === c.chatId) &&
+            c.messages &&
+            c.messages.some((m) => m.sender === 'user')
+        );
+
+        const merged = [...remoteConvs, ...localOnly];
+        if (merged.length > 0) {
+          setConversations(merged);
+          saveConversations(userId, merged);
+          setActiveId((prev) => (prev && merged.some((c) => c.id === prev) ? prev : merged[0].id));
+        } else if (res.chats.length === 0 && localOnly.length === 0) {
+          setConversations([]);
+          saveConversations(userId, []);
+          setActiveId(null);
+        }
+      } catch (err) {
+        console.warn('[Dashboard] Could not sync remote chats (using cached):', err);
+      }
+    }
+
+    syncRemoteChats();
+    return () => {
+      isMounted = false;
+    };
   }, [userId]);
+
+  // ── Load full messages for active chat from backend if not yet loaded ──
+  useEffect(() => {
+    if (!activeId) return;
+    const conv = conversations.find((c) => c.id === activeId);
+    if (!conv) return;
+
+    // Check if we already have real messages loaded
+    const hasRealMessages = conv.messages && conv.messages.some(
+      (m) => m.sender === 'user' || (m.sender === 'ai' && m.id !== 'welcome')
+    );
+    if (hasRealMessages) return;
+
+    const lookupTarget = conv.slug || conv.chatId || (isUUID(conv.id) ? conv.id : null);
+    if (!lookupTarget) return;
+
+    let isMounted = true;
+    async function fetchChatMessages() {
+      try {
+        const fullChat = await PlexisAPI.loadChat(lookupTarget);
+        if (!isMounted || !fullChat) return;
+
+        const backendMsgs = (fullChat.messages || []).map((m) => {
+          const isUser = m.role === 'user';
+          const meta = m.metadata || {};
+          return {
+            id: m.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            sender: isUser ? 'user' : 'ai',
+            text: m.content || '',
+            hasChart: Boolean(meta.evidence?.has_chart || meta.chart_data),
+            chartData: meta.chart_data || null,
+            evidence: meta.evidence || null,
+            createdAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+            ...(meta.isFileCard && {
+              isFileCard: true,
+              fileName: meta.fileName,
+              fileSize: meta.fileSize,
+            }),
+          };
+        });
+
+        const finalMessages = backendMsgs.length > 0 ? backendMsgs : [
+          {
+            id: 'welcome',
+            sender: 'ai',
+            text: '# Welcome to Plexis\nUpload a dataset or ask a question to begin your analysis session.',
+            hasChart: false,
+          },
+        ];
+
+        setConversations((prev) =>
+          updateConversation(prev, activeId, {
+            messages: finalMessages,
+            chatId: fullChat.chat?.id || conv.chatId || activeId,
+            datasetId: fullChat.current_dataset_id || conv.datasetId || null,
+            title: fullChat.chat?.title || conv.title,
+          })
+        );
+      } catch (err) {
+        console.warn('[Dashboard] Could not load chat messages for', lookupTarget, err);
+      }
+    }
+
+    fetchChatMessages();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeId, conversations]);
 
   // ── Persist to storage ─────────────────────────────────────
   useEffect(() => {
@@ -335,6 +462,23 @@ function DashboardInner() {
       setActiveId(targetId);
     }
 
+    // Ensure we create a persistent backend chat record if none exists yet
+    if (!currentConv.chatId && !isUUID(targetId)) {
+      try {
+        const created = await PlexisAPI.createChat(currentConv.title || 'New Chat');
+        if (created?.chat_id) {
+          const newChatId = created.chat_id;
+          currentConv.chatId = newChatId;
+          currentConv.slug = created.slug;
+          setConversations((prev) =>
+            prev.map((c) => (c.id === targetId ? { ...c, chatId: newChatId, slug: created.slug } : c))
+          );
+        }
+      } catch (err) {
+        console.warn('[Dashboard] createChat pre-creation skipped, backend will resolve in /api/ask:', err);
+      }
+    }
+
     let updatedMessages = currentConv.messages;
     if (errorMsgIdToRemove) {
       updatedMessages = updatedMessages.filter(m => m.id !== errorMsgIdToRemove);
@@ -561,14 +705,17 @@ function DashboardInner() {
       const responseMeta = extractMetadata(apiResult);
 
       // Store auto-created DB chat_id so subsequent queries pass it to the backend
-      if (apiResult?.chat_id && !currentConv.chatId) {
+      if (apiResult?.chat_id && currentConv.chatId !== apiResult.chat_id) {
+        const finalChatId = apiResult.chat_id;
+        currentConv.chatId = finalChatId;
         setConversations((prev) =>
           prev.map((c) =>
-            c.id === targetId
-              ? { ...c, chatId: apiResult.chat_id }
+            c.id === targetId || c.chatId === finalChatId
+              ? { ...c, chatId: finalChatId, id: finalChatId }
               : c
           )
         );
+        setActiveId(finalChatId);
       }
       const evidence = apiResult?.evidence || null;
 
@@ -819,11 +966,36 @@ function DashboardInner() {
         onSearchChange={setSearchQuery}
         onNewChat={handleNewChat}
         onSelectChat={handleSelectChat}
-        onRenameChat={(id, title) => setConversations((p) => renameConversation(p, id, title))}
-        onDeleteChat={(id) => {
+        onRenameChat={async (id, title) => {
+          setConversations((p) => {
+            const next = renameConversation(p, id, title);
+            saveConversations(userId, next);
+            return next;
+          });
+          const target = conversations.find(c => c.id === id);
+          const dbId = target?.chatId || (isUUID(id) ? id : null);
+          if (dbId) {
+            try {
+              await PlexisAPI.renameChat(dbId, title);
+            } catch (err) {
+              console.warn('[Dashboard] renameChat error:', err);
+            }
+          }
+        }}
+        onDeleteChat={async (id) => {
+          const target = conversations.find(c => c.id === id);
           const next = deleteConversation(conversations, id);
           setConversations(next);
+          saveConversations(userId, next);
           if (activeId === id) setActiveId(next.length > 0 ? next[0].id : null);
+          const dbId = target?.chatId || (isUUID(id) ? id : null);
+          if (dbId) {
+            try {
+              await PlexisAPI.deleteChat(dbId);
+            } catch (err) {
+              console.warn('[Dashboard] deleteChat error:', err);
+            }
+          }
         }}
         onTogglePin={(id) => setConversations((p) => togglePinConversation(p, id))}
         onOpenSettings={() => setIsSettingsOpen(true)}

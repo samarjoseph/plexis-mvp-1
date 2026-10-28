@@ -112,19 +112,28 @@ def list_chats():
 
 
 # ---------------------------------------------------------------------------
-# GET /api/chats/<slug> — load full chat by slug
+# GET /api/chats/<slug_or_id> — load full chat by slug or ID
 # ---------------------------------------------------------------------------
 
-@chats_bp.route("/<slug>", methods=["GET"])
-def get_chat(slug: str):
-    """Load full chat state by slug (ownership verified)."""
+@chats_bp.route("/<slug_or_id>", methods=["GET"])
+def get_chat(slug_or_id: str):
+    """Load full chat state by slug or UUID (ownership verified)."""
     current_user, err = _resolve_identity()
     if err:
         return err
 
     db = get_db()
     try:
-        state = chat_service.load_chat(db, slug=slug, user_id=current_user.user_id)
+        state = None
+        try:
+            chat_uuid = UUID(str(slug_or_id))
+            state = chat_service.load_chat_by_id(db, chat_id=chat_uuid, user_id=current_user.user_id)
+        except (ValueError, TypeError):
+            pass
+
+        if not state:
+            state = chat_service.load_chat(db, slug=slug_or_id, user_id=current_user.user_id)
+
         if not state:
             return jsonify({"error": "Chat not found"}), 404
 
@@ -143,7 +152,39 @@ def get_chat(slug: str):
             ],
         }), 200
     except Exception as e:
-        logger.error("[CHATS_API] get_chat failed for slug=%s: %s", slug, e)
+        logger.error("[CHATS_API] get_chat failed for %s: %s", slug_or_id, e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/chats/<chat_id> — update chat title
+# ---------------------------------------------------------------------------
+
+@chats_bp.route("/<chat_id>", methods=["PATCH"])
+def update_chat(chat_id: str):
+    """Update chat title (ownership verified)."""
+    current_user, err = _resolve_identity()
+    if err:
+        return err
+
+    db = get_db()
+    body = request.get_json(silent=True) or {}
+    title = body.get("title")
+    if not title:
+        return jsonify({"error": "title required"}), 400
+
+    try:
+        chat_uuid = UUID(str(chat_id))
+        updated = chat_repository.update_title(db, chat_uuid, str(title).strip(), current_user.user_id)
+        if not updated:
+            return jsonify({"error": "Chat not found or not owned"}), 404
+        db.commit()
+        return jsonify({"updated": True, "title": str(title).strip()}), 200
+    except ValueError:
+        return jsonify({"error": "Invalid UUID format"}), 400
+    except Exception as e:
+        db.rollback()
+        logger.error("[CHATS_API] update_chat failed for %s: %s", chat_id, e)
         return jsonify({"error": str(e)}), 500
 
 
