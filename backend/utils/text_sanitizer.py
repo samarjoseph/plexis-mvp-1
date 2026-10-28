@@ -84,6 +84,12 @@ _LEAKAGE_BULLET_PATTERN = re.compile(
     re.IGNORECASE | re.MULTILINE
 )
 
+# Unsolicited parenthetical or standalone model/provider disclosures
+_UNSOLICITED_MODEL_DISCLOSURE = re.compile(
+    r"(?:\n\s*)?\(?(?:P\.?S\.?|Note:?|By the way,?)?\s*(?:If you(?:'re| are) curious about what powers (?:my|these) responses?[^)\n]*|The underlying model is[^)\n]*|This response is powered by model[^)\n]*)(?:nvidia|nemotron|openrouter|gemini|openai|anthropic|mistral)[^)\n]*\)?\.?",
+    re.IGNORECASE
+)
+
 
 def is_internal_planning_dump(text: str) -> bool:
     """
@@ -107,6 +113,8 @@ def is_internal_planning_dump(text: str) -> bool:
         "rules say \"most friendly/conversational",
         "the user didn't ask about that; they asked about",
         "this response is powered by model 'nvidia/nemotron",
+        "if you're curious about what powers my responses",
+        "the underlying model is",
     ]
     if any(ind in lowered for ind in leak_indicators):
         return True
@@ -170,9 +178,10 @@ def strip_thinking_and_internal_reasoning(text: str) -> str:
                     clean_paras.append(p)
             cleaned = '\n\n'.join(clean_paras)
 
-    # 3. Strip individual prompt leakage lines and bullets
+    # 3. Strip individual prompt leakage lines, bullets, and model disclosure notes
     cleaned = _SYSTEM_LEAK_LINES.sub('', cleaned)
     cleaned = _LEAKAGE_BULLET_PATTERN.sub('', cleaned)
+    cleaned = _UNSOLICITED_MODEL_DISCLOSURE.sub('', cleaned)
 
     # 4. Clean up excessive whitespace/newlines
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()

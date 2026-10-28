@@ -395,3 +395,118 @@ def test_case_12_schema_missing_column_grounded_answer(flight_delay_entry):
         assert "Departure_Delay" in result.answer
         # Must never leak planning text or CoT
         assert not is_internal_planning_dump(result.answer)
+
+
+# ── Case 13: Unsolicited model disclosures are cleanly stripped ─────────────
+def test_case_13_unsolicited_model_disclosure_stripped():
+    raw_response = (
+        "There are 6 unique values in that column.\n\n"
+        "(P.S. If you're curious about what powers my responses, I'm Plexis - the AI data-analysis "
+        "assistant in the Plexis app. The underlying model is nvidia/nemotron-3.5-lightning:free via openrouter, "
+        "but you can just call me Plexis!)"
+    )
+    cleaned = strip_thinking_and_internal_reasoning(raw_response)
+    assert "There are 6 unique values in that column." in cleaned
+    assert "nvidia/nemotron" not in cleaned
+    assert "underlying model" not in cleaned
+    assert "openrouter" not in cleaned
+
+
+# ── Case 14: Deduplication in dataset_service returns existing dataset ───────
+def test_case_14_dataset_deduplication_reuses_existing():
+    import io
+    from db.services.dataset_service import dataset_service
+    from db.repositories.dataset_repository import dataset_repository
+
+    mock_db = MagicMock()
+    user_id = uuid.uuid4()
+    file_bytes = b"col1,col2\n1,2\n3,4"
+    file_obj = io.BytesIO(file_bytes)
+
+    existing_ds = MagicMock()
+    existing_ds.id = uuid.uuid4()
+    existing_ds.original_filename = "test.csv"
+
+    # When get_by_hash finds an existing dataset, persist_dataset reuses it without INSERT
+    with patch.object(dataset_repository, "get_by_hash", return_value=existing_ds), \
+         patch.object(dataset_repository, "create_dataset") as mock_create:
+        res = dataset_service.persist_dataset(mock_db, user_id, file_obj, "test.csv")
+        assert res.id == existing_ds.id
+        mock_create.assert_not_called()
+
+
+# ── Case 15: Recursion guard prevents loop on auto-restore ──────────────────
+def test_case_15_registry_recursion_guard():
+    reg = dataset_registry
+    test_ds_id = str(uuid.uuid4())
+
+    def recursive_restore(db, ds_uuid, user_id):
+        # Downstream call attempts to get the same dataset ID again
+        nested_entry = reg.get(test_ds_id)
+        assert nested_entry is None  # recursion guard must return None immediately
+        return None, None
+
+    with patch("db.session.get_db", return_value=MagicMock()), \
+         patch("db.services.dataset_service.dataset_service.restore_dataset_df", side_effect=recursive_restore):
+        result = reg.get(test_ds_id)
+        assert result is None
+        assert test_ds_id not in reg._restoring
+
+
+# ── Case 16: Model context is ONLY injected when user queries model identity ─
+def test_case_16_runtime_model_context_conditional_injection():
+    from providers.engine import ProviderEngine
+    from providers.model_registry import ModelMetadata
+
+    meta = ModelMetadata(
+        model_id="nvidia/nemotron-3.5-lightning:free",
+        provider="openrouter",
+        model_name="Nvidia Nemotron",
+        context_window=8192,
+        max_output_tokens=4096,
+        supports_vision=False,
+        supports_json_mode=True,
+        supports_tool_calling=False,
+        supports_streaming=True,
+        supports_reasoning=False,
+    )
+
+    # 1. Normal data question: NO injection
+    req_data = AIRequest(
+        task="stream",
+        messages=[{"role": "user", "content": "how many rows in this dataset?"}],
+        system_prompt="You are Plexis data assistant."
+    )
+    with patch("providers.registry.provider_registry.get") as mock_get_prov, \
+         patch("providers.selector.model_selector.select_fallback", return_value=meta), \
+         patch("providers.scheduler.credential_scheduler.select_and_reserve", return_value=None):
+        mock_provider = MagicMock()
+        mock_provider.generate_stream.return_value = iter(["There are 100 rows."])
+        mock_get_prov.return_value = mock_provider
+
+        engine = ProviderEngine()
+        list(engine.generate_stream(req_data))
+
+        call_req = mock_provider.generate_stream.call_args[0][0]
+        assert "nvidia/nemotron" not in call_req.system_prompt
+        assert "Active Runtime Model Context" not in call_req.system_prompt
+
+    # 2. Model question: injection present
+    req_model = AIRequest(
+        task="stream",
+        messages=[{"role": "user", "content": "what model powers you?"}],
+        system_prompt="You are Plexis data assistant."
+    )
+    with patch("providers.registry.provider_registry.get") as mock_get_prov, \
+         patch("providers.selector.model_selector.select_fallback", return_value=meta), \
+         patch("providers.scheduler.credential_scheduler.select_and_reserve", return_value=None):
+        mock_provider = MagicMock()
+        mock_provider.generate_stream.return_value = iter(["I am powered by Nemotron."])
+        mock_get_prov.return_value = mock_provider
+
+        engine = ProviderEngine()
+        list(engine.generate_stream(req_model))
+
+        call_req = mock_provider.generate_stream.call_args[0][0]
+        assert "nvidia/nemotron" in call_req.system_prompt
+        assert "Active Runtime Model Context" in call_req.system_prompt

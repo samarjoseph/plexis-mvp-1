@@ -135,7 +135,8 @@ class SpreadsheetHistoryManager:
         from datasets.registry import dataset_registry, DatasetEntry
         from datetime import datetime, timezone
 
-        entry = dataset_registry.get_by_id(str(dataset.id))
+        # Direct dictionary access to avoid recursive auto-restore loop
+        entry = dataset_registry._datasets.get(str(dataset.id))
         if entry:
             entry.dataframe = df
             entry.row_count = len(df)

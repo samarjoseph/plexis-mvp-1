@@ -27,6 +27,7 @@ class DatasetRegistry:
     def __init__(self):
         self._datasets: Dict[str, DatasetEntry] = {}
         self._active_dataset_id: Optional[str] = None
+        self._restoring: set = set()
         
     def register(self, entry: DatasetEntry) -> None:
         self._datasets[entry.dataset_id] = entry
@@ -55,7 +56,11 @@ class DatasetRegistry:
         entry = self._datasets.get(dataset_id)
         if entry is not None:
             return entry
-            
+
+        if dataset_id in self._restoring:
+            return None
+
+        self._restoring.add(dataset_id)
         # L2 Auto-restore on cache miss
         try:
             from flask import has_request_context, request
@@ -86,6 +91,8 @@ class DatasetRegistry:
                     return self._datasets.get(dataset_id)
         except Exception as e:
             logger.warning('Auto-restore failed for dataset %s: %s', dataset_id, e)
+        finally:
+            self._restoring.discard(dataset_id)
             
         return None
 

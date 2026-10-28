@@ -58,6 +58,18 @@ class DatasetService:
                 f"File size exceeds maximum allowed upload limit of {Config.MAX_UPLOAD_SIZE_MB} MB."
             )
 
+        # ── User-scoped deduplication check (reuse existing if identical file hash) ──
+        existing = dataset_repository.get_by_hash(db, file_hash, user_id)
+        if existing:
+            logger.info(
+                "[DATASET_SVC] Found existing dataset id=%s for user=%s hash=%s — reusing",
+                existing.id, user_id, file_hash[:12]
+            )
+            if filename and existing.original_filename != filename:
+                existing.original_filename = filename
+                db.flush()
+            return existing
+
         dataset_id = uuid.uuid4()
         storage_account = "b2"
         storage_key = None
@@ -101,6 +113,12 @@ class DatasetService:
             )
             return dataset
         except Exception as db_err:
+            db.rollback()
+            # If concurrent upload happened, check if dataset was committed
+            existing = dataset_repository.get_by_hash(db, file_hash, user_id)
+            if existing:
+                logger.info("[DATASET_SVC] Recovered existing dataset id=%s after conflict", existing.id)
+                return existing
             if storage_key:
                 try:
                     storage_manager.delete_object(storage_key, storage_account)

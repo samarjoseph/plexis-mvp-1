@@ -98,7 +98,19 @@ class FallbackEngine:
             # Call provider with active model awareness
             try:
                 active_request = request
-                if getattr(request, 'system_prompt', None):
+                user_prompt = getattr(request, 'prompt', '') or ''
+                if not user_prompt and getattr(request, 'messages', None):
+                    user_prompt = ' '.join(
+                        str(m.get('content', '')) for m in request.messages if isinstance(m, dict) and m.get('role') == 'user'
+                    )
+                model_query_keywords = [
+                    'what model', 'which model', 'underlying model', 'what llm', 'which llm',
+                    'what ai model', 'who powers you', 'what powers you', 'are you nemotron',
+                    'are you gpt', 'are you claude', 'are you gemini'
+                ]
+                should_inject = any(kw in user_prompt.lower() for kw in model_query_keywords)
+
+                if getattr(request, 'system_prompt', None) and should_inject:
                     runtime_note = (
                         f"\n\n[Active Runtime Model Context: This response is powered by model '{model_id}' "
                         f"via provider '{provider_name}'. If the user asks which underlying model or provider powers this response, "
