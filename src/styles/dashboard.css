@@ -5008,7 +5008,7 @@ body.is-dragging * {
    ============================================================ */
 
 /* ── 1. Global Viewport & Container Reset ── */
-html, body, #root, .v2-dashboard {
+.v2-dashboard {
   width: 100%;
   max-width: 100vw;
   height: 100vh;

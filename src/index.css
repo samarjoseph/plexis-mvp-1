@@ -57,15 +57,19 @@
 
 html, body {
   width: 100%;
+  min-height: 100%;
   background: var(--bg); color: var(--text);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Dashboard needs full height for the fixed layout.
    Landing page needs natural scroll — do NOT set height: 100% on #root globally. */
 #root {
   width: 100%;
+  min-height: 100%;
   background: var(--bg);
 }
 
