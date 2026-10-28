@@ -100,7 +100,7 @@ def test_title_uniqueness_within_account(test_client, user_a_email, user_b_email
     chat1_title = res1.get_json()["title"]
     assert chat1_title == "Casual Greeting"
 
-    # User A creates second chat with same title -> automatically differentiated
+    # User A creates second chat with same title -> automatically differentiated with natural word (no numbers)
     res2 = test_client.post(
         "/api/chats",
         headers={"X-User-Email": user_a_email, "Content-Type": "application/json"},
@@ -108,10 +108,11 @@ def test_title_uniqueness_within_account(test_client, user_a_email, user_b_email
     )
     assert res2.status_code == 201
     chat2_title = res2.get_json()["title"]
-    assert chat2_title == "Casual Greeting 2"
+    assert chat2_title == "Casual Greeting Overview"
     assert chat1_title != chat2_title
+    assert not any(c.isdigit() for c in chat2_title), "Should not append numbers"
 
-    # User A creates third chat with same title -> 'Casual Greeting 3'
+    # User A creates third chat with same title -> 'Casual Greeting Review' (no numbers)
     res3 = test_client.post(
         "/api/chats",
         headers={"X-User-Email": user_a_email, "Content-Type": "application/json"},
@@ -119,7 +120,8 @@ def test_title_uniqueness_within_account(test_client, user_a_email, user_b_email
     )
     assert res3.status_code == 201
     chat3_title = res3.get_json()["title"]
-    assert chat3_title == "Casual Greeting 3"
+    assert chat3_title == "Casual Greeting Review"
+    assert not any(c.isdigit() for c in chat3_title), "Should not append numbers"
 
     # User B can have 'Casual Greeting' without collision
     res_b = test_client.post(

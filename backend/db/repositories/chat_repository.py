@@ -42,9 +42,8 @@ class ChatRepository:
         exclude_chat_id: Optional[UUID] = None,
     ) -> str:
         """
-        Ensure chat title is unique within the user's account.
-        If a chat with the same title already exists, increments suffix:
-        e.g., 'Sales Overview' -> 'Sales Overview 2', 'Sales Overview 3'.
+        Ensure chat title is unique within the user's account without mechanical numbering.
+        Uses natural semantic variations/modifiers (e.g., 'Overview', 'Review', 'Insights').
         """
         base = (desired_title or "New Chat").strip()
         query = db.query(Chat.title).filter(
@@ -58,10 +57,23 @@ class ChatRepository:
         if base.lower() not in existing:
             return base
 
-        counter = 2
-        while f"{base} {counter}".lower() in existing or f"{base} ({counter})".lower() in existing:
-            counter += 1
-        return f"{base} {counter}"
+        modifiers = [
+            "Overview", "Review", "Insights", "Deep Dive", "Exploration",
+            "Summary", "Discussion", "Exchange", "Perspective", "Notes"
+        ]
+        for mod in modifiers:
+            candidate = f"{base} {mod}"
+            if candidate.lower() not in existing:
+                return candidate
+
+        for mod in modifiers:
+            words = base.split()
+            if len(words) > 1:
+                candidate = f"{words[0]} {mod}"
+                if candidate.lower() not in existing:
+                    return candidate
+
+        return f"{base} Exploration"
 
     def create_chat(
         self,

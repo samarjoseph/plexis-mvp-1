@@ -563,11 +563,10 @@ def _smart_fallback_title(message: str, filename: str = None) -> str:
 @chat_bp.route('/chat/title', methods=['POST'])
 def generate_title_endpoint():
     """
-    Fast endpoint for initial conversation naming using a small, lightweight LLM.
-    Generates a natural 2-4 word contextual topic title based on the user's initial message
-    and/or uploaded dataset filename.
-    Strictly forbids verbatim echoing of user queries or greetings.
-    Guarantees no two chats share the same title in one user account.
+    Fast endpoint for initial conversation naming using an LLM.
+    The LLM decides dynamically on the most suitable 2-to-4 word title for the context.
+    Passes existing user chat titles so the model generates a fresh, unique title.
+    Enforces title uniqueness without artificial numbers.
     """
     import re
     import os
@@ -582,35 +581,55 @@ def generate_title_endpoint():
     from providers.domain.contracts import AIRequest
     from providers.engine import provider_engine
 
+    # Resolve user and existing titles to avoid duplication
+    email = (request.headers.get("X-User-Email") or "").strip().lower()
+    existing_titles = []
+    user = None
+    if email and Config.DATABASE_URL:
+        try:
+            from db.session import db_session
+            from db.repositories.user_repository import user_repository
+            from db.repositories.chat_repository import chat_repository
+            with db_session() as db:
+                user = user_repository.get_or_create_by_email(db, email)
+                existing_titles = [c.title for c in chat_repository.list_for_user(db, user.id) if c.title]
+        except Exception as ue:
+            logger.debug("[chat] fetching existing titles error: %s", ue)
+
+    avoid_clause = ""
+    if existing_titles:
+        titles_sample = ", ".join(f'"{t}"' for t in existing_titles[:15])
+        avoid_clause = f"\nExisting titles in this account: [{titles_sample}]. Pick a distinct title that is not already in this list."
+
     system_prompt = (
-        "You are an expert conversation title generator. Your task is to output a concise, professional 2-to-4 word contextual topic title.\n"
-        "STRICT CONSTRAINTS:\n"
-        "1. NEVER repeat, verbatim copy, or merely Title-Case the user's prompt or greeting.\n"
-        "2. The title must capture the broader conceptual topic, analytical goal, or domain.\n"
-        "3. For casual greetings, chitchat, or generic pleasantries (e.g. 'hello bro', 'hi', 'hey there', 'what can you do', 'test', 'ping'): output conceptual titles like 'Casual Greeting', 'Friendly Introduction', 'General Discussion', 'Introductory Inquiry', or 'Assistant Overview'. NEVER use the words 'Hello', 'Bro', 'Hi', or 'Hey' in the title.\n"
-        "4. For analytical inquiries (e.g. 'can you summarize column A'): synthesize the analytical domain (e.g., 'Summary Statistics Review', 'Column Distribution Analysis').\n"
-        "5. Output ONLY the title inside double quotes, 2 to 4 words. No additional text."
+        "You are an intelligent title generator for Plexis, a data analytics platform.\n"
+        "Your objective is to synthesize the essence of the user's opening message (and optional dataset filename) into a concise, natural, professional conversation title in 2 to 4 words.\n\n"
+        "Principles:\n"
+        "1. Do not verbatim copy or merely title-case the user's exact words.\n"
+        "2. Understand the context and intent of the conversation. Decide on your own what title is most fitting, natural, and descriptive.\n"
+        "3. For casual greetings, pleasantries, or testing, choose a natural, engaging conversation title reflecting an opening exchange without directly echoing slang or greetings.\n"
+        "4. If a list of existing chat titles is provided, ensure your proposed title is unique and distinct from all of them.\n"
+        "5. Output ONLY the title text inside double quotes. No introductory or explanatory text."
     )
 
     if filename and message:
         base_name = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
         prompt = (
             f'A user uploaded a dataset named "{filename}" ({base_name}) and asked: "{message[:200]}".\n'
-            'Generate a concise, professional 2-to-4 word contextual topic title summarizing this session (e.g. "Flight Delay Analysis", "Quarterly Revenue Trends").\n'
-            'Do NOT echo the user question verbatim. Return ONLY the title text inside double quotes.'
+            f'Generate a concise, natural conversation title (2 to 4 words) capturing this session.{avoid_clause}\n'
+            'Return ONLY the title text inside double quotes.'
         )
     elif filename:
         base_name = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
         prompt = (
             f'A user uploaded a spreadsheet dataset named "{filename}" ({base_name}).\n'
-            'Create a short, professional conversation title in 2 to 4 words summarizing this dataset session (e.g. "Sales Performance Report", "Customer Churn Analysis").\n'
+            f'Create a natural, professional conversation title in 2 to 4 words capturing this dataset session.{avoid_clause}\n'
             'Do NOT include file extensions like .csv or .xlsx. Return ONLY the title text inside double quotes.'
         )
     else:
         prompt = (
             f'User message: "{message[:200]}".\n'
-            'Generate a concise 2-to-4 word contextual topic title capturing the underlying subject or intent.\n'
-            'CRITICAL: Do NOT copy or title-case the user\'s exact words. If the message is a casual greeting like "hello bro" or "hi", use a topic descriptor like "Casual Greeting" or "Friendly Introduction".\n'
+            f'Generate a concise 2-to-4 word conversation title capturing the underlying intent or topic.{avoid_clause}\n'
             'Return ONLY the title text inside double quotes.'
         )
 
@@ -621,8 +640,8 @@ def generate_title_endpoint():
                 task='title',
                 messages=[{"role": "user", "content": prompt}],
                 system_prompt=system_prompt,
-                temperature=0.3,
-                max_tokens=40,
+                temperature=0.7,
+                max_tokens=256,
             )
         )
         if response.success and response.text:
@@ -653,15 +672,12 @@ def generate_title_endpoint():
     if not cleaned:
         cleaned = _smart_fallback_title(message, filename)
 
-    # Enforce title uniqueness per user account in database
-    email = (request.headers.get("X-User-Email") or "").strip().lower()
-    if email and Config.DATABASE_URL:
+    # Enforce title uniqueness per user account without appending numbers
+    if email and Config.DATABASE_URL and user:
         try:
             from db.session import db_session
-            from db.repositories.user_repository import user_repository
             from db.repositories.chat_repository import chat_repository
             with db_session() as db:
-                user = user_repository.get_or_create_by_email(db, email)
                 cleaned = chat_repository.ensure_unique_title(db, user.id, cleaned)
         except Exception as ue:
             logger.debug("[chat] ensure_unique_title in /api/title error: %s", ue)
