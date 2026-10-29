@@ -2,27 +2,40 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import PlexisLogo from '../brand/PlexisLogo';
 
-const LOADING_STEPS = [
+export const CHAT_LOADING_STEPS = [
   'Restoring conversation session…',
   'Synchronizing analytical context…',
   'Loading chat history…',
 ];
 
+export const SPREADSHEET_LOADING_STEPS = [
+  'Loading spreadsheet…',
+  'Putting your data inside…',
+  'Structuring spreadsheet cells…',
+  'Preparing columns and rows…',
+];
+
 const STEP_INTERVAL_MS = 750;
 
-export default function ConversationLoadingScreen() {
+export default function ConversationLoadingScreen({
+  steps = CHAT_LOADING_STEPS,
+  stepInterval = STEP_INTERVAL_MS,
+  className = '',
+  style = {},
+}) {
   const [stepIdx, setStepIdx] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setStepIdx((i) => (i + 1) % LOADING_STEPS.length);
-    }, STEP_INTERVAL_MS);
+      setStepIdx((i) => (i + 1) % steps.length);
+    }, stepInterval);
     return () => clearInterval(interval);
-  }, []);
+  }, [steps, stepInterval]);
 
   return (
     <motion.div
-      className="v2-conv-loading-screen"
+      className={`v2-conv-loading-screen ${className}`}
+      style={style}
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.98 }}
@@ -70,7 +83,7 @@ export default function ConversationLoadingScreen() {
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.28, ease: 'easeOut' }}
         >
-          {LOADING_STEPS[stepIdx]}
+          {steps[stepIdx]}
         </motion.div>
 
         {/* Shimmer gradient line */}

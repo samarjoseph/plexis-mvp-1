@@ -98,9 +98,27 @@ export function workspaceReducer(state, action) {
       };
 
     case WorkspaceActions.SET_DATASET:
+      if (action.datasetId !== state.datasetId) {
+        return {
+          ...state,
+          datasetId: action.datasetId,
+          sessionId: action.sessionId ?? state.sessionId,
+          columns: [],
+          allColumns: [],
+          totalRows: 0,
+          totalColumns: 0,
+          filename: '',
+          isLoading: Boolean(action.datasetId),
+          sort: null,
+          filters: [],
+          search: '',
+          selection: initialWorkspaceState.selection,
+          renderInstructions: null,
+          activeEvidence: null,
+        };
+      }
       return {
         ...state,
-        datasetId: action.datasetId,
         sessionId: action.sessionId ?? state.sessionId,
       };
 

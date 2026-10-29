@@ -1462,3 +1462,11 @@
     flex-shrink: 0;
   }
 }
+
+/* ── Spreadsheet Futuristic AI Loading Screen Overlay ── */
+.ssg-conv-loading-screen {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 60 !important;
+  background: #0d0d0f !important;
+}

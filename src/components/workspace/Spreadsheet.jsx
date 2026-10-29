@@ -63,6 +63,7 @@ import SpreadsheetGrid from './SpreadsheetGrid.jsx';
 import SpreadsheetToolbar from './SpreadsheetToolbar.jsx';
 import SpreadsheetStatusBar from './SpreadsheetStatusBar.jsx';
 import SpreadsheetOperationPanel from './SpreadsheetOperationPanel.jsx';
+import ConversationLoadingScreen, { SPREADSHEET_LOADING_STEPS } from '../dashboard/ConversationLoadingScreen';
 import '../../styles/spreadsheet.css';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -135,6 +136,27 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
   const [searchResultIndex, setSearchResultIndex]  = useState(0);
   const [searchResults,     setSearchResults]      = useState([]); // [{rowIndex}]
   const [renderTick, setRenderTick]   = useState(0); // bump to force grid re-render after cache fill
+  const [isVisualLoading, setIsVisualLoading] = useState(Boolean(datasetId));
+  const loadStartRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!datasetId) {
+      setIsVisualLoading(false);
+      return;
+    }
+
+    if (ctxLoading || totalRows === 0) {
+      setIsVisualLoading(true);
+      loadStartRef.current = Date.now();
+    } else {
+      const elapsed = Date.now() - loadStartRef.current;
+      const remaining = Math.max(0, 2200 - elapsed);
+      const timer = setTimeout(() => {
+        setIsVisualLoading(false);
+      }, remaining);
+      return () => clearTimeout(timer);
+    }
+  }, [ctxLoading, totalRows, datasetId]);
 
   // ── AI / Operation state ──────────────────────────────────────────────────
   const [aiModeEnabled,     setAiModeEnabled]     = useState(false);
@@ -1105,6 +1127,16 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
 
   return (
     <div className="ssg-panel" id="dataset-workspace-panel">
+      {/* Futuristic AI Spreadsheet Loader */}
+      <AnimatePresence>
+        {isVisualLoading && (
+          <ConversationLoadingScreen
+            steps={SPREADSHEET_LOADING_STEPS}
+            className="ssg-conv-loading-screen"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Toolbar + Find bar */}
       <SpreadsheetToolbar
         totalRows={totalRows}
@@ -1145,12 +1177,7 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
       />
 
       {/* Grid */}
-      {totalRows === 0 && ctxLoading ? (
-        <div className="ssg-empty-state">
-          <RefreshCwIcon />
-          <span>Loading spreadsheet...</span>
-        </div>
-      ) : totalRows === 0 ? (
+      {totalRows === 0 && !isVisualLoading ? (
         <div className="ssg-empty-state">
           <span>No data to display.</span>
         </div>
