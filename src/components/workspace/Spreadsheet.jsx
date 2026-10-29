@@ -145,18 +145,23 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
       return;
     }
 
-    if (ctxLoading || totalRows === 0) {
+    // Keep visual loading active if dataset is loading or has rows but initial window hasn't arrived
+    const isWaitingForInitialRows = totalRows > 0 && !cacheRef.current.hasRow(0);
+    const isDatasetMetadataLoading = ctxLoading || (totalRows === 0 && !ctxFilename && !filename);
+
+    if (isWaitingForInitialRows || isDatasetMetadataLoading) {
       setIsVisualLoading(true);
       loadStartRef.current = Date.now();
-    } else {
-      const elapsed = Date.now() - loadStartRef.current;
-      const remaining = Math.max(0, 2200 - elapsed);
-      const timer = setTimeout(() => {
-        setIsVisualLoading(false);
-      }, remaining);
-      return () => clearTimeout(timer);
+      return;
     }
-  }, [ctxLoading, totalRows, datasetId]);
+
+    const elapsed = Date.now() - loadStartRef.current;
+    const remaining = Math.max(0, 2200 - elapsed);
+    const timer = setTimeout(() => {
+      setIsVisualLoading(false);
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [ctxLoading, totalRows, datasetId, renderTick, ctxFilename, filename]);
 
   // ── AI / Operation state ──────────────────────────────────────────────────
   const [aiModeEnabled,     setAiModeEnabled]     = useState(false);
@@ -185,6 +190,12 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
     if (!datasetId) return;
     const cache = cacheRef.current;
     if (cache.isPending(offset)) return;
+
+    // Cooldown: prevent spamming an offset that just failed
+    if (cache.failedCooldowns?.get(offset) && Date.now() - cache.failedCooldowns.get(offset) < 4000) {
+      return;
+    }
+
     cache.markPending(offset);
     const requestedCacheVersion = cache.version;
 
@@ -205,23 +216,34 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
 
       cache.setWindow(offset, result.rows ?? []);
       if (result.filename) setFilename(result.filename);
+      if (result.total_rows && totalRowsRef.current === 0) {
+        totalRowsRef.current = result.total_rows;
+      }
+      if (cache.failedCooldowns) cache.failedCooldowns.delete(offset);
 
       // Trigger re-render so grid picks up newly cached rows
       setRenderTick(t => t + 1);
     } catch (err) {
       console.error('[Spreadsheet] fetchWindow error:', err);
-      // Remove from pending so retry is possible
       cacheRef.current.pendingOffsets?.delete(offset);
+      if (!cacheRef.current.failedCooldowns) {
+        cacheRef.current.failedCooldowns = new Map();
+      }
+      cacheRef.current.failedCooldowns.set(offset, Date.now());
     }
   }, [datasetId, sort, filters, search]);
 
   const maybeFetch = useCallback((startRow, endRow) => {
+    if (!datasetId) return;
     const cache = cacheRef.current;
     const missing = cache.firstMissingWindow(startRow, endRow);
-    if (missing !== null && missing < totalRowsRef.current) {
-      fetchWindow(missing);
+    if (missing !== null) {
+      // Window 0 is always allowed even if totalRows is not yet known
+      if (missing === 0 || totalRowsRef.current === 0 || missing < totalRowsRef.current) {
+        fetchWindow(missing);
+      }
     }
-  }, [fetchWindow]);
+  }, [datasetId, fetchWindow]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -262,7 +284,7 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
       scrollRef.current.scrollTop = 0;
     }
     // Fetch the first window
-    maybeFetch(0, Math.min(40, totalRowsRef.current - 1));
+    maybeFetch(0, FETCH_WINDOW - 1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sort, filters, search]);
 
@@ -275,7 +297,7 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
       cacheRef.current.invalidate();
       setVirtualRange({ startRow: 0, endRow: 0 });
       if (scrollRef.current) scrollRef.current.scrollTop = 0;
-      maybeFetch(0, Math.min(FETCH_WINDOW - 1, totalRowsRef.current - 1));
+      maybeFetch(0, FETCH_WINDOW - 1);
     };
     const offApplied = EventBus.on(Events.TRANSFORM_APPLIED, refreshRows);
     const offUndone = EventBus.on(Events.TRANSFORM_UNDONE, refreshRows);
@@ -734,7 +756,33 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
       el.scrollTop, el.clientHeight, totalRows,
     );
     setVirtualRange({ startRow, endRow });
-  }, [totalRows]);
+    maybeFetch(startRow, endRow);
+  }, [totalRows, maybeFetch]);
+
+  // Keep visible viewport populated even before the user scrolls
+  useEffect(() => {
+    if (!datasetId) return;
+    maybeFetch(virtualRange.startRow, virtualRange.endRow);
+  }, [virtualRange.startRow, virtualRange.endRow, renderTick, datasetId, maybeFetch]);
+
+  // Viewport resize observer: re-calculate visible range and fetch if height changes
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (totalRowsRef.current === 0) return;
+      const { startRow, endRow } = calculateVisibleRange(
+        el.scrollTop, el.clientHeight, totalRowsRef.current,
+      );
+      setVirtualRange(prev => {
+        if (prev.startRow === startRow && prev.endRow === endRow) return prev;
+        return { startRow, endRow };
+      });
+      maybeFetch(startRow, endRow);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [maybeFetch]);
 
   // ── Register WorkspaceNavigator scroll callback ────────────────────────────
 
