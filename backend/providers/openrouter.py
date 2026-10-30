@@ -98,7 +98,7 @@ class OpenRouterProvider(IProviderAdapter):
                 body['response_format'] = {'type': 'json_object'}
 
             start_time = time.time()
-            response = requests.post(self.endpoint, headers=headers, json=body, timeout=(3.0, 10.0))
+            response = requests.post(self.endpoint, headers=headers, json=body, timeout=(2.5, 5.0))
             
             # Detect 429
             if response.status_code == 429:

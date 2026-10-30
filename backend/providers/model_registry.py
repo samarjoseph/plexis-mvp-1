@@ -349,11 +349,11 @@ model_registry.register(ModelMetadata(
         "stream": 0.9,
     },
     avg_latency_ms=750.0,
-    priority=1,  # Priority 0 for transformation; Priority 1 fallback for all other tasks
-    health_score=1.0,
+    priority=3,  # Free tier fallback only
+    health_score=0.8,
 ))
 
-# BACKUP GEMINI MODEL: gemini-2.5-flash (High speed, reliable backup)
+# FLAGSHIP GEMINI MODEL: gemini-2.5-flash (High speed, 4-key rotation, rock-solid primary)
 model_registry.register(ModelMetadata(
     model_id="gemini-2.5-flash",
     provider="gemini",
@@ -366,26 +366,26 @@ model_registry.register(ModelMetadata(
     supports_streaming=True,
     supports_reasoning=True,
     task_affinities={
-        "transformation_planning": 0.95,
-        "transformation": 0.95,
-        "classification": 0.9,
-        "router": 0.9,
-        "planner": 0.85,
-        "interpreter": 0.85,
-        "insight_synthesizer": 0.85,
-        "explanation": 0.85,
-        "spreadsheet_interpret": 0.85,
-        "analysis": 0.85,
-        "complex_analysis": 0.85,
-        "report": 0.85,
-        "chat": 0.85,
-        "conversation": 0.85,
-        "presentation": 0.85,
-        "title": 0.85,
-        "stream": 0.85,
+        "transformation_planning": 1.0,
+        "transformation": 1.0,
+        "classification": 0.98,
+        "router": 0.98,
+        "planner": 0.98,
+        "interpreter": 0.98,
+        "insight_synthesizer": 0.98,
+        "explanation": 0.98,
+        "spreadsheet_interpret": 0.98,
+        "analysis": 0.98,
+        "complex_analysis": 0.98,
+        "report": 0.98,
+        "chat": 0.98,
+        "conversation": 0.98,
+        "presentation": 0.98,
+        "title": 0.98,
+        "stream": 0.98,
     },
-    avg_latency_ms=650.0,
-    priority=2,
+    avg_latency_ms=500.0,
+    priority=0,
     health_score=1.0,
 ))
 

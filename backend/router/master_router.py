@@ -61,6 +61,14 @@ _TITLE_RX = re.compile(
     r'title.*(?:conversation|chat)|create.*title',
     re.IGNORECASE,
 )
+_CONVERSATIONAL_RECALL_RX = re.compile(
+    r'\b(what\s+(?:did\s+i|was\s+i|i|have\s+i)\s+(?:ask|asking|say|saying|tell|discuss|talking)|'
+    r'what\s+(?:did\s+you|did\s+we)\s+(?:say|discuss|talk\s+about)|'
+    r'can\s+you\s+(?:tell|remind)\s+me\s+what\s+i|'
+    r'remind\s+me|what\s+was\s+my\s+(?:previous|last|first)\s+(?:question|message)|'
+    r'what\s+i\s+was\s+asking)\b',
+    re.IGNORECASE,
+)
 _INVESTIGATE_RX = re.compile(
     r'\b(investigate|re-run investigation|show investigation|open investigation|'
     r're-?analyze dataset|show dataset analysis|'
@@ -1014,6 +1022,11 @@ class MasterRouter:
         if _GREETING_RX.match(message.strip()) and len(message.split()) <= 5:
             logger.debug("[Router] fast-path: greeting → conversation")
             return {"intent": "conversation", "confidence": 0.98, "operation": None, "reason": "greeting pattern"}
+
+        # Conversational memory recall — instant zero-latency dispatch without dataset ambiguity
+        if _CONVERSATIONAL_RECALL_RX.search(message.strip()):
+            logger.debug("[Router] fast-path: conversational recall → conversation")
+            return {"intent": "conversation", "confidence": 0.99, "operation": None, "reason": "conversational recall pattern"}
 
         pending_answer = self._pending_transform_fast_path(context)
         if pending_answer is not None:

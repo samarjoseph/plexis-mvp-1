@@ -28,11 +28,17 @@ class FallbackEngine:
 
     def execute(self, request: AIRequest) -> ProviderResponse:
         """Execute request with model-level fallbacks, multi-slot rotation, and global quarantine."""
+        import time as _t
+        start_time_exec = _t.time()
         failed_model_ids: List[str] = []
         attempts = 0
-        max_attempts = 8
+        max_attempts = 5
 
         while attempts < max_attempts:
+            # Enforce max 12s total fallback budget so requests never hang for 40s
+            if _t.time() - start_time_exec > 12.0 and len(failed_model_ids) > 0:
+                logger.warning("[FallbackEngine] Total fallback budget (12s) reached. Aborting further model attempts.")
+                break
             model_meta = model_selector.select_by_model_fallback(
                 task=request.task or "fallback",
                 require_json=request.json_mode,
@@ -193,18 +199,24 @@ class FallbackEngine:
                 error=str(response.error)
             ))
 
-            # If this is a permanent model configuration error (404 Not Found / 422 Unprocessable),
-            # the model does not exist on this provider for ANY key/slot.
+            # Fast model failover: If error is model-level (404, 422, 5xx, timeout, or empty completion),
+            # retrying other credential slots on the exact same provider model will fail the same way.
             status_code = getattr(response, 'status_code', None)
             err_str = str(response.error).lower()
-            if status_code in (404, 422) or "not found" in err_str:
-                model_registry.mark_permanently_failed(model_id)
-                failed_model_ids.append(model_id)
-            elif status_code in (504, 503, 500) or "deadline" in err_str or "timeout" in err_str:
+            is_model_failure = (
+                status_code in (404, 422, 500, 502, 503, 504)
+                or "not found" in err_str
+                or "empty completion" in err_str
+                or "timeout" in err_str
+                or "timed out" in err_str
+                or "deadline" in err_str
+            )
+            if is_model_failure:
+                if status_code in (404, 422) or "not found" in err_str:
+                    model_registry.mark_permanently_failed(model_id)
                 failed_model_ids.append(model_id)
             else:
-                # If other slots exist for this provider that might have independent quota,
-                # don't immediately ban the model ID unless all slots are exhausted
+                # Only 429 quota exhaustion is slot-specific — retry other available slots if eligible
                 remaining_slots = [
                     s for s in credential_scheduler.get_slots(provider_name)
                     if quarantine_manager.is_eligible(provider_name, api_key=s.api_key, model_id=model_id)
