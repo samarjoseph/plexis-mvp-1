@@ -124,7 +124,9 @@ function DashboardInner() {
             messages: cached?.messages?.length ? cached.messages : [],
             chartData: cached?.chartData || { labels: [], datasets: [] },
             createdAt: chat.created_at ? new Date(chat.created_at).getTime() : Date.now(),
-            updatedAt: chat.last_message_at ? new Date(chat.last_message_at).getTime() : Date.now(),
+            updatedAt: chat.last_message_at
+              ? new Date(chat.last_message_at).getTime()
+              : (chat.created_at ? new Date(chat.created_at).getTime() : Date.now()),
             named: finalTitle !== 'New Chat',
           };
         });
@@ -362,7 +364,9 @@ function DashboardInner() {
           ],
           chartData: { labels: [], datasets: [] },
           createdAt: fullChat.chat.created_at ? new Date(fullChat.chat.created_at).getTime() : Date.now(),
-          updatedAt: fullChat.chat.last_message_at ? new Date(fullChat.chat.last_message_at).getTime() : Date.now(),
+          updatedAt: fullChat.chat.last_message_at
+            ? new Date(fullChat.chat.last_message_at).getTime()
+            : (fullChat.chat.created_at ? new Date(fullChat.chat.created_at).getTime() : Date.now()),
           named: fullChat.chat.title !== 'New Chat',
         };
 
@@ -750,17 +754,19 @@ function DashboardInner() {
 
     if (!isRetry) {
       const userMessages = [];
+      const nowTs = Date.now();
       if (runtimeFile) {
         userMessages.push({
-          id: `file-${Date.now()}`,
+          id: `file-${nowTs}`,
           sender: 'user',
           isFileCard: true,
           fileName: runtimeFile.name,
           fileSize: `${(runtimeFile.size / 1024).toFixed(1)} KB`,
+          createdAt: nowTs,
         });
       }
       if (runtimeText.trim()) {
-        userMessages.push({ id: `text-${Date.now()}`, sender: 'user', text: runtimeText });
+        userMessages.push({ id: `text-${nowTs}`, sender: 'user', text: runtimeText, createdAt: nowTs });
       }
       updatedMessages = [...updatedMessages, ...userMessages];
       currentConv.messages = updatedMessages;
@@ -849,7 +855,7 @@ function DashboardInner() {
           setConversations((prev) => {
             const next = prev.map((c) =>
               c.id === targetId || c.id === currentConv.id || (dbId && c.chatId === dbId)
-                ? { ...c, title: aiTitle, named: true, updatedAt: Date.now() }
+                ? { ...c, title: aiTitle, named: true }
                 : c
             );
             saveConversations(userId, next);
@@ -1161,10 +1167,12 @@ function DashboardInner() {
         ? { ...lastSpreadsheetCardRef.current, source: 'follow_up' }
         : null;
 
+      const aiNowTs = Date.now();
       const aiMessage = {
-        id: `ai-${Date.now()}`,
+        id: `ai-${aiNowTs}`,
         sender: 'ai',
         text: responseText,
+        createdAt: aiNowTs,
         hasChart: !!(apiResult?.chart_data),
         source: responseMeta.source,
         provider: responseMeta.provider,

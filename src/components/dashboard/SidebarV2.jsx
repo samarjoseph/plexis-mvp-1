@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { sortConversations } from '../../utils/conversationStorage';
+import { sortConversations, getConversationLastActivity } from '../../utils/conversationStorage';
 import PlexisLogo from '../brand/PlexisLogo';
 import Tooltip from '../ui/Tooltip';
 
@@ -200,7 +200,7 @@ function ChatItem({ chat, isActive, onSelect, onRename, onDelete, onTogglePin })
         ) : (
           <span className="v2-chat-item-title">{chat.title || 'New Chat'}</span>
         )}
-        <span className="v2-chat-item-time">{relativeTime(chat.updatedAt)}</span>
+        <span className="v2-chat-item-time">{relativeTime(getConversationLastActivity(chat))}</span>
       </div>
 
       <button
