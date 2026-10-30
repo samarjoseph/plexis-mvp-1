@@ -15,7 +15,7 @@ export const SPREADSHEET_LOADING_STEPS = [
   'Preparing columns and rows…',
 ];
 
-const STEP_INTERVAL_MS = 750;
+const STEP_INTERVAL_MS = 800;
 
 export default function ConversationLoadingScreen({
   steps = CHAT_LOADING_STEPS,

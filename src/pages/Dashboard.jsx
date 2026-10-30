@@ -28,6 +28,8 @@ function isUUID(str) {
 }
 
 // Inner component — must be inside WorkspaceProvider to use useWorkspace
+const MIN_CHAT_LOAD_MS = 2500;
+
 function DashboardInner() {
   const { chatRef } = useParams();
   const navigate = useNavigate();
@@ -36,10 +38,32 @@ function DashboardInner() {
   const { isOpen: workspaceOpen, setDataset, buildWorkspaceSummaryPayload } = useWorkspace();
 
   // ── State ──────────────────────────────────────────────────
-  const [conversations, setConversations] = useState([]);
+  const [conversations, setConversations] = useState(() => loadConversations(userId));
   const [activeId, setActiveId] = useState(null);
   const [isChatRouteLoading, setIsChatRouteLoading] = useState(() => Boolean(chatRef));
   const prevChatRef = useRef(chatRef);
+  const chatRouteLoadingTimerRef = useRef(null);
+  const chatLoadStartRef = useRef(Date.now());
+
+  const finishChatLoading = useCallback((customMinMs = MIN_CHAT_LOAD_MS) => {
+    const elapsed = Date.now() - chatLoadStartRef.current;
+    const remaining = Math.max(0, customMinMs - elapsed);
+    if (chatRouteLoadingTimerRef.current) {
+      clearTimeout(chatRouteLoadingTimerRef.current);
+    }
+    chatRouteLoadingTimerRef.current = setTimeout(() => {
+      setIsChatRouteLoading(false);
+      chatRouteLoadingTimerRef.current = null;
+    }, remaining);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (chatRouteLoadingTimerRef.current) {
+        clearTimeout(chatRouteLoadingTimerRef.current);
+      }
+    };
+  }, []);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
@@ -261,12 +285,12 @@ function DashboardInner() {
     );
 
     if (isAlreadyActive) {
-      setIsChatRouteLoading(false);
+      // Do not prematurely dismiss if an active chat loading countdown is in flight
+      if (!chatRouteLoadingTimerRef.current && (Date.now() - chatLoadStartRef.current >= MIN_CHAT_LOAD_MS)) {
+        setIsChatRouteLoading(false);
+      }
       return;
     }
-
-    const MIN_LOAD_MS = 2400;
-    const loadStart = Date.now();
 
     const target = conversations.find(
       (c) => c.slug === chatRef || c.shareSlug === chatRef || c.id === chatRef || c.chatId === chatRef
@@ -274,6 +298,8 @@ function DashboardInner() {
     if (target) {
       if (activeId !== target.id) {
         setActiveId(target.id);
+        chatLoadStartRef.current = Date.now();
+        setIsChatRouteLoading(true);
       }
       // Re-hydrate messages from backend to ensure multi-device & reload consistency
       PlexisAPI.loadChat(chatRef).then((fullChat) => {
@@ -308,16 +334,13 @@ function DashboardInner() {
         });
       }).catch((e) => console.warn('[Dashboard] Background loadChat sync error:', e));
 
-      const elapsed = Date.now() - loadStart;
-      const delay = Math.max(100, MIN_LOAD_MS - elapsed);
-      const timer = setTimeout(() => {
-        setIsChatRouteLoading(false);
-      }, delay);
-      return () => clearTimeout(timer);
+      finishChatLoading(MIN_CHAT_LOAD_MS);
+      return;
     }
 
     // Direct link to chat not yet in local state -> load from backend
     let isMounted = true;
+    chatLoadStartRef.current = Date.now();
     setIsChatRouteLoading(true);
 
     async function loadDirectChat() {
@@ -381,11 +404,9 @@ function DashboardInner() {
         console.warn('[Dashboard] Direct link load failed for', chatRef, err);
         navigate('/dashboard', { replace: true });
       } finally {
-        const elapsed = Date.now() - loadStart;
-        const delay = Math.max(100, MIN_LOAD_MS - elapsed);
-        setTimeout(() => {
-          if (isMounted) setIsChatRouteLoading(false);
-        }, delay);
+        if (isMounted) {
+          finishChatLoading(MIN_CHAT_LOAD_MS);
+        }
       }
     }
 
@@ -393,7 +414,7 @@ function DashboardInner() {
     return () => {
       isMounted = false;
     };
-  }, [chatRef, conversations, activeId, userId, navigate]);
+  }, [chatRef, conversations, activeId, userId, navigate, finishChatLoading]);
 
   // ── Load full messages for active chat from backend if not yet loaded ──
   useEffect(() => {
@@ -702,6 +723,11 @@ function DashboardInner() {
 
   // ── Helpers ────────────────────────────────────────────────
   const handleNewChat = () => {
+    if (chatRouteLoadingTimerRef.current) {
+      clearTimeout(chatRouteLoadingTimerRef.current);
+      chatRouteLoadingTimerRef.current = null;
+    }
+    setIsChatRouteLoading(false);
     setActiveId(null);
     setInputText('');
     EventBus.emit(Events.CLEAR_CHAT_INPUT);
@@ -711,12 +737,9 @@ function DashboardInner() {
   };
 
   const handleSelectChat = (id) => {
-    if (id !== activeId) {
-      setIsChatRouteLoading(true);
-      setTimeout(() => {
-        setIsChatRouteLoading(false);
-      }, 2200);
-    }
+    if (id === activeId) return;
+    chatLoadStartRef.current = Date.now();
+    setIsChatRouteLoading(true);
     setActiveId(id);
     setSidebarMobileOpen(false);
     const conv = conversations.find((c) => c.id === id);
@@ -726,6 +749,7 @@ function DashboardInner() {
     } else {
       navigate('/dashboard');
     }
+    finishChatLoading(MIN_CHAT_LOAD_MS);
   };
 
   // ── Send Message ───────────────────────────────────────────
