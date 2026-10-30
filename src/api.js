@@ -67,7 +67,7 @@ export const PlexisAPI = {
    * @returns {Promise<Object>} { answer, source, evidence, _debug, ... }
    */
   async askQuestion(message, datasetContextId = '', options = {}) {
-    const { workspaceState = null, workspaceAction = null, sessionId = null, chatId = null } = options;
+    const { workspaceState = null, workspaceAction = null, sessionId = null, chatId = null, messages = null } = options;
     const cleanDatasetId = (
       datasetContextId &&
       typeof datasetContextId === 'string' &&
@@ -79,6 +79,7 @@ export const PlexisAPI = {
       headers: defaultHeaders(),
       body: JSON.stringify({
         message,
+        messages: messages || null,
         dataset_id: cleanDatasetId,
         session_id: sessionId,
         workspace_state: workspaceState,

@@ -1041,6 +1041,19 @@ function DashboardInner() {
       const workspaceState = buildWorkspaceSummaryPayload();
       const workspaceAction = extraOptions.workspaceAction || null;
 
+      // Extract prior conversation history (excluding the current user message just appended)
+      const allMsgs = currentConv.messages || [];
+      const priorMsgs = allMsgs.length > 0 ? allMsgs.slice(0, -1) : [];
+      const historyPayload = priorMsgs
+        .filter(m => (m.sender === 'user' || m.sender === 'ai') && m.text && !m.isStreaming && m.id !== 'welcome' && !m.isFileCard)
+        .slice(-10)
+        .map(m => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.text,
+        }));
+
+      const resolvedChatId = currentConv.chatId || (isUUID(targetId) ? targetId : (isUUID(activeId) ? activeId : null));
+
       const apiResult = await PlexisAPI.askQuestion(
         runtimeText,
         currentConv.datasetId || (currentConv.datasetName && currentConv.datasetName !== 'No active dataset' && !currentConv.datasetName.startsWith('New Chat') ? currentConv.datasetName : '') || '',
@@ -1048,7 +1061,8 @@ function DashboardInner() {
           workspaceState: workspaceOpen ? workspaceState : null,
           workspaceAction,
           sessionId: activeId,
-          chatId: currentConv.chatId || null,   // ← DB chat UUID for operation persistence
+          chatId: resolvedChatId,
+          messages: historyPayload,
         },
       );
 

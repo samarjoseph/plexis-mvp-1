@@ -24,6 +24,7 @@ class RequestPipeline:
         workspace_state: Optional[dict] = None,
         workspace_action: Optional[dict] = None,
         chat_id: Optional[str] = None,      # NEW: passed from /api/ask for L2 restore
+        client_messages: Optional[List[dict]] = None,
     ) -> ExecutionContext:
         """Run the full pipeline and return an enriched ExecutionContext."""
         ctx = ExecutionContext(message=message)
@@ -97,7 +98,11 @@ class RequestPipeline:
         # Stage 4: Conversation Memory
         stage = ctx.start_stage('conversation_memory')
         ctx.conversation_history = conversation_memory.get_history(
-            ctx.session_id, last_n=20
+            ctx.session_id,
+            last_n=20,
+            dataset_id=ctx.dataset_id,
+            chat_id=ctx.chat_id,
+            client_messages=client_messages,
         )
         ctx.complete_stage(stage)
 

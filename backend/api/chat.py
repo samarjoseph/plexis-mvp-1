@@ -370,6 +370,19 @@ def ask():
     session_id = data.get('session_id') or request.headers.get('X-Session-Id')
     workspace_state = data.get('workspace_state') or None
     workspace_action = data.get('workspace_action') or None
+    client_messages = data.get('messages') or None
+    if isinstance(client_messages, list):
+        cleaned_client_msgs = []
+        for m in client_messages:
+            if isinstance(m, dict) and m.get('content'):
+                r = str(m.get('role', 'user')).lower()
+                cleaned_client_msgs.append({
+                    'role': 'assistant' if r in ('assistant', 'ai', 'model') else 'user',
+                    'content': str(m['content']),
+                })
+        client_messages = cleaned_client_msgs
+    else:
+        client_messages = None
 
     if not message and not workspace_action:
         err_dict, status = error_response(message="Message cannot be empty", status_code=400)
@@ -386,6 +399,7 @@ def ask():
             workspace_state=workspace_state,
             workspace_action=workspace_action,
             chat_id=chat_id,    # enables chat-scoped dataset restore on L1 cache miss
+            client_messages=client_messages,
         )
 
         # 1b. Check if dataset metadata exists but data access failed (recoverable error)
@@ -519,7 +533,7 @@ def ask():
         if resolved_chat_id and ctx.session_id:
             try:
                 from memory.conversation import conversation_memory
-                conversation_memory.register_chat_id(ctx.session_id, str(chat_id))
+                conversation_memory.register_chat_id(ctx.session_id, str(resolved_chat_id))
             except Exception:
                 pass  # Non-critical
 

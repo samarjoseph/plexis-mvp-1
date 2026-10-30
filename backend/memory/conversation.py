@@ -71,22 +71,39 @@ class ConversationMemory:
             if len(self._history[session_id]) > self._max_messages:
                 self._history[session_id] = self._history[session_id][-self._max_messages:]
 
-    def get_history(self, session_id: str, last_n: Optional[int] = None, dataset_id: Optional[str] = None) -> List[Dict[str, str]]:
+    def get_history(
+        self,
+        session_id: str,
+        last_n: Optional[int] = None,
+        dataset_id: Optional[str] = None,
+        chat_id: Optional[str] = None,
+        client_messages: Optional[List[Dict[str, str]]] = None,
+    ) -> List[Dict[str, str]]:
         orig_session_id = session_id
-        session_id = f"{session_id}::{dataset_id}" if dataset_id else session_id
-        """
-        Get conversation history as list of dicts.
+        session_key = f"{session_id}::{dataset_id}" if dataset_id else session_id
 
-        L1: check in-memory cache first.
-        L2: if cache empty and chat_id is known, reconstruct from PostgreSQL.
-        """
+        # 1. Tier 1: Client-provided messages (highest freshness across distributed cloud workers)
+        if client_messages and isinstance(client_messages, list) and len(client_messages) > 0:
+            with self._lock:
+                self._history[session_key] = [
+                    ConvMessage(role=m.get('role', 'user'), content=str(m.get('content', '')))
+                    for m in client_messages[-self._max_messages:]
+                ]
+                if chat_id:
+                    self._session_to_chat[session_id] = str(chat_id)
+            messages = client_messages[-last_n:] if last_n else client_messages
+            return [{'role': m['role'], 'content': m['content']} for m in messages]
+
+        # 2. Tier 2: In-memory L1 cache
         with self._lock:
-            messages = list(self._history.get(session_id, []))
-            chat_id = self._session_to_chat.get(session_id)
+            messages = list(self._history.get(session_key, []))
+            if not messages and dataset_id:
+                messages = list(self._history.get(session_id, []))
+            resolved_chat = chat_id or self._session_to_chat.get(session_id) or self._session_to_chat.get(session_key)
 
-        # L2 fallback: reconstruct from PostgreSQL if cache is empty
-        if not messages and chat_id:
-            messages = self._load_from_db(session_id, chat_id, last_n or self._max_messages, dataset_id)
+        # 3. Tier 3: L2 DB fallback from PostgreSQL if cache is empty
+        if not messages and resolved_chat:
+            messages = self._load_from_db(session_key, resolved_chat, last_n or self._max_messages, dataset_id)
 
         if last_n is not None:
             messages = messages[-last_n:]
@@ -101,11 +118,36 @@ class ConversationMemory:
 
             from db.session import db_session
             from db.repositories.message_repository import message_repository
+            from db.models.chat import Chat
             import uuid as _uuid
 
+            chat_uuid = None
+            try:
+                chat_uuid = _uuid.UUID(str(chat_id).strip())
+            except (ValueError, AttributeError):
+                chat_uuid = None
+
             with db_session() as db:
+                if not chat_uuid:
+                    # Resolve slug or isolated tag to chat UUID
+                    raw_chat_str = str(chat_id).strip()
+                    chat_obj = db.query(Chat).filter(Chat.slug == raw_chat_str).first()
+                    if not chat_obj and "-" in raw_chat_str:
+                        chat_tag = raw_chat_str.split("-")[-1]
+                        from db.isolation import compute_chat_tag
+                        all_chats = db.query(Chat).all()
+                        for c in all_chats:
+                            if compute_chat_tag(c.id) == chat_tag:
+                                chat_obj = c
+                                break
+                    if chat_obj:
+                        chat_uuid = chat_obj.id
+
+                if not chat_uuid:
+                    return []
+
                 db_msgs = message_repository.get_recent_simple(
-                    db, _uuid.UUID(chat_id), last_n=last_n
+                    db, chat_uuid, last_n=last_n
                 )
 
             messages = [
