@@ -53,6 +53,7 @@ function DashboardInner() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState(null);
   const streamingTargetIdRef = useRef(null);
+  const internalChatNavRef = useRef(null);
   // Track the most recent successful spreadsheet operation card.
   // Follow-up explanation messages (explain_evidence) reuse this card so
   // their Locate/Undo/Redo buttons work via the same SPREADSHEET_CARD_ACTION pipeline.
@@ -227,6 +228,14 @@ function DashboardInner() {
 
   // ── Sync URL chatRef param to active chat & load direct links ─────────
   useEffect(() => {
+    // 1. If this navigation was triggered internally by an active chat receiving a slug or ID:
+    if (internalChatNavRef.current && (internalChatNavRef.current === chatRef || internalChatNavRef.current === activeId)) {
+      internalChatNavRef.current = null;
+      prevChatRef.current = chatRef;
+      setIsChatRouteLoading(false);
+      return;
+    }
+
     const hadChatRef = Boolean(prevChatRef.current);
     prevChatRef.current = chatRef;
 
@@ -236,6 +245,21 @@ function DashboardInner() {
       if (hadChatRef && activeId !== null) {
         setActiveId(null);
       }
+      return;
+    }
+
+    // 2. If the user is ALREADY actively viewing this chat in memory:
+    const currentActive = conversations.find((c) => c.id === activeId);
+    const isAlreadyActive = currentActive && (
+      currentActive.slug === chatRef ||
+      currentActive.shareSlug === chatRef ||
+      currentActive.chatId === chatRef ||
+      currentActive.id === chatRef ||
+      (!hadChatRef && currentActive.messages && currentActive.messages.length > 0)
+    );
+
+    if (isAlreadyActive) {
+      setIsChatRouteLoading(false);
       return;
     }
 
@@ -795,6 +819,7 @@ function DashboardInner() {
           });
 
           if (created.slug) {
+            internalChatNavRef.current = created.slug;
             navigate(`/dashboard/${created.slug}`, { replace: true });
           }
         }
@@ -986,6 +1011,7 @@ function DashboardInner() {
               setActiveId(finalChatId);
             }
             if (finalSlug) {
+              internalChatNavRef.current = finalSlug;
               navigate(`/dashboard/${finalSlug}`, { replace: true });
             }
           })
@@ -1073,6 +1099,9 @@ function DashboardInner() {
       if (apiResult?.chat_id && currentConv.chatId !== apiResult.chat_id) {
         const finalChatId = apiResult.chat_id;
         const finalSlug = apiResult.slug || currentConv.slug;
+        const oldTargetId = targetId;
+        targetId = finalChatId;
+        streamingTargetIdRef.current = finalChatId;
         currentConv.chatId = finalChatId;
         currentConv.id = finalChatId;
         if (finalSlug) {
@@ -1082,7 +1111,7 @@ function DashboardInner() {
         const currentTitle = currentConv.title;
         setConversations((prev) => {
           const next = prev.map((c) =>
-            c.id === targetId || c.chatId === finalChatId || c.id === currentConv.id
+            c.id === oldTargetId || c.id === targetId || c.chatId === finalChatId || c.id === currentConv.id
               ? { ...c, chatId: finalChatId, id: finalChatId, slug: finalSlug || c.slug, shareSlug: finalSlug || c.shareSlug }
               : c
           );
@@ -1092,6 +1121,7 @@ function DashboardInner() {
         setActiveId(finalChatId);
 
         if (finalSlug) {
+          internalChatNavRef.current = finalSlug;
           navigate(`/dashboard/${finalSlug}`, { replace: true });
         }
 
@@ -1174,10 +1204,17 @@ function DashboardInner() {
       }
 
       setConversations((prev) =>
-        updateConversation(prev, targetId, {
-          messages: [...updatedMessages, aiMessage],
-          chartData: nextChartData,
-          title: prev.find(c => c.id === targetId)?.title || currentConv.title,
+        prev.map((c) => {
+          if (c.id === targetId || c.id === currentConv.id || (currentConv.chatId && c.chatId === currentConv.chatId)) {
+            return {
+              ...c,
+              messages: [...updatedMessages, aiMessage],
+              chartData: nextChartData,
+              title: c.title || currentConv.title,
+              updatedAt: Date.now(),
+            };
+          }
+          return c;
         })
       );
     } catch (err) {
@@ -1196,6 +1233,8 @@ function DashboardInner() {
       setLoadingChatIds((prev) => {
         const next = new Set(prev);
         next.delete(targetId);
+        if (currentConv?.id) next.delete(currentConv.id);
+        if (currentConv?.chatId) next.delete(currentConv.chatId);
         return next;
       });
     }
