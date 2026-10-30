@@ -62,6 +62,8 @@ class ChatRepository:
             "Summary", "Discussion", "Exchange", "Perspective", "Notes"
         ]
         for mod in modifiers:
+            if base.lower().endswith(mod.lower()):
+                continue
             candidate = f"{base} {mod}"
             if candidate.lower() not in existing:
                 return candidate

@@ -142,6 +142,10 @@ class ModelSelector:
             if task_lower in ("transformation_planning", "transformation") and model.provider == "gemini":
                 priority = 0
 
+            # For title generation, prioritize Gemini 2.5 Flash / Groq for sub-second latency and smart summarization
+            if task_lower == "title" and model.provider in ("gemini", "groq"):
+                priority = 0
+
             reliability = getattr(model, 'reliability_score', 1.0)
 
             # Priority is primary sort key (lower priority value = better score)

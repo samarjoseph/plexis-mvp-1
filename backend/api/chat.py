@@ -562,9 +562,9 @@ def _smart_fallback_title(message: str, filename: str = None) -> str:
 
     greeting_patterns = {'hello', 'hi', 'hey', 'sup', 'yo', 'bro', 'goodmorning', 'goodevening', 'howdy', 'greetings', 'morning', 'evening', 'there'}
     if not words:
-        return "Introductory Conversation"
+        return "Friendly Greeting"
     if all(w in greeting_patterns for w in words) or (words[0] in greeting_patterns and len(words) <= 3):
-        return "Introductory Conversation"
+        return "Friendly Greeting"
 
     test_patterns = {'test', 'testing', 'check', '123', 'ping'}
     if any(t in words for t in test_patterns) and len(words) <= 3:
@@ -624,14 +624,20 @@ def generate_title_endpoint():
         avoid_clause = f"\nExisting titles in this account: [{titles_sample}]. Pick a distinct title that is not already in this list."
 
     system_prompt = (
-        "You are an intelligent session title generator for Plexis, a modern data analytics platform.\n"
-        "Your task is to generate a concise, professional 2-to-4 word TOPICAL HEADLINE describing the subject matter or user's analytical intent.\n\n"
+        "You are an intelligent session title generator for Plexis, a modern data analytics and conversation platform.\n"
+        "Your goal is to generate a concise, natural, highly accurate 2-to-4 word title that directly reflects what the user actually asked or said.\n\n"
         "CRITICAL RULES:\n"
-        "1. A title is a TOPICAL HEADLINE or LABEL, NEVER a conversational reply, greeting, or dialogue response (e.g. NEVER output 'Hello There', 'Hi There', 'Hey Friend', 'Nice To Meet You', 'How Can I Help', 'Welcome').\n"
-        "2. For casual greetings, pleasantries, or testing (e.g. 'hi', 'hello', 'hey bro', 'test'): output professional descriptive topic titles such as 'Introductory Conversation', 'Initial Inquiry', 'General Discussion', or 'Platform Overview'. NEVER use conversational words like 'Hello', 'Hi', 'Hey', 'Bro', 'There', 'Yo' in the title.\n"
-        "3. For analytical inquiries: formulate a clear topical headline summarizing the analytical goal (e.g. 'Revenue Trend Analysis', 'Customer Churn Factors', 'Flight Delay Overview').\n"
-        "4. If a list of existing chat titles is provided, choose a distinct title not in that list.\n"
-        "5. Output ONLY the title text inside double quotes, 2 to 4 words. No additional text."
+        "1. GREETINGS & CASUAL MESSAGES (e.g. 'hi', 'hello', 'hey', 'good morning', 'how are you'):\n"
+        "   - Output natural conversational titles like 'Casual Greeting', 'Friendly Greeting', 'Casual Chat', or 'Casual Discussion'.\n"
+        "   - NEVER call a simple greeting 'Platform Overview', 'Initial Inquiry', or invent topics that were never discussed.\n"
+        "2. SPECIFIC QUESTIONS OR TOPICS (e.g. 'how old is Modi', 'what is GDP of France', 'explain quantum computing'):\n"
+        "   - Name the subject directly and naturally (e.g. 'Narendra Modi Age', 'France GDP', 'Quantum Computing Intro').\n"
+        "   - Avoid mechanically appending corporate suffixes like 'Inquiry', 'Overview', or 'Analysis' unless the user specifically asked for analysis or an overview.\n"
+        "3. DATASETS & SPREADSHEETS:\n"
+        "   - If a dataset or spreadsheet was uploaded, capture the dataset topic concisely (e.g. 'Sales Performance Data', 'Customer Churn Factors').\n"
+        "4. DO NOT blindly echo slang or informal salutations verbatim (e.g. avoid 'hello bro', 'yo man'). Use clean, polished titles.\n"
+        "5. If existing titles in the user's account are provided, craft a creative distinct title that captures the nuance without colliding.\n"
+        "6. Return ONLY the title text inside double quotes, 2 to 4 words. No additional text."
     )
 
     if filename and message:
@@ -662,8 +668,8 @@ def generate_title_endpoint():
                 task='title',
                 messages=[{"role": "user", "content": prompt}],
                 system_prompt=system_prompt,
-                temperature=0.7,
-                max_tokens=256,
+                temperature=0.2,
+                max_tokens=128,
             )
         )
         if response.success and response.text:
@@ -683,13 +689,16 @@ def generate_title_endpoint():
                 # Ensure LLM did not verbatim echo user words (e.g. 'Hello Bro' from 'hello bro')
                 msg_norm = re.sub(r'[^a-z0-9]', '', message.lower())
                 cand_norm = re.sub(r'[^a-z0-9]', '', candidate.lower())
-                conversational_words = {
-                    'hello', 'hi', 'hey', 'bro', 'yo', 'sup', 'howdy', 'there',
-                    'greetings', 'morning', 'afternoon', 'evening', 'welcome', 'friend',
-                    'buddy', 'dude', 'mate'
-                }
+                raw_slang_words = {'bro', 'dude', 'mate', 'yo', 'sup', 'howdy', 'homie'}
+                raw_greeting_words = {'hello', 'hi', 'hey'}
                 cand_words = set(re.findall(r'[a-z0-9]+', candidate.lower()))
-                if cand_norm == msg_norm or any(w in conversational_words for w in cand_words):
+
+                is_echo = cand_norm == msg_norm
+                has_slang = any(w in raw_slang_words for w in cand_words)
+                is_only_greeting = cand_words.issubset(raw_greeting_words)
+                has_banned_hello_bro = "hello" in cand_words and "bro" in cand_words
+
+                if is_echo or has_slang or is_only_greeting or has_banned_hello_bro:
                     candidate = _smart_fallback_title(message, filename)
                 cleaned = candidate
     except Exception as e:
