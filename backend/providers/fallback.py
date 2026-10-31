@@ -9,6 +9,7 @@ Model-level and provider-level fallback with Global Provider Quarantine and Circ
   - Role-compatible failover with strict preservation of semantic intent.
 """
 import logging
+import re
 from typing import List, Optional
 
 from providers.base import ProviderResponse
