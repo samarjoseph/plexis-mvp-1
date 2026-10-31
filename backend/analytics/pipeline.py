@@ -979,6 +979,13 @@ class AnalyticsPipeline:
             if isinstance(val, dict):
                 parts = [f"{k}: {v}" for k, v in val.items()]
                 return f"Unique values in **{dataset_name}**: " + ", ".join(parts) + "."
+            if isinstance(val, list):
+                if len(val) <= 15:
+                    items_str = ", ".join(f"**{v}**" for v in val)
+                    return f"The {len(val)} distinct values for **{col}** are: {items_str}."
+                else:
+                    items_str = ", ".join(f"**{v}**" for v in val[:15])
+                    return f"The {len(val)} distinct values for **{col}** include: {items_str} (and {len(val) - 15} more)."
             return f"Unique values for **{col}**: {val}."
             
         if op == "frequency":

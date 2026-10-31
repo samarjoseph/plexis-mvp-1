@@ -119,9 +119,20 @@ def build_interpreter_prompt(
         ws_lines.append(f"  Selected rows: {selected_rows[:10]} ({workspace_ctx.get('selected_row_count', 0)} total)")
     ws_block = ("WORKSPACE CONTEXT:\n" + "\n".join(ws_lines)) if ws_lines else ""
 
+    # Conversation context block (recent turns for follow-ups)
+    recent_turns = semantic_context.get("recent_conversation", [])
+    if recent_turns:
+        history_lines = [
+            f"  {turn.get('role', 'user').upper()}: {turn.get('content', '')}"
+            for turn in recent_turns
+        ]
+        history_block = "RECENT CONVERSATION TURNS:\n" + "\n".join(history_lines)
+    else:
+        history_block = ""
+
     # â”€â”€ Build the full prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     sections = [
-        s for s in [col_block, ref_block, cap_block, ws_block] if s
+        s for s in [col_block, ref_block, cap_block, ws_block, history_block] if s
     ]
     context_block = "\n\n".join(sections) if sections else "(no additional context)"
 
@@ -131,6 +142,8 @@ def build_interpreter_prompt(
         "  READ operations (DATA_OPERATION):\n"
         "    min/max/average/count/top/bottom/missing/duplicates/filter/sort/\n"
         "    correlation/outliers/standard deviation on any listed column.\n"
+        "    Follow-up requests to list, name, or show entities or values (e.g. 'give all 9 names',\n"
+        "    'what are their names', 'list them') are DATA_OPERATION (UNIQUE_VALUES). NEVER use TRANSFORM for listings.\n"
         "  MUTATING operations (TRANSFORM) â€” dataset IS loaded:\n"
         "    fill missing values, fill nulls, impute, drop duplicates, rename column,\n"
         "    drop column, remove column, delete column, cast type, convert type,\n"
@@ -169,6 +182,7 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     {"type": "VALUE_COUNTS", "column": "column_name"}
     {"type": "RANGE", "column": "column_name"}
     {"type": "UNIQUE_COUNT", "column": "column_name"}
+    {"type": "UNIQUE_VALUES", "column": "column_name"}
     {"type": "MOST_FREQUENT_VALUE", "column": "column_name"}
     {"type": "LEAST_FREQUENT_VALUE", "column": "column_name"}
     {"type": "GET_ROW_COUNT"}

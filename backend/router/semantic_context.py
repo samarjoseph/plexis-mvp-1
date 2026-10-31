@@ -189,6 +189,14 @@ class SemanticContextBuilder:
         # ── 2. Workspace context ──────────────────────────────────────────────
         result["workspace_context"] = self._build_workspace_context(context)
 
+        # ── 3. Conversation context (recent turns for multi-turn follow-ups) ──
+        history = getattr(context, 'conversation_history', None) or []
+        if history:
+            result["recent_conversation"] = [
+                {"role": turn.get("role", "user"), "content": str(turn.get("content", ""))[:200]}
+                for turn in history[-4:]
+            ]
+
         return result
 
     # ── Column extraction ─────────────────────────────────────────────────────

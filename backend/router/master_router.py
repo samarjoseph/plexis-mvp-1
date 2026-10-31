@@ -107,17 +107,30 @@ _ANALYSIS_MIN_COL_RX = re.compile(
     re.IGNORECASE,
 )
 
-# Unique values list (not count): "what X are in/present in the dataset"
-_ANALYSIS_UNIQUE_VALUES_RX = re.compile(
-    r'\bwhat\s+(\w+)(?:\s+values?)?\s+are\s+(?:present\s+(?:in|within)|in|found\s+in|'
-    r'available\s+in|included\s+in)\s+(?:the\s+)?dataset\b'
+# Unique values list (direct query: "what cities are present in the dataset?", "give all 9 airlines", "list airlines")
+_ANALYSIS_UNIQUE_VALUES_DIRECT_RX = re.compile(
+    r'^\s*(?:please\s+)?(?:give(?:\s+me)?|list|show(?:\s+me)?|tell\s+me|what\s+are(?:\s+all)?|name|display|print)\s+'
+    r'(?:all\s+)?(?:the\s+)?(?:\d+\s+)?(?:unique\s+|distinct\s+)?'
+    r'([a-zA-Z_]\w*)(?:\s+(?:names?|values?|entities?))?'
+    r'(?:\s+(?:are\s+there|in\s+(?:the\s+)?dataset|present|available))?[?.!]?\s*$'
+    r'|\bwhat\s+([a-zA-Z_]\w*)(?:\s+values?)?\s+are\s+(?:present\s+(?:in|within)|in|found\s+in|available\s+in|included\s+in)\s+(?:the\s+)?dataset\b'
     r'|\blist\s+(?:all\s+)?(?:the\s+)?(?:unique\s+)?(\w+)(?:\s+values?)?\b',
     re.IGNORECASE,
 )
+_ANALYSIS_UNIQUE_VALUES_RX = _ANALYSIS_UNIQUE_VALUES_DIRECT_RX
 
-# Unique count for a column: "how many unique X", "how many distinct X"
+# Follow-up unique values / entity names referencing previous turns: "give all 9 names", "what are their names", "list them"
+_ANALYSIS_UNIQUE_VALUES_FOLLOWUP_RX = re.compile(
+    r'^\s*(?:please\s+)?(?:give(?:\s+me)?|list|show(?:\s+me)?|tell\s+me|what\s+are(?:\s+all)?|name|display|print|who\s+are|which\s+ones\s+are)\s+'
+    r'(?:all\s+)?(?:the\s+)?(?:\d+\s+)?(?:their\s+|those\s+|these\s+)?'
+    r'(?:names?|values?|airlines?|entities?|them|they|ones)'
+    r'(?:\s+(?:are\s+there|in\s+(?:the\s+)?dataset|present|available|of\s+them))?[?.!]?\s*$',
+    re.IGNORECASE,
+)
+
+# Unique count for a column: "how many unique X", "how many distinct X", "how many airlines are there in the dataset"
 _ANALYSIS_UNIQUE_COUNT_RX = re.compile(
-    r'\bhow many (?:unique|distinct)\s+(\w+)(?:\s+(?:values?|are\s+there|exist|does\s+the\s+dataset\s+have))?\b',
+    r'\bhow many\s+(?:unique\s+|distinct\s+)?(\w+)(?:\s+(?:values?|are\s+there|exist|does\s+the\s+dataset\s+have|in\s+(?:the\s+)?dataset|represented))?\b',
     re.IGNORECASE,
 )
 
@@ -863,6 +876,30 @@ def _is_hypothetical(message: str) -> bool:
     return any(re.search(pat, msg) for pat in hypothetical_patterns)
 
 
+def _has_mutation_intent(message: str) -> bool:
+    """Check if message explicitly requests a data-mutating transformation."""
+    if not message:
+        return False
+    msg = message.strip().lower()
+    if _parse_transform_from_message(msg) is not None:
+        return True
+    if _TRANSFORM_RX.search(msg):
+        return True
+    mutation_verbs = [
+        r'\b(?:fill|fillna|impute)\b',
+        r'\b(?:drop|delete|remove)\s+(?:the\s+)?(?:\w+\s+)?(?:column|col|rows?|duplicate|dup)\b',
+        r'\brename\s+(?:the\s+)?(?:\w+\s+)?(?:column|col)?\b',
+        r'\b(?:replace|swap|change|update|set)\s+.*\s+(?:with|to|by|=)\b',
+        r'\b(?:cast|convert)\s+\w+\s+(?:to|as|into)\b',
+        r'\b(?:clip|cap|floor)\b',
+        r'\b(?:add|create)\s+(?:a\s+)?(?:new\s+)?(?:column|col)\b',
+        r'\bsort\s+(?:the\s+)?(?:data(?:set)?\s+)?by\b',
+        r'\b(?:deduplicate|dedup)\b',
+        r'\bfilter\s+(?:the\s+)?rows?\s+(?:where|when|if|to\s+keep|to\s+remove)\b',
+    ]
+    return any(re.search(pat, msg) for pat in mutation_verbs)
+
+
 def _restore_typed_operation_from_pending(pending, operation=None):
     """Restore resolved typed literals from canonical pending state.
 
@@ -944,6 +981,27 @@ class MasterRouter:
         raw_intent = payload.get("intent", "conversation")
         intent = self._map_intent(raw_intent)
         confidence = float(payload.get("confidence", 0.8))
+
+        # Guard against non-mutating requests being falsely classified as TRANSFORM
+        if intent in ("transform", "spreadsheet_ops"):
+            msg_check = getattr(context, 'message', '') or ''
+            if not _has_mutation_intent(msg_check):
+                dataset_id = getattr(context, 'dataset_id', None)
+                logger.warning(
+                    f"[Router] Query '{msg_check[:80]}' misclassified as {intent} without mutation intent. "
+                    f"Redirecting to {'analysis' if dataset_id else 'conversation'}."
+                )
+                intent = "analysis" if dataset_id else "conversation"
+                raw_intent = "DATA_OPERATION" if dataset_id else "CONVERSATION"
+                payload["intent"] = raw_intent
+                payload["operations"] = []
+                payload["operation"] = None
+                if dataset_id:
+                    fast_analysis = self._analysis_fast_path(context, msg_check.lower())
+                    if fast_analysis and fast_analysis.get('operation'):
+                        payload["operations"] = [fast_analysis['operation']]
+                        payload["operation"] = fast_analysis['operation']
+                        payload["reason"] = fast_analysis.get('reason', 'Resolved via analysis fast-path')
 
         context.route_payload = payload
         context.intent = intent
@@ -3698,18 +3756,52 @@ class MasterRouter:
                 logger.debug("[Router/analysis-fast-path] MIN column=%s", col)
                 return _make_op("MIN", column=col)
 
-        # ── Unique values list ("what cities are present in the dataset?") ────
-        uv_m = _ANALYSIS_UNIQUE_VALUES_RX.search(msg_lower)
-        if uv_m:
-            col_word = (uv_m.group(1) or uv_m.group(2) or '').strip()
+        # Helper: resolve recent column from conversation history for follow-ups
+        def _find_recent_column_from_history(ctx):
+            history = getattr(ctx, 'conversation_history', None) or []
+            if not history:
+                route_payload = getattr(ctx, 'route_payload', None) or {}
+                history = route_payload.get('conversation_history', [])
+            if not history:
+                return None
+            for turn in reversed(history):
+                content = turn.get('content', '') if isinstance(turn, dict) else getattr(turn, 'content', '')
+                if not content:
+                    continue
+                # Priority 1: Check if turn mentions "distinct/unique/<number> <col>"
+                m_distinct = re.search(r'\b(?:distinct|unique|\d+)\s+([a-zA-Z_]\w*)', content, re.I)
+                if m_distinct:
+                    cand = _find_column(m_distinct.group(1))
+                    if cand and (not df_override or cand in df_override.columns):
+                        return cand
+                # Priority 2: Check tokens in turn against known columns
+                tokens = re.findall(r'[a-zA-Z0-9_]+', content)
+                for tok in tokens:
+                    cand = _find_column(tok)
+                    if cand and (not df_override or cand in df_override.columns):
+                        return cand
+            return None
+
+        # ── Unique values list (direct query: "what cities are present?", "give all 9 airlines", "list airlines") ──
+        uv_direct_m = _ANALYSIS_UNIQUE_VALUES_DIRECT_RX.search(msg_lower)
+        if uv_direct_m and not re.search(r'\bhow many\b', msg_lower):
+            col_word = (uv_direct_m.group(1) or uv_direct_m.group(2) or '').strip()
             col = _find_column(col_word)
-            if col and not re.search(r'\bhow many\b', msg_lower):
-                logger.debug("[Router/analysis-fast-path] UNIQUE_VALUES column=%s", col)
+            if col:
+                logger.debug("[Router/analysis-fast-path] UNIQUE_VALUES (direct) column=%s", col)
                 return _make_op("UNIQUE_VALUES", column=col)
 
-        # ── Unique count ("how many unique cities are there?") ────────────────
+        # ── Unique values list (follow-up query referencing prior conversation: "give all 9 names", "what are their names", "list them") ──
+        uv_followup_m = _ANALYSIS_UNIQUE_VALUES_FOLLOWUP_RX.search(msg_lower)
+        if uv_followup_m and not re.search(r'\bhow many\b', msg_lower):
+            col = _find_recent_column_from_history(context)
+            if col:
+                logger.debug("[Router/analysis-fast-path] UNIQUE_VALUES (followup) column=%s", col)
+                return _make_op("UNIQUE_VALUES", column=col)
+
+        # ── Unique count ("how many unique cities are there?", "how many airlines are there in the dataset") ──
         uc_m = _ANALYSIS_UNIQUE_COUNT_RX.search(msg_lower)
-        if uc_m:
+        if uc_m and not re.search(r'\bhow many (?:rows?|records?|cells?|missing|duplicate)\b', msg_lower):
             col_word = (uc_m.group(1) or '').strip()
             col = _find_column(col_word)
             if col:
