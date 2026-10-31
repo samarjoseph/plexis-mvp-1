@@ -2625,7 +2625,11 @@ class MasterRouter:
                 "fifteen": 15, "twenty": 20, "twenty-five": 25, "fifty": 50, "100": 100
             }
             n_limit = num_words.get(n_raw, int(n_raw) if n_raw and n_raw.isdigit() else 10)
-            is_asc = direction_word in ("bottom", "lowest", "least", "worst") or "least" in remainder.split()
+            asc_polarity = ("bottom", "lowest", "least", "min", "minimum", "fewest", "smallest")
+            is_asc = (
+                direction_word in asc_polarity
+                or any(re.search(rf'\b{w}\b', msg_lower) for w in asc_polarity)
+            )
             order = "asc" if is_asc else "desc"
 
             rem_tokens = re.split(r'\s+(?:by|ranked\s+by|with|based\s+on|for|in|having|with\s+the)\s+|\s+', remainder)

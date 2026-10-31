@@ -472,3 +472,41 @@ def test_least_delay_ranking_clarification_and_followups(flight_dataset):
     assert op_text["column"] == "Airline"
     assert op_text["value_column"] == "Departure_Delay"
     assert op_text.get("order") == "asc"
+
+
+def test_lowest_and_minimum_delay_synonyms_produce_asc_clarification(flight_dataset):
+    df, entry = flight_dataset
+    from router.master_router import master_router
+    for msg in [
+        "give me top 10 airlines with lowest delay",
+        "give me top 10 airlines with fewest delays",
+        "give me top 10 airlines with smallest delay",
+    ]:
+        ctx = ExecutionContext(
+            session_id=f"test_synonym_{hash(msg)}",
+            message=msg,
+            dataset_id="test_flight_ds",
+            dataset_filename="flights.csv",
+        )
+        ctx.schema_profile = entry.schema_profile
+        res = master_router.route(ctx)
+        assert res.metadata and "clarification" in res.metadata, f"Failed for {msg}"
+        clarif = res.metadata["clarification"]
+        assert clarif["order"] == "asc", f"Expected asc for {msg}"
+        labels = [opt["label"] for opt in clarif["ambiguous_options"]]
+        assert any("Lowest" in l or "Fewest" in l for l in labels)
+        assert not any("Highest" in l or "Most" in l for l in labels)
+
+    # When explicit aggregation keyword "minimum" is specified, it should directly execute GROUP_MIN in ascending order
+    min_ctx = ExecutionContext(
+        session_id="test_explicit_min",
+        message="top 10 airlines with minimum delay",
+        dataset_id="test_flight_ds",
+        dataset_filename="flights.csv",
+    )
+    min_ctx.schema_profile = entry.schema_profile
+    res_min = master_router.route(min_ctx)
+    op = getattr(min_ctx, "llm_operation", {})
+    assert op.get("type") == "GROUP_MIN"
+    assert op.get("order") == "asc"
+    assert "Departure_Delay" in op.get("value_column", "")
