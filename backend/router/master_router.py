@@ -154,6 +154,9 @@ _TRANSFORM_RX = re.compile(
     r'|clip\s+(?:all\s+)?(?:the\s+)?'
     r'|(?:replace|change|set|update|swap)\s+(?:the\s+)?(?:(?:integer|int|float|decimal|string|str|text|boolean|bool|numeric)\s+)?(?:"[^"\r\n]*"|\'[^\'\r\n]*\'|[\w\s.-]+?)\s+(?:with|to|by|=)\b'
     r'|call\s+(?:the\s+)?\w+\s+column\b'
+    r'|(?:add|create)\s+(?:a\s+)?(?:new\s+)?(?:column|col)\b'
+    r'|new\s+(?:column|col)\b'
+    r'|(?:leave\s+(?:that|it)(?:\s+thing)?\s+(?:but\s+)?)?(?:just\s+)?(?:add|create)\s+(?:that|the)\s+column\b'
     r')\b',
     re.IGNORECASE,
 )
@@ -161,7 +164,7 @@ _TRANSFORM_RX = re.compile(
 
 
     
-def _parse_transform_from_message(message: str) -> dict | None:
+def _parse_transform_from_message(message: str, context: Optional[Any] = None) -> dict | None:
     """
     Extract a structured transform operation from a natural language message.
 
@@ -347,6 +350,63 @@ def _parse_transform_from_message(message: str) -> dict | None:
         if m.group(1):
             op["columns"] = [m.group(1)]
         return op
+
+    # ── ADD_COLUMN ────────────────────────────────────────────────────────────
+    # Follow-up: "leave that thing but just add that column" / "just add that column"
+    m_followup = re.search(
+        r'(?:leave\s+(?:that|it)(?:\s+thing)?\s+(?:but\s+)?)?(?:just\s+)?(?:add|create)\s+(?:that|the)\s+column',
+        msg, re.IGNORECASE,
+    )
+    if m_followup:
+        inferred_col = None
+        if context:
+            history = getattr(context, 'conversation_history', None) or []
+            if not history:
+                route_payload = getattr(context, 'route_payload', None) or {}
+                history = route_payload.get('conversation_history', [])
+            for turn in reversed(history):
+                content_turn = turn.get('content', '') if isinstance(turn, dict) else getattr(turn, 'content', '')
+                if not content_turn:
+                    continue
+                q_match = re.search(r'(?:column|col)(?:\s+(?:named|called))?\s+([\"\'])(.*?)\1', content_turn, re.IGNORECASE)
+                if q_match:
+                    inferred_col = q_match.group(2).strip()
+                    break
+                c_match = re.search(r'(?:column|col)(?:\s+(?:named|called))?\s+([a-zA-Z_]\w*)', content_turn, re.IGNORECASE)
+                if c_match:
+                    cand = c_match.group(1).strip()
+                    if cand.lower() not in ('called', 'named', 'that', 'the', 'a', 'new', 'column', 'col'):
+                        inferred_col = cand
+                        break
+        if inferred_col:
+            return {"type": "ADD_COLUMN", "column": inferred_col, "value": None}
+
+    # Quoted column name: add a column "departure_percent" / add column 'foo'
+    m_add_quoted = re.search(
+        r'(?:add|create)\s+(?:a\s+)?(?:new\s+)?(?:column|col)(?:\s+(?:named|called))?\s+([\"\'])(.*?)\1(?:\s+(?:with|equal\s+to|=|set\s+to)\s+(.+))?',
+        orig, re.IGNORECASE,
+    )
+    if m_add_quoted:
+        col_name = m_add_quoted.group(2).strip()
+        val = None
+        if m_add_quoted.group(3):
+            val_raw = m_add_quoted.group(3).strip().rstrip('.')
+            val = parse_with_explicit_type(val_raw).python_value
+        return {"type": "ADD_COLUMN", "column": col_name, "value": val}
+
+    # Bare column name: add column departure_percent / create column departure_percent
+    m_add_bare = re.search(
+        r'(?:add|create)\s+(?:a\s+)?(?:new\s+)?(?:column|col)(?:\s+(?:named|called))?\s+([a-zA-Z_]\w*)(?:\s+(?:with|equal\s+to|=|set\s+to)\s+(.+))?',
+        orig, re.IGNORECASE,
+    )
+    if m_add_bare:
+        col_name = m_add_bare.group(1).strip()
+        if col_name.lower() not in ('that', 'the', 'a', 'new', 'column', 'col', 'if', 'when', 'where'):
+            val = None
+            if m_add_bare.group(2):
+                val_raw = m_add_bare.group(2).strip().rstrip('.')
+                val = parse_with_explicit_type(val_raw).python_value
+            return {"type": "ADD_COLUMN", "column": col_name, "value": val}
 
     # ── DROP_COLUMN ───────────────────────────────────────────────────────────
     m = re.search(
@@ -700,6 +760,22 @@ def _normalize_transform_operation(op: dict) -> dict:
         # Ensure action key exists (default KEEP)
         if 'action' not in op:
             op['action'] = 'KEEP'
+
+    elif op_type == 'ADD_COLUMN':
+        if 'name' in op and 'column' not in op:
+            op['column'] = op.pop('name')
+        if 'new_column' in op and 'column' not in op:
+            op['column'] = op.pop('new_column')
+        if 'column_name' in op and 'column' not in op:
+            op['column'] = op.pop('column_name')
+        if 'default_value' in op and 'value' not in op:
+            op['value'] = op.pop('default_value')
+        if 'columns' in op and 'column' not in op:
+            cols = op.pop('columns')
+            if isinstance(cols, list) and cols:
+                op['column'] = cols[0]
+            elif isinstance(cols, str):
+                op['column'] = cols
 
     elif op_type == 'DROP_COLUMN':
         # LLM might return "columns": ["phone"] instead of "column": "phone"
@@ -1417,7 +1493,7 @@ class MasterRouter:
         # Only fire when dataset is loaded and request is NOT a hypothetical simulation
         if dataset_id and not _is_hypothetical(message):
             raw_msg = getattr(context, 'message', None) or message
-            operation = _parse_transform_from_message(raw_msg)
+            operation = _parse_transform_from_message(raw_msg, context=context)
             if operation:
                 logger.info(
                     "[Router] fast-path: TRANSFORM operation=%s",
@@ -2741,9 +2817,13 @@ class MasterRouter:
                         },
                         "reason": f"Ranking query is ambiguous — no explicit aggregation for entity='{cand_grp}' metric='{cand_val}'",
                     }
-            elif cand_val and (n_raw is not None or direction_word in ("top", "bottom")):
-                row_op = "TOP_N" if order == "desc" else "BOTTOM_N"
-                return _make_op(row_op, column=cand_val, n=n_limit, order=order)
+            elif cand_val:
+                if n_raw is not None or direction_word in ("top", "bottom"):
+                    row_op = "TOP_N" if order == "desc" else "BOTTOM_N"
+                    return _make_op(row_op, column=cand_val, n=n_limit, order=order)
+                else:
+                    scalar_op = "MAX" if order == "desc" else "MIN"
+                    return _make_op(scalar_op, column=cand_val)
 
         # ── Entity ranked by metric: "<group> ranked by <stat> <metric>" ──
         m_ent_rank = re.search(
@@ -4254,6 +4334,7 @@ class MasterRouter:
         query = getattr(context, 'message', '') or getattr(context, 'normalized_query', '')
         
         # 1. Semantic Caching
+        dataset_loaded = semantic_ctx.get("dataset_loaded", False)
         cache_key = f"{query}::{semantic_ctx.get('dataset_id', '')}::{semantic_ctx.get('dataset_fingerprint', '')}"
         if cache_key in self._semantic_cache:
             cached_val = self._semantic_cache[cache_key]
@@ -4265,7 +4346,6 @@ class MasterRouter:
         prompt = build_interpreter_prompt(query=query, semantic_context=semantic_ctx)
 
         # Log what we're sending (no data, just metadata)
-        dataset_loaded = semantic_ctx.get("dataset_loaded", False)
         col_count = len(semantic_ctx.get("columns", []))
         ref_cols = semantic_ctx.get("referenced_columns", [])
         logger.info(

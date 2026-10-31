@@ -116,26 +116,35 @@ class GeminiProvider(IProviderAdapter):
 
     def _get_model_for_request(self, request: AIRequest) -> str:
         """Select model from model_registry for the given task."""
+        model_name = None
         if hasattr(request, "model_id") and request.model_id:
-            return request.model_id
-        try:
-            from providers.model_registry import model_registry
-            task = (request.task or '').lower()
-            gemini_models = model_registry.get_models_for_provider('gemini')
-            if gemini_models:
-                task_models = [
-                    m for m in gemini_models
-                    if m.task_affinities.get(task, 0) > 0 and m.health_score > 0.3
-                ]
-                if task_models:
-                    task_models.sort(key=lambda m: (-m.task_affinities.get(task, 0), m.priority))
-                    return task_models[0].model_name
-                gemini_models.sort(key=lambda m: m.priority)
-                return gemini_models[0].model_name
-        except Exception as exc:
-            logger.warning('[GeminiProvider] model_registry lookup failed: %s', exc)
-        from config import Config
-        return Config.TRANSFORMATION_GEMINI_MODEL
+            model_name = request.model_id
+        else:
+            try:
+                from providers.model_registry import model_registry
+                task = (request.task or '').lower()
+                gemini_models = model_registry.get_models_for_provider('gemini')
+                if gemini_models:
+                    task_models = [
+                        m for m in gemini_models
+                        if m.task_affinities.get(task, 0) > 0 and m.health_score > 0.3
+                    ]
+                    if task_models:
+                        task_models.sort(key=lambda m: (-m.task_affinities.get(task, 0), m.priority))
+                        model_name = task_models[0].model_name
+                    else:
+                        gemini_models.sort(key=lambda m: m.priority)
+                        model_name = gemini_models[0].model_name
+            except Exception as exc:
+                logger.warning('[GeminiProvider] model_registry lookup failed: %s', exc)
+            if not model_name:
+                from config import Config
+                model_name = Config.TRANSFORMATION_GEMINI_MODEL
+
+        # Gracefully alias obsolete 2.5-flash to 3.5-flash
+        if model_name in ("gemini-2.5-flash", "models/gemini-2.5-flash"):
+            model_name = "gemini-3.5-flash"
+        return model_name
 
     def generate(self, request: AIRequest, api_key: Optional[str] = None) -> ProviderResponse:
         """Generate text using Gemini, governed by AIRequest."""
@@ -162,11 +171,23 @@ class GeminiProvider(IProviderAdapter):
             )
 
             start_time = time.time()
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=config
-            )
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=config
+                )
+            except Exception as call_err:
+                if ("404" in str(call_err) or "NOT_FOUND" in str(call_err)) and model_name != "gemini-3.5-flash":
+                    logger.warning(f"[GeminiProvider] Model {model_name} failed with 404/NOT_FOUND, retrying with gemini-3.5-flash")
+                    model_name = "gemini-3.5-flash"
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=config
+                    )
+                else:
+                    raise call_err
             latency_ms = (time.time() - start_time) * 1000
 
             input_tokens = 0
@@ -229,11 +250,23 @@ class GeminiProvider(IProviderAdapter):
                 max_output_tokens=request.max_tokens or 8192,
             )
 
-            response_stream = client.models.generate_content_stream(
-                model=model_name,
-                contents=prompt,
-                config=config
-            )
+            try:
+                response_stream = client.models.generate_content_stream(
+                    model=model_name,
+                    contents=prompt,
+                    config=config
+                )
+            except Exception as call_err:
+                if ("404" in str(call_err) or "NOT_FOUND" in str(call_err)) and model_name != "gemini-3.5-flash":
+                    logger.warning(f"[GeminiProvider] Model {model_name} failed with 404/NOT_FOUND in stream, retrying with gemini-3.5-flash")
+                    model_name = "gemini-3.5-flash"
+                    response_stream = client.models.generate_content_stream(
+                        model=model_name,
+                        contents=prompt,
+                        config=config
+                    )
+                else:
+                    raise call_err
             for chunk in response_stream:
                 if chunk.text:
                     yield chunk.text

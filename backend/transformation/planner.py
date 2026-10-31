@@ -95,6 +95,7 @@ ALLOWED_OPERATIONS = frozenset({
     'DROP_DUPLICATES',
     'RENAME_COLUMN',
     'DROP_COLUMN',
+    'ADD_COLUMN',
     'FILTER_ROWS',
     'CAST_DTYPE',
     'REPLACE_VALUES',
@@ -175,6 +176,8 @@ class TransformationPlanner:
             return self._plan_rename_column(df, operation, plan_id, dataset_id, fingerprint)
         elif op_type == 'DROP_COLUMN':
             return self._plan_drop_column(df, operation, plan_id, dataset_id, fingerprint)
+        elif op_type == 'ADD_COLUMN':
+            return self._plan_add_column(df, operation, plan_id, dataset_id, fingerprint)
         elif op_type == 'FILTER_ROWS':
             return self._plan_filter_rows(df, operation, plan_id, dataset_id, fingerprint)
         elif op_type == 'CAST_DTYPE':
@@ -423,6 +426,36 @@ class TransformationPlanner:
             affected_columns=[column], before_sample=sample,
             dataset_fingerprint=fingerprint,
             warnings=[f"Warning: Dropping column '{column}' cannot be undone without a version snapshot."],
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    def _plan_add_column(self, df, op, plan_id, dataset_id, fingerprint):
+        column = op.get('column') or op.get('name') or op.get('new_column', '')
+        if not column:
+            raise ValueError("Column name is required for ADD_COLUMN")
+        if column in df.columns:
+            raise ValueError(f"Column '{column}' already exists in dataset.")
+            
+        value = op.get('value', None)
+        default_val_repr = repr(value) if value is not None else "None"
+        
+        n_rows = len(df)
+        sample = [AffectedCell(
+            row_index=-1, source_row_number=None,
+            column=column, before="[None]", after=f"New column: '{column}' (initial value: {default_val_repr})"
+        )]
+        label = f"Add column '{column}'"
+        code = f"df['{column}'] = {default_val_repr}"
+        if 'impact' not in op:
+            op['impact'] = {'type': 'schema', 'columns_changed': 1, 'cells_changed': n_rows}
+            
+        return TransformationPlan(
+            plan_id=plan_id, dataset_id=dataset_id,
+            operation_type='ADD_COLUMN', operation_label=label,
+            operation_code=code, operation_payload=op,
+            affected_rows_count=n_rows, affected_cells_count=n_rows,
+            affected_columns=[column], before_sample=sample,
+            dataset_fingerprint=fingerprint,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 

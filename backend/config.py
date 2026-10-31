@@ -51,7 +51,7 @@ class Config:
         os.environ.get("GEMINI_API_KEY_6", ""),
         os.environ.get("GEMINI_API_KEY_7", ""),
     ])
-    TRANSFORMATION_GEMINI_MODEL: str = os.environ.get("TRANSFORMATION_GEMINI_MODEL", "gemini-2.5-flash").strip()
+    TRANSFORMATION_GEMINI_MODEL: str = os.environ.get("TRANSFORMATION_GEMINI_MODEL", "gemini-3.5-flash").strip()
 
     # ── Role: Analysis & Conversation (Primary: OpenRouter Pool, Sec: Gemini) ─
     OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "").strip()
@@ -71,13 +71,13 @@ class Config:
     ANALYSIS_OPENROUTER_FALLBACK_MODEL: str = os.environ.get(
         "ANALYSIS_OPENROUTER_FALLBACK_MODEL", "nvidia/nemotron-3.5-lightning:free"
     ).strip()
-    ANALYSIS_GEMINI_MODEL: str = os.environ.get("ANALYSIS_GEMINI_MODEL", "gemini-2.5-flash").strip()
+    ANALYSIS_GEMINI_MODEL: str = os.environ.get("ANALYSIS_GEMINI_MODEL", "gemini-3.5-flash").strip()
 
     CONVERSATION_OPENROUTER_MODEL: str = os.environ.get("CONVERSATION_OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
     CONVERSATION_OPENROUTER_FALLBACK_MODEL: str = os.environ.get(
         "CONVERSATION_OPENROUTER_FALLBACK_MODEL", "nvidia/nemotron-3.5-lightning:free"
     ).strip()
-    CONVERSATION_GEMINI_MODEL: str = os.environ.get("CONVERSATION_GEMINI_MODEL", "gemini-2.5-flash").strip()
+    CONVERSATION_GEMINI_MODEL: str = os.environ.get("CONVERSATION_GEMINI_MODEL", "gemini-3.5-flash").strip()
 
     # ── Optional/Legacy Providers ─────────────────────────────────────────────
     GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "").strip()

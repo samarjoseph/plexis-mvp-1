@@ -353,11 +353,11 @@ model_registry.register(ModelMetadata(
     health_score=0.8,
 ))
 
-# FLAGSHIP GEMINI MODEL: gemini-2.5-flash (High speed, 4-key rotation, rock-solid primary)
+# FLAGSHIP GEMINI MODEL: gemini-3.5-flash (High speed, 4-key rotation, rock-solid primary)
 model_registry.register(ModelMetadata(
-    model_id="gemini-2.5-flash",
+    model_id="gemini-3.5-flash",
     provider="gemini",
-    model_name="gemini-2.5-flash",
+    model_name="gemini-3.5-flash",
     context_window=1048576,
     max_output_tokens=8192,
     supports_vision=True,
@@ -386,6 +386,42 @@ model_registry.register(ModelMetadata(
     },
     avg_latency_ms=500.0,
     priority=0,
+    health_score=1.0,
+))
+
+# Secondary / fallback alias for gemini-2.5-flash
+model_registry.register(ModelMetadata(
+    model_id="gemini-2.5-flash",
+    provider="gemini",
+    model_name="gemini-2.5-flash",
+    context_window=1048576,
+    max_output_tokens=8192,
+    supports_vision=True,
+    supports_json_mode=True,
+    supports_tool_calling=True,
+    supports_streaming=True,
+    supports_reasoning=True,
+    task_affinities={
+        "transformation_planning": 0.8,
+        "transformation": 0.8,
+        "classification": 0.8,
+        "router": 0.8,
+        "planner": 0.8,
+        "interpreter": 0.8,
+        "insight_synthesizer": 0.8,
+        "explanation": 0.8,
+        "spreadsheet_interpret": 0.8,
+        "analysis": 0.8,
+        "complex_analysis": 0.8,
+        "report": 0.8,
+        "chat": 0.8,
+        "conversation": 0.8,
+        "presentation": 0.8,
+        "title": 0.8,
+        "stream": 0.8,
+    },
+    avg_latency_ms=500.0,
+    priority=1,
     health_score=1.0,
 ))
 

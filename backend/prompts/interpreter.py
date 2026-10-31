@@ -197,6 +197,7 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     {"type": "DROP_DUPLICATES", "columns": ["token"]}
     {"type": "RENAME_COLUMN", "column": "old_name", "new_name": "new_name"}
     {"type": "DROP_COLUMN", "column": "column_name"}
+    {"type": "ADD_COLUMN", "column": "column_name", "value": null}
     {"type": "CAST_DTYPE", "column": "column_name", "dtype": "int"}
     {"type": "REPLACE_VALUES", "column": "column_name", "old_value": "North", "new_value": "New North"}
     {"type": "REPLACE_VALUES", "old_value": "North", "new_value": "New North"}

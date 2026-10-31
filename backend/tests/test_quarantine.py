@@ -448,54 +448,67 @@ class TestEndToEndFallback:
         from providers.model_registry import model_registry
         from providers.fallback import fallback_engine
 
-        # Setup mock failing primary provider and working secondary provider
-        mock_fail = MockProvider("mock_primary", fail_error="HTTP 429: Too Many Requests on Nvidia", status_code=429)
-        mock_succ = MockProvider("mock_secondary")
+        saved_providers = dict(provider_registry._providers)
+        saved_keys = dict(provider_registry._api_keys)
+        saved_models = dict(model_registry._models)
 
-        provider_registry.register(mock_fail, "key_primary")
-        provider_registry.register(mock_succ, "key_secondary")
+        try:
+            provider_registry._providers.clear()
+            provider_registry._api_keys.clear()
+            model_registry._models.clear()
 
-        model_registry.register(ModelMetadata(
-            model_id="mock_primary/model-1",
-            model_name="mock_primary/model-1",
-            provider="mock_primary",
-            priority=0,
-            task_affinities={"analysis": 1.0, "fallback": 1.0},
-            context_window=4096, max_output_tokens=1024,
-            supports_vision=False, supports_json_mode=True, supports_tool_calling=False,
-            supports_streaming=False, supports_reasoning=False,
-        ))
+            # Setup mock failing primary provider and working secondary provider
+            mock_fail = MockProvider("mock_primary", fail_error="HTTP 429: Too Many Requests on Nvidia", status_code=429)
+            mock_succ = MockProvider("mock_secondary")
 
-        model_registry.register(ModelMetadata(
-            model_id="mock_secondary/model-2",
-            model_name="mock_secondary/model-2",
-            provider="mock_secondary",
-            priority=1,
-            task_affinities={"analysis": 1.0, "fallback": 1.0},
-            context_window=4096, max_output_tokens=1024,
-            supports_vision=False, supports_json_mode=True, supports_tool_calling=False,
-            supports_streaming=False, supports_reasoning=False,
-        ))
+            provider_registry.register(mock_fail, "key_primary")
+            provider_registry.register(mock_succ, "key_secondary")
 
-        request = AIRequest(task="analysis", json_mode=True)
+            model_registry.register(ModelMetadata(
+                model_id="mock_primary/model-1",
+                model_name="mock_primary/model-1",
+                provider="mock_primary",
+                priority=0,
+                task_affinities={"analysis": 1.0, "fallback": 1.0},
+                context_window=4096, max_output_tokens=1024,
+                supports_vision=False, supports_json_mode=True, supports_tool_calling=False,
+                supports_streaming=False, supports_reasoning=False,
+            ))
 
-        # Execute fallback
-        resp = fallback_engine.execute(request)
+            model_registry.register(ModelMetadata(
+                model_id="mock_secondary/model-2",
+                model_name="mock_secondary/model-2",
+                provider="mock_secondary",
+                priority=1,
+                task_affinities={"analysis": 1.0, "fallback": 1.0},
+                context_window=4096, max_output_tokens=1024,
+                supports_vision=False, supports_json_mode=True, supports_tool_calling=False,
+                supports_streaming=False, supports_reasoning=False,
+            ))
 
-        # Primary failed and was quarantined
-        assert mock_fail.call_count == 1
-        assert quarantine_manager.is_eligible("mock_primary", api_key="key_primary") is False
+            request = AIRequest(task="analysis", json_mode=True)
 
-        # Fallback to secondary succeeded
-        assert mock_succ.call_count == 1
-        assert resp.success is True
-        assert resp.provider == "mock_secondary"
-        assert resp.text == '{"result": "success"}'
+            # Execute fallback
+            resp = fallback_engine.execute(request)
 
-        # Next request must bypass primary entirely and call secondary directly!
-        resp2 = fallback_engine.execute(request)
-        assert mock_fail.call_count == 1  # Was NOT called!
-        assert mock_succ.call_count == 2  # Handled directly!
+            # Primary failed and was quarantined
+            assert mock_fail.call_count == 1
+            assert quarantine_manager.is_eligible("mock_primary", api_key="key_primary") is False
+
+            # Fallback to secondary succeeded
+            assert mock_succ.call_count == 1
+            assert resp.success is True
+            assert resp.provider == "mock_secondary"
+            assert resp.text == '{"result": "success"}'
+
+            # Next request must bypass primary entirely and call secondary directly!
+            resp2 = fallback_engine.execute(request)
+            assert mock_fail.call_count == 1  # Was NOT called!
+            assert mock_succ.call_count == 2  # Handled directly!
+        finally:
+            provider_registry._providers = saved_providers
+            provider_registry._api_keys = saved_keys
+            model_registry._models = saved_models
 
     def test_all_providers_unavailable_returns_explicit_recoverable_error(self):
         from providers.quarantine import quarantine_manager

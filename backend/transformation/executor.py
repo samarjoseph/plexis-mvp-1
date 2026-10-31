@@ -238,6 +238,13 @@ class TransformationExecutor:
                 return df.drop(columns=[column])
             return df
 
+        elif op == 'ADD_COLUMN':
+            column = payload.get('column') or payload.get('name') or payload.get('new_column', '')
+            val = payload.get('value', None)
+            if column:
+                df[column] = val
+            return df
+
         elif op == 'FILTER_ROWS':
             column = payload.get('column', '')
             operator = payload.get('operator', '==')
@@ -381,6 +388,11 @@ class TransformationExecutor:
         """Verify that the execution produced the expected postconditions."""
         op_type = (plan.operation_type or '').upper()
         payload = plan.operation_payload or {}
+
+        if op_type == 'ADD_COLUMN':
+            col = payload.get('column') or payload.get('name') or payload.get('new_column') or (plan.affected_columns[0] if plan.affected_columns else None)
+            if col and col not in new_df.columns:
+                raise RuntimeError(f"Postcondition failed: Column '{col}' was not added to dataset.")
         
         if op_type == 'CLIP':
             col = payload.get('column') or (plan.affected_columns[0] if plan.affected_columns else None)
