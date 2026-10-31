@@ -69,7 +69,10 @@ def build_system_prompt(
         "- Respond directly to the user as Plexis.\n"
         "- Output ONLY the final user-facing response.\n"
         "- NEVER output any chain-of-thought, thinking process, reasoning steps, or prompt analysis (e.g. do NOT write 'Here\'s a thinking process:', 'Analyze User Input:', or quote 'The system note says').\n"
-        "- Never include <think>, <thought>, or similar reasoning tags.\n        - NEVER output Python scripts or tutorial code (e.g. import pandas as pd, df.to_csv(...)). Plexis directly executes transformations on the dataset in-platform.\n        - NEVER guess or invent column names that are not in the dataset schema."
+        "- Never include <think>, <thought>, or similar reasoning tags.\n"
+        "- NEVER output Python scripts or tutorial code (e.g. import pandas as pd, df.to_csv(...)). Plexis directly executes transformations on the dataset in-platform.\n"
+        "- NEVER guess or invent column names that are not in the dataset schema.\n"
+        "- NEVER ask permission to run queries, perform operations, or create plans that the user asked for (e.g. do NOT ask 'Would you like me to run that query for you?', 'Should I create a plan?', or 'Should I propose it to you?'). Be proactive, direct, and action-oriented."
     )
 
     return "\n\n".join(sections)

@@ -201,6 +201,8 @@ def test_non_mutating_requests_never_routed_to_transform():
         'drop the flight_number column',
         'drop column flight_number',
         'fill missing values with 0',
+        'fill the nulls with 0',
+        'fill missing values with 0 in Arrival_Delay',
         'replace old with new',
         'rename airline to airline_name',
         'add a column score',
@@ -208,4 +210,111 @@ def test_non_mutating_requests_never_routed_to_transform():
     ]
     for q in mutating:
         assert _has_mutation_intent(q), f'{q} should have mutation intent'
+
+
+def test_data_retrieval_synonyms_fastpath():
+    import pandas as pd
+    from core.context import ExecutionContext
+    from datasets.registry import dataset_registry, DatasetEntry
+    from router.master_router import master_router
+
+    df = pd.DataFrame({
+        'Airline': ['Delta', 'United', 'American'],
+        'Departure_Delay': [10, 20, 30]
+    })
+    entry = DatasetEntry(
+        dataset_id='test_synonyms_flight_ds',
+        filename='flights.csv',
+        file_path='',
+        upload_timestamp='',
+        row_count=len(df),
+        column_count=len(df.columns),
+        file_fingerprint='fp_syn',
+        schema_fingerprint='sfp_syn',
+        dataframe=df,
+        profile={},
+        column_profiles={},
+        schema_profile=[{'name': 'Airline', 'type': 'string'}, {'name': 'Departure_Delay', 'type': 'numeric'}]
+    )
+    dataset_registry.register(entry)
+
+    synonym_queries = [
+        'provide me all 9 airlines',
+        'provide all airlines',
+        'get all airlines',
+        'fetch all 9 airlines',
+        'all airlines',
+        'distinct airlines',
+        'extract airlines',
+    ]
+    for q in synonym_queries:
+        ctx = ExecutionContext(
+            session_id='sess_syn',
+            message=q,
+            dataset_id='test_synonyms_flight_ds',
+            dataset_filename='flights.csv'
+        )
+        ctx.schema_profile = entry.schema_profile
+        master_router.route(ctx)
+        assert ctx.intent == 'analysis', f'Failed intent for {q}'
+        assert getattr(ctx, 'llm_operation', {}).get('type') == 'UNIQUE_VALUES', f'Failed op for {q}'
+        assert getattr(ctx, 'llm_operation', {}).get('column') == 'Airline', f'Failed col for {q}'
+
+
+def test_affirmative_followup_to_assistant_offer():
+    import pandas as pd
+    from core.context import ExecutionContext
+    from datasets.registry import dataset_registry, DatasetEntry
+    from router.master_router import master_router
+
+    df = pd.DataFrame({
+        'Airline': ['Delta', 'United', 'American'],
+        'Departure_Delay': [10, 20, 30]
+    })
+    entry = DatasetEntry(
+        dataset_id='test_affirmative_ds',
+        filename='flights.csv',
+        file_path='',
+        upload_timestamp='',
+        row_count=len(df),
+        column_count=len(df.columns),
+        file_fingerprint='fp_aff',
+        schema_fingerprint='sfp_aff',
+        dataframe=df,
+        profile={},
+        column_profiles={},
+        schema_profile=[{'name': 'Airline', 'type': 'string'}, {'name': 'Departure_Delay', 'type': 'numeric'}]
+    )
+    dataset_registry.register(entry)
+
+    history = [
+        {"role": "user", "content": "provide me all 9 airlines"},
+        {"role": "assistant", "content": "I don't have the airline names on hand right now, but we can pull the distinct values from the Airline column in the dataset. Would you like me to run that query for you?"}
+    ]
+    ctx = ExecutionContext(
+        session_id='sess_aff_test',
+        message='yes',
+        dataset_id='test_affirmative_ds',
+        dataset_filename='flights.csv'
+    )
+    ctx.conversation_history = history
+    ctx.schema_profile = entry.schema_profile
+    res = master_router.route(ctx)
+    assert ctx.intent == 'analysis'
+    assert getattr(ctx, 'llm_operation', {}).get('type') == 'UNIQUE_VALUES'
+    assert getattr(ctx, 'llm_operation', {}).get('column') == 'Airline'
+
+
+def test_anti_hesitation_directives_configured():
+    from conversation.analyst_voice import DATA_ANALYST_VOICE
+    from conversation.reasoning import RESPONSE_BEHAVIOUR
+    from conversation.prompt_builder import build_system_prompt
+
+    assert "STRICT ZERO PERMISSION-SEEKING" in DATA_ANALYST_VOICE
+    assert "Would you like me to run that query for you?" in DATA_ANALYST_VOICE
+    assert "STRICT ZERO PERMISSION-SEEKING" in RESPONSE_BEHAVIOUR
+
+    prompt = build_system_prompt(intent="conversation", has_dataset=True)
+    assert "NEVER ask permission to run queries" in prompt
+
 

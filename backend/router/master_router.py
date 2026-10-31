@@ -107,21 +107,22 @@ _ANALYSIS_MIN_COL_RX = re.compile(
     re.IGNORECASE,
 )
 
-# Unique values list (direct query: "what cities are present in the dataset?", "give all 9 airlines", "list airlines")
+# Unique values list (direct query: "what cities are present in the dataset?", "give all 9 airlines", "provide all airlines", "get all airlines")
 _ANALYSIS_UNIQUE_VALUES_DIRECT_RX = re.compile(
-    r'^\s*(?:please\s+)?(?:give(?:\s+me)?|list|show(?:\s+me)?|tell\s+me|what\s+are(?:\s+all)?|name|display|print)\s+'
+    r'^\s*(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:give(?:\s+me)?|provide(?:\s+me)?|fetch(?:\s+me)?|get(?:\s+me)?|return(?:\s+me)?|pull(?:\s+me)?|extract(?:\s+me)?|list|show(?:\s+me)?|tell\s+me|what\s+are(?:\s+all)?|name|display|print)\s+'
     r'(?:all\s+)?(?:the\s+)?(?:\d+\s+)?(?:unique\s+|distinct\s+)?'
     r'([a-zA-Z_]\w*)(?:\s+(?:names?|values?|entities?))?'
     r'(?:\s+(?:are\s+there|in\s+(?:the\s+)?dataset|present|available))?[?.!]?\s*$'
     r'|\bwhat\s+([a-zA-Z_]\w*)(?:\s+values?)?\s+are\s+(?:present\s+(?:in|within)|in|found\s+in|available\s+in|included\s+in)\s+(?:the\s+)?dataset\b'
-    r'|\blist\s+(?:all\s+)?(?:the\s+)?(?:unique\s+)?(\w+)(?:\s+values?)?\b',
+    r'|\b(?:list|get|fetch|provide|extract)\s+(?:all\s+)?(?:the\s+)?(?:unique\s+|distinct\s+)?(\w+)(?:\s+values?)?\b'
+    r'|^\s*(?:all\s+(?:unique\s+|distinct\s+)?|(?:unique|distinct)\s+)([a-zA-Z_]\w*)(?:\s+(?:names?|values?))?[?.!]?\s*$',
     re.IGNORECASE,
 )
 _ANALYSIS_UNIQUE_VALUES_RX = _ANALYSIS_UNIQUE_VALUES_DIRECT_RX
 
 # Follow-up unique values / entity names referencing previous turns: "give all 9 names", "what are their names", "list them"
 _ANALYSIS_UNIQUE_VALUES_FOLLOWUP_RX = re.compile(
-    r'^\s*(?:please\s+)?(?:give(?:\s+me)?|list|show(?:\s+me)?|tell\s+me|what\s+are(?:\s+all)?|name|display|print|who\s+are|which\s+ones\s+are)\s+'
+    r'^\s*(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:give(?:\s+me)?|provide(?:\s+me)?|fetch(?:\s+me)?|get(?:\s+me)?|return(?:\s+me)?|pull(?:\s+me)?|extract(?:\s+me)?|list|show(?:\s+me)?|tell\s+me|what\s+are(?:\s+all)?|name|display|print|who\s+are|which\s+ones\s+are)\s+'
     r'(?:all\s+)?(?:the\s+)?(?:\d+\s+)?(?:their\s+|those\s+|these\s+)?'
     r'(?:names?|values?|airlines?|entities?|them|they|ones)'
     r'(?:\s+(?:are\s+there|in\s+(?:the\s+)?dataset|present|available|of\s+them))?[?.!]?\s*$',
@@ -139,8 +140,8 @@ _ANALYSIS_UNIQUE_COUNT_RX = re.compile(
 # truncation issues (max_tokens can cut off long TRANSFORM JSON responses).
 _TRANSFORM_RX = re.compile(
     r'\b('
-    r'fill\s+(?:the\s+)?(?:all\s+)?(?:missing|null|nan|empty)\s+(?:values?\s+)?(?:with|to|using|=|by)'
-    r'|fillna|fill\s+(?:the\s+)?(?:missing|null|nan|empty)'
+    r'fill\s+(?:the\s+)?(?:all\s+)?(?:missing|nulls?|nans?|empt(?:y|ies)|blanks?)\s*(?:values?\s+)?(?:with|to|using|=|by)'
+    r'|fillna|fill\s+(?:the\s+)?(?:missing|nulls?|nans?|empt(?:y|ies)|blanks?)'
     r'|drop\s+(?:the\s+)?(?:column|col)\b'
     r'|delete\s+(?:the\s+)?(?:column|col)\b'
     r'|remove\s+(?:the\s+)?(?:column|col)\b'
@@ -211,20 +212,27 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None) -
 
     # ── FILL_MISSING ──────────────────────────────────────────────────────────
     m = re.search(
-        r'fill\s+(?:the\s+)?(?:all\s+)?(?:missing|null|nan|empty)\s+(?:values?\s+)?'
+        r'fill\s+(?:the\s+)?(?:all\s+)?(?:missing|nulls?|nans?|empt(?:y|ies)|blanks?)\s*(?:values?\s+)?'
         r'(?:in\s+(?:column\s+)?(\w+)\s+)?'
         r'(?:with|to|using|=|by)\s+(.+)',
         msg, re.IGNORECASE,
     )
     if m:
-        op = {"type": "FILL_MISSING", "value": _parse_fill_value(m.group(2))}
-        if m.group(1):
-            op["columns"] = [m.group(1)]
+        raw_val = m.group(2).strip()
+        col = m.group(1)
+        if not col:
+            m_trailing_col = re.search(r'^(.*?)\s+(?:in|for)\s+(?:column\s+)?(\w+)\s*$', raw_val, re.IGNORECASE)
+            if m_trailing_col:
+                raw_val = m_trailing_col.group(1).strip()
+                col = m_trailing_col.group(2).strip()
+        op = {"type": "FILL_MISSING", "value": _parse_fill_value(raw_val)}
+        if col:
+            op["columns"] = [col]
         return op
 
     # "fill missing age values with median" / "fill missing age with 0"
     m = re.search(
-        r'fill\s+(?:the\s+)?(?:missing|null|nan|empty)\s+(\w+)\s+(?:values?\s+)?'
+        r'fill\s+(?:the\s+)?(?:missing|nulls?|nans?|empt(?:y|ies)|blanks?)\s+(\w+)\s+(?:values?\s+)?'
         r'(?:with|to|using|=|by)\s+(.+)',
         msg, re.IGNORECASE,
     )
@@ -232,7 +240,7 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None) -
         return {"type": "FILL_MISSING", "value": _parse_fill_value(m.group(2)), "columns": [m.group(1)]}
 
     # Bare fill requests leave the fill-value slot open for clarification.
-    if re.search(r'\b(?:fillna|fill\s+(?:the\s+)?(?:missing|null|nan|empty))\b', msg):
+    if re.search(r'\b(?:fillna|fill\s+(?:the\s+)?(?:missing|nulls?|nans?|empt(?:y|ies)|blanks?))\b', msg):
         return {"type": "FILL_MISSING", "_missing_slots": ["fill_value"]}
 
     # ── REPLACE_VALUES — quoted literal (highest priority) ────────────────────
@@ -1078,13 +1086,21 @@ class MasterRouter:
 
         if payload.get('clarification'):
             context.complete_stage(stage)
+            clarif_dict = payload['clarification']
+            q = clarif_dict.get('question', 'Please clarify your ranking intent.')
+            options = clarif_dict.get('ambiguous_options') or []
+            if options:
+                opt_lines = "\n".join(f"{i+1}. **{opt.get('label')}** — {opt.get('description', '')}" for i, opt in enumerate(options))
+                clarif_answer = f"{q}\n\n{opt_lines}\n\n*(Reply with **1**, **2**, or **3**, or select an option above.)*"
+            else:
+                clarif_answer = q
             return EngineResult(
-                answer=payload['clarification'].get('question', 'Please clarify your ranking intent.'),
+                answer=clarif_answer,
                 source='analysis',
                 provider='system',
                 success=True,
                 metadata={
-                    'clarification': payload['clarification'],
+                    'clarification': clarif_dict,
                 },
                 should_compose=False,
             )
@@ -1165,6 +1181,11 @@ class MasterRouter:
         pending_answer = self._pending_transform_fast_path(context)
         if pending_answer is not None:
             return pending_answer
+
+        # Check for affirmative follow-up to prior assistant offer (e.g. user says "yes" or "go ahead")
+        affirmative_res = self._resolve_affirmative_followup(context)
+        if affirmative_res is not None:
+            return affirmative_res
 
         correction = self._transform_correction_fast_path(context)
         if correction:
@@ -3785,7 +3806,7 @@ class MasterRouter:
         # ── Unique values list (direct query: "what cities are present?", "give all 9 airlines", "list airlines") ──
         uv_direct_m = _ANALYSIS_UNIQUE_VALUES_DIRECT_RX.search(msg_lower)
         if uv_direct_m and not re.search(r'\bhow many\b', msg_lower):
-            col_word = (uv_direct_m.group(1) or uv_direct_m.group(2) or '').strip()
+            col_word = next((g for g in uv_direct_m.groups() if g), '').strip()
             col = _find_column(col_word)
             if col:
                 logger.debug("[Router/analysis-fast-path] UNIQUE_VALUES (direct) column=%s", col)
@@ -3845,6 +3866,77 @@ class MasterRouter:
             if col:
                 logger.debug("[Router/analysis-fast-path] DESCRIBE_COLUMN column=%s", col)
                 return _make_op("DESCRIBE_COLUMN", column=col)
+
+        return None
+
+    def _resolve_affirmative_followup(self, context: ExecutionContext) -> dict | None:
+        """Resolve affirmative messages ('yes', 'sure', 'go ahead', 'run it') following an assistant proposal."""
+        message = (getattr(context, 'normalized_query', '') or getattr(context, 'message', '') or '').strip()
+        if not re.match(r'^\s*(?:yes|yeah|yep|sure|go ahead|do it|proceed|please do|run it|do that|yes please)\b[!.,\s]*$', message, re.I):
+            return None
+
+        history = getattr(context, 'conversation_history', None) or []
+        if not history:
+            route_payload = getattr(context, 'route_payload', None) or {}
+            history = route_payload.get('conversation_history', [])
+        if not history:
+            return None
+
+        last_assistant_msg = None
+        for turn in reversed(history):
+            role = turn.get('role') if isinstance(turn, dict) else getattr(turn, 'role', '')
+            if role in ('assistant', 'ai', 'model'):
+                last_assistant_msg = turn.get('content') if isinstance(turn, dict) else getattr(turn, 'content', '')
+                break
+
+        if not last_assistant_msg:
+            return None
+
+        last_lower = last_assistant_msg.lower()
+        dataset_id = getattr(context, 'dataset_id', None)
+        from datasets.registry import dataset_registry
+        entry = dataset_registry.get(str(dataset_id)) if dataset_id else None
+        df = getattr(entry, 'dataframe', None) if entry else None
+
+        # 1. Assistant offered to run unique/distinct values query
+        m_distinct = re.search(r'(?:distinct|unique)\s+values\s+from\s+(?:the\s+)?([a-zA-Z_]\w*)\s+column', last_lower)
+        if not m_distinct:
+            m_distinct = re.search(r'(?:pull|get|fetch|list|show)\s+(?:the\s+)?([a-zA-Z_]\w*)\s+(?:column|values?)', last_lower)
+        if m_distinct:
+            col_cand = m_distinct.group(1).strip()
+            col = None
+            if df is not None:
+                for c in df.columns:
+                    if c.lower() == col_cand.lower() or c.lower().replace('_', '') == col_cand.lower().replace('_', ''):
+                        col = c
+                        break
+            if col:
+                logger.info("[Router/fast-path] Affirmative followup resolved to UNIQUE_VALUES column=%s", col)
+                return {
+                    "intent": "analysis",
+                    "confidence": 0.99,
+                    "operations": [{"type": "UNIQUE_VALUES", "column": col}],
+                    "operation": {"type": "UNIQUE_VALUES", "column": col},
+                    "reason": f"affirmative response to assistant offer for {col} distinct values",
+                }
+
+        # 2. Assistant offered to fill missing values
+        m_fill = re.search(r'fill\s+(?:the\s+)?(?:all\s+)?(?:missing|nulls?|nans?)\s+(?:values?\s+)?(?:with|to)\s+([a-zA-Z0-9_.-]+)', last_lower)
+        if m_fill:
+            fill_token = m_fill.group(1).strip()
+            parsed_fill = 0
+            try:
+                parsed_fill = float(fill_token) if '.' in fill_token else int(fill_token)
+            except Exception:
+                parsed_fill = fill_token
+            logger.info("[Router/fast-path] Affirmative followup resolved to FILL_MISSING value=%s", parsed_fill)
+            return {
+                "intent": "transform",
+                "confidence": 0.99,
+                "operations": [{"type": "FILL_MISSING", "value": parsed_fill}],
+                "operation": {"type": "FILL_MISSING", "value": parsed_fill},
+                "reason": f"affirmative response to assistant offer to fill missing with {parsed_fill}",
+            }
 
         return None
 
@@ -4069,7 +4161,7 @@ class MasterRouter:
             clean_msg = re.sub(r'^(?:i meant|meaning|i mean|i want|please|rank by|by)\s*[:,-]?\s*', '', message, flags=re.IGNORECASE).strip().lower()
 
             chosen_op = None
-            if any(w in clean_msg for w in ("average", "mean", "avg")) or re.search(r'\b(option 1|\b1\b|first option)\b', clean_msg):
+            if any(w in clean_msg for w in ("yes", "yeah", "yep", "sure", "go ahead", "do it", "proceed", "please do", "ok", "okay", "average", "mean", "avg")) or re.search(r'\b(option 1|\b1\b|first option)\b', clean_msg):
                 chosen_op = {"type": "GROUP_MEAN", "column": entity, "value_column": metric, "top_n": top_n, "order": order}
             elif any(w in clean_msg for w in ("min", "minimum", "lowest single", "lowest", "least", "smallest")) or (order == "asc" and re.search(r'\b(option 2|\b2\b|second option)\b', clean_msg)):
                 chosen_op = {"type": "GROUP_MIN", "column": entity, "value_column": metric, "top_n": top_n, "order": order}

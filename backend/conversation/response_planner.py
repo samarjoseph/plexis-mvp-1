@@ -99,9 +99,9 @@ class ConversationPlan:
         }.get(self.emoji_level, "Use emojis sparingly.")
 
         followup_guide = (
-            "End with one genuine follow-up question if it flows naturally."
+            "End with one genuine observation or analytical follow-up question if it flows naturally. NEVER ask permission like 'Should I create a plan?' or 'Would you like me to run that query?'."
             if self.should_ask_followup
-            else "Do not end with a question — an observation or statement is stronger here."
+            else "Do not end with a question — an observation or direct statement is stronger here. Never ask permission or clarifying questions."
         )
 
         length_guide = {
@@ -491,9 +491,9 @@ class ResponsePlanner:
         # Short messages: follow-up can open the conversation
         if s["is_short"] and not s["is_tiny_reaction"]:
             return True
-        # Frustration: ask clarifying questions to help
+        # Frustration: provide direct, concise resolution without asking clarifying questions
         if s["is_frustrated"]:
-            return True
+            return False
         # Long technical question: answer first, follow-up is optional
         if length == ResponseLength.LONG:
             return False

@@ -110,11 +110,11 @@ class FallbackEngine:
                         str(m.get('content', '')) for m in request.messages if isinstance(m, dict) and m.get('role') == 'user'
                     )
                 model_query_keywords = [
-                    'what model', 'which model', 'underlying model', 'what llm', 'which llm',
-                    'what ai model', 'who powers you', 'what powers you', 'are you nemotron',
+                    'what model', 'which model', 'which ai model', 'underlying model', 'what llm', 'which llm',
+                    'what ai model', 'who powers you', 'what powers you', 'powers this response', 'are you nemotron',
                     'are you gpt', 'are you claude', 'are you gemini'
                 ]
-                should_inject = any(kw in user_prompt.lower() for kw in model_query_keywords)
+                should_inject = any(kw in user_prompt.lower() for kw in model_query_keywords) or bool(re.search(r'\b(?:what|which)\s+(?:ai\s+)?(?:model|llm)\b', user_prompt.lower()))
 
                 if getattr(request, 'system_prompt', None) and should_inject:
                     runtime_note = (
