@@ -4585,15 +4585,24 @@ class MasterRouter:
         try:
             if not response or not response.success:
                 logger.warning(
-                    f"[Router/LLM] provider failed: {response.error}. "
+                    f"[Router/LLM] provider failed: {response.error if response else 'no response'}. "
                     f"Falling back to {'analysis' if dataset_loaded else 'conversation'}."
                 )
+                if dataset_loaded:
+                    return {
+                        "intent": "DATA_OPERATION",
+                        "operations": [],
+                        "operation": None,
+                        "confidence": 0.6,
+                        "reason": f"Fallback to analysis planner on LLM interpret failure ({response.error if response else 'timeout'})",
+                        "error": getattr(response, 'error', 'No provider response'),
+                    }
                 return {
                     "intent": "conversation",
                     "operation": None,
                     "confidence": 0.5,
-                    "reason": f"Graceful fallback to conversation ({response.error})",
-                    "error": response.error,
+                    "reason": f"Graceful fallback to conversation ({response.error if response else 'no response'})",
+                    "error": getattr(response, 'error', 'No provider response'),
                 }
 
             payload = self._parse_llm_json(response.text or "")
@@ -4641,12 +4650,12 @@ class MasterRouter:
                     pass
 
         # ── Truncated-JSON recovery ───────────────────────────────────────────
-        # If the LLM returned TRANSFORM but the JSON got truncated by max_tokens,
+        # If the LLM returned a valid intent but the JSON got truncated by max_tokens,
         # extract the intent and partial operation instead of falling to conversation.
         intent_match = re.search(r'"intent"\s*:\s*"(\w+)"', text)
         if intent_match:
             recovered_intent = intent_match.group(1)
-            if recovered_intent in ("TRANSFORM", "INVESTIGATE"):
+            if recovered_intent in ("DATA_OPERATION", "TRANSFORM", "INVESTIGATE"):
                 logger.warning(
                     "[Router/LLM] Truncated JSON recovered: intent=%s (from: %s...)",
                     recovered_intent, text[:120],
@@ -4656,6 +4665,10 @@ class MasterRouter:
                 operation = None
                 if op_type_match:
                     operation = {"type": op_type_match.group(1)}
+                    # Try extracting column
+                    col_match = re.search(r'"column"\s*:\s*"([^"]+)"', text)
+                    if col_match:
+                        operation["column"] = col_match.group(1)
                     # Try extracting fill_value
                     fill_match = re.search(r'"fill_value"\s*:\s*(\d+(?:\.\d+)?|"[^"]*")', text)
                     if fill_match:

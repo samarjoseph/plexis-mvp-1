@@ -1,6 +1,10 @@
 import pytest
-from backend.router.master_router import MasterRouter
-from backend.core.context import ExecutionContext
+try:
+    from router.master_router import MasterRouter
+    from core.context import ExecutionContext
+except ImportError:
+    from backend.router.master_router import MasterRouter
+    from backend.core.context import ExecutionContext
 
 def test_describe_column_routing():
     router = MasterRouter()

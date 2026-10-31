@@ -243,9 +243,9 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
         - "total", "sum", "sales", "revenue", "profit" -> GROUP_SUM with {"type": "GROUP_SUM", "column": "<entity_col>", "value_column": "<metric_col>", "top_n": N, "order": "desc"}
         - "count", "frequency", "most frequent" -> GROUP_COUNT with {"type": "GROUP_COUNT", "column": "<entity_col>", "top_n": N, "order": "desc"}
         - "delayed flights", "count of positive delay" -> GROUP_COUNT_FILTERED with {"type": "GROUP_COUNT_FILTERED", "column": "<entity_col>", "filter_column": "<metric_col>", "filter_op": ">", "filter_value": 0, "top_n": N, "order": "desc"}
-      * When user asks for top/bottom N of an entity/category by a metric WITHOUT specifying an aggregation (e.g. "top 10 most delayed airlines", "least delayed airlines"):
-        DO NOT SILENTLY DEFAULT TO GROUP_MEAN OR GUESS AN AGGREGATION!
-        This request is ambiguous between average delay, count of delayed flights, and maximum delay.
+      * When user asks for top/bottom of an entity/category by a metric (e.g. "which airline has least delay", "top 10 delayed airlines", "cities by sales"):
+        - For continuous metrics (delay, price, sales, time, revenue): rank by GROUP_MEAN using the correct polarity (order="asc" for least/lowest/fewest, order="desc" for highest/most).
+        - Polarity rule: "least", "lowest", "fewest", "smallest", "bottom" ALWAYS maps to order: "asc" (ascending). "highest", "most", "largest", "top" ALWAYS maps to order: "desc" (descending). NEVER invert polarity.
       * When user asks for top/bottom N individual rows, records, or metric observations (e.g. "top 10 most delayed flights", "top 10 departure delays", "highest 5 scores"):
         Use TOP_N or BOTTOM_N:
         {"type": "TOP_N", "column": "<metric_col>", "n": N, "order": "desc"}
