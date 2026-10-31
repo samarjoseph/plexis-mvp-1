@@ -34,6 +34,9 @@ function extractClarificationFromMessage(text, meta) {
   if (meta?.transformationClarification) {
     return meta.transformationClarification;
   }
+  if (meta?.clarification) {
+    return meta.clarification;
+  }
   if (!text || typeof text !== 'string') return null;
 
   // Synthesize ranking clarification if text matches "How would you like to rank {entity} by {metric}?"
@@ -102,6 +105,25 @@ function extractClarificationFromMessage(text, meta) {
       metric,
       top_n: 10,
       order: isAsc ? 'asc' : 'desc',
+    };
+  }
+
+  // Fallback: parse numbered markdown options if present in text
+  const optionMatches = [...text.matchAll(/(?:^|\n)\s*(\d+)\.\s+\*\*([^*]+)\*\*\s*[—–-]\s*([^\n]+)/g)];
+  if (optionMatches.length >= 2) {
+    const questionText = text.split(/\n\s*1\.\s+\*\*/)[0].trim() || 'Please select an option:';
+    const parsedOptions = optionMatches.map(m => ({
+      label: m[2].trim(),
+      description: m[3].replace(/\*\([^)]+\)\*/, '').trim(),
+      action: `OPTION_${m[1]}`,
+      user_message: m[2].trim(),
+    }));
+    return {
+      status: 'AWAITING_CLARIFICATION',
+      clarification_type: 'RANKING_AMBIGUITY',
+      kicker: 'INTENT CLARIFICATION',
+      question: questionText,
+      ambiguous_options: parsedOptions,
     };
   }
 
@@ -1290,8 +1312,8 @@ function DashboardInner() {
           transformPlan: apiResult.transform_plan,
           datasetId: apiResult?.dataset_id || apiResult?.transform_plan?.dataset_id || currentConv.datasetId || '',
         }),
-        ...(apiResult?.transformation_clarification && {
-          transformationClarification: apiResult.transformation_clarification,
+        ...((apiResult?.transformation_clarification || apiResult?.transformationClarification || apiResult?.clarification || apiResult?.metadata?.clarification) && {
+          transformationClarification: apiResult.transformation_clarification || apiResult.transformationClarification || apiResult.clarification || apiResult.metadata?.clarification,
         }),
         ...(apiResult?.transformation_update && {
           transformationUpdate: apiResult.transformation_update,

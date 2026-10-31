@@ -16,7 +16,7 @@ export default function TransformationClarificationCard({ clarification, onActio
   const candidates = clarification?.candidate_columns || [];
   const needsColumnScope = clarification?.clarification_type === 'COLUMN_SCOPE';
   const isTypeMismatch = clarification?.clarification_type === 'VALUE_TYPE_MISMATCH';
-  const isAmbiguity = clarification?.clarification_type === 'VALUE_AMBIGUITY' || clarification?.clarification_type === 'EXTREME_VALUE_AMBIGUITY' || clarification?.clarification_type === 'RANKING_AMBIGUITY';
+  const isAmbiguity = clarification?.clarification_type === 'VALUE_AMBIGUITY' || clarification?.clarification_type === 'EXTREME_VALUE_AMBIGUITY' || clarification?.clarification_type === 'RANKING_AMBIGUITY' || (Array.isArray(clarification?.ambiguous_options) && clarification.ambiguous_options.length > 0);
   const isRanking = clarification?.clarification_type === 'RANKING_AMBIGUITY';
   const kickerLabel = clarification?.kicker || (isRanking ? 'RANKING INTENT CLARIFICATION' : 'TRANSFORMATION CLARIFICATION');
   
