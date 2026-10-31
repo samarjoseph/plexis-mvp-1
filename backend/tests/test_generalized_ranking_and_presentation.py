@@ -403,3 +403,72 @@ def test_filtered_group_ranking_returns_actual_eligible_entity_count():
         assert result.value == {"a": 1, "b": 1}
         assert result.details["eligible_group_count"] == 2
         assert result.details["returned_group_count"] == 2
+
+def test_least_delay_ranking_clarification_and_followups(flight_dataset):
+    df, entry = flight_dataset
+
+    # 1. User asks 'give me top 10 airlines who have least delay'
+    ctx = ExecutionContext(
+        session_id="test_least_delay_1",
+        message="give me top 10 airlines who have least delay",
+        dataset_id="test_flight_ds",
+        dataset_filename="flights.csv",
+    )
+    ctx.schema_profile = entry.schema_profile
+    res = master_router.route(ctx)
+    assert res.metadata and "clarification" in res.metadata
+    clarif = res.metadata["clarification"]
+    assert clarif["clarification_type"] == "RANKING_AMBIGUITY"
+    assert clarif["entity"] == "Airline"
+    assert clarif["metric"] == "Departure_Delay"
+    assert clarif["order"] == "asc"
+    assert "transformation_id" in clarif
+    assert len(clarif["ambiguous_options"]) >= 3
+    assert "lowest average" in clarif["ambiguous_options"][0]["label"].lower()
+
+    # 2. Follow-up via workspace action (clicking card button)
+    ctx_click = ExecutionContext(
+        session_id="test_least_delay_1",
+        message="I meant: Lowest average departure delay",
+        dataset_id="test_flight_ds",
+        dataset_filename="flights.csv",
+        workspace_action={
+            "type": "RANKING_CLARIFICATION",
+            "clarification_type": "RANKING_AMBIGUITY",
+            "transformation_id": clarif["transformation_id"],
+            "value": "RANKING_AVERAGE",
+            "chosen_operation": clarif["ambiguous_options"][0]["operation"],
+        },
+    )
+    ctx_click.schema_profile = entry.schema_profile
+    res_click = master_router.route(ctx_click)
+    op_click = getattr(ctx_click, "llm_operation", {})
+    assert op_click["type"] == "GROUP_MEAN"
+    assert op_click["column"] == "Airline"
+    assert op_click["value_column"] == "Departure_Delay"
+    assert op_click.get("order") == "asc"
+
+    # 3. Follow-up via free-text (e.g. 'by lowest average') on another session
+    ctx_init2 = ExecutionContext(
+        session_id="test_least_delay_text",
+        message="give me top 10 airlines who have least delay",
+        dataset_id="test_flight_ds",
+        dataset_filename="flights.csv",
+    )
+    ctx_init2.schema_profile = entry.schema_profile
+    res2 = master_router.route(ctx_init2)
+    assert res2.metadata and "clarification" in res2.metadata
+
+    ctx_text = ExecutionContext(
+        session_id="test_least_delay_text",
+        message="by lowest average",
+        dataset_id="test_flight_ds",
+        dataset_filename="flights.csv",
+    )
+    ctx_text.schema_profile = entry.schema_profile
+    res_text = master_router.route(ctx_text)
+    op_text = getattr(ctx_text, "llm_operation", {})
+    assert op_text["type"] == "GROUP_MEAN"
+    assert op_text["column"] == "Airline"
+    assert op_text["value_column"] == "Departure_Delay"
+    assert op_text.get("order") == "asc"

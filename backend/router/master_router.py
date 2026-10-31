@@ -2652,35 +2652,84 @@ class MasterRouter:
                     cand_grp_label = cand_grp.replace("_", " ").title()
                     cand_val_label = cand_val.replace("_", " ").lower()
                     question = f"How would you like to rank {cand_grp_label}s by {cand_val_label}?"
-                    options = [
-                        {
-                            "label": f"Highest average {cand_val_label}",
-                            "description": f"Rank {cand_grp_label}s by their mean {cand_val_label} across all records.",
-                            "action": "RANKING_AVERAGE",
-                            "user_message": f"top {n_limit} {cand_grp} by average {cand_val}",
-                            "operation": {"type": "GROUP_MEAN", "column": cand_grp, "value_column": cand_val, "top_n": n_limit, "order": order},
-                        },
-                        {
-                            "label": f"Highest maximum {cand_val_label}",
-                            "description": f"Rank {cand_grp_label}s by their single highest {cand_val_label} recorded.",
-                            "action": "RANKING_MAXIMUM",
-                            "user_message": f"top {n_limit} {cand_grp} by maximum {cand_val}",
-                            "operation": {"type": "GROUP_MAX", "column": cand_grp, "value_column": cand_val, "top_n": n_limit, "order": order},
-                        },
-                        {
-                            "label": f"Most records with positive {cand_val_label}",
-                            "description": f"Count records per {cand_grp_label} where {cand_val_label} > 0.",
-                            "action": "RANKING_COUNT_FILTERED",
-                            "user_message": f"top {n_limit} {cand_grp} with the most {cand_val} > 0",
-                            "operation": {"type": "GROUP_COUNT_FILTERED", "column": cand_grp, "filter_column": cand_val, "filter_op": ">", "filter_value": 0, "top_n": n_limit, "order": order},
-                        },
-                    ]
+                    if order == "asc":
+                        options = [
+                            {
+                                "label": f"Lowest average {cand_val_label}",
+                                "description": f"Rank {cand_grp_label}s by their lowest mean {cand_val_label} across all records.",
+                                "action": "RANKING_AVERAGE",
+                                "user_message": f"top {n_limit} {cand_grp} by lowest average {cand_val}",
+                                "operation": {"type": "GROUP_MEAN", "column": cand_grp, "value_column": cand_val, "top_n": n_limit, "order": order},
+                            },
+                            {
+                                "label": f"Lowest single {cand_val_label} recorded",
+                                "description": f"Rank {cand_grp_label}s by their single lowest {cand_val_label} recorded.",
+                                "action": "RANKING_MINIMUM",
+                                "user_message": f"top {n_limit} {cand_grp} by minimum {cand_val}",
+                                "operation": {"type": "GROUP_MIN", "column": cand_grp, "value_column": cand_val, "top_n": n_limit, "order": order},
+                            },
+                            {
+                                "label": f"Fewest records with positive {cand_val_label}",
+                                "description": f"Count records per {cand_grp_label} where {cand_val_label} > 0.",
+                                "action": "RANKING_COUNT_FILTERED",
+                                "user_message": f"top {n_limit} {cand_grp} with fewest {cand_val} > 0",
+                                "operation": {"type": "GROUP_COUNT_FILTERED", "column": cand_grp, "filter_column": cand_val, "filter_op": ">", "filter_value": 0, "top_n": n_limit, "order": order},
+                            },
+                        ]
+                    else:
+                        options = [
+                            {
+                                "label": f"Highest average {cand_val_label}",
+                                "description": f"Rank {cand_grp_label}s by their mean {cand_val_label} across all records.",
+                                "action": "RANKING_AVERAGE",
+                                "user_message": f"top {n_limit} {cand_grp} by average {cand_val}",
+                                "operation": {"type": "GROUP_MEAN", "column": cand_grp, "value_column": cand_val, "top_n": n_limit, "order": order},
+                            },
+                            {
+                                "label": f"Highest maximum {cand_val_label}",
+                                "description": f"Rank {cand_grp_label}s by their single highest {cand_val_label} recorded.",
+                                "action": "RANKING_MAXIMUM",
+                                "user_message": f"top {n_limit} {cand_grp} by maximum {cand_val}",
+                                "operation": {"type": "GROUP_MAX", "column": cand_grp, "value_column": cand_val, "top_n": n_limit, "order": order},
+                            },
+                            {
+                                "label": f"Most records with positive {cand_val_label}",
+                                "description": f"Count records per {cand_grp_label} where {cand_val_label} > 0.",
+                                "action": "RANKING_COUNT_FILTERED",
+                                "user_message": f"top {n_limit} {cand_grp} with the most {cand_val} > 0",
+                                "operation": {"type": "GROUP_COUNT_FILTERED", "column": cand_grp, "filter_column": cand_val, "filter_op": ">", "filter_value": 0, "top_n": n_limit, "order": order},
+                            },
+                        ]
+                    import uuid
+                    from transformation.store import transformation_store, PendingTransformationContext
+                    from transformation.planner import _compute_fingerprint
+                    transform_id = f"clarif_rank_{uuid.uuid4().hex[:12]}"
+                    dataset_id_str = str(getattr(context, 'dataset_id', '') or '')
+                    chat_id_str = str(getattr(context, 'chat_id', '') or getattr(context, 'session_id', '') or 'default')
+                    fingerprint = _compute_fingerprint(df) if df is not None else ""
+                    pending_ctx = PendingTransformationContext.create(
+                        transformation_id=transform_id,
+                        conversation_id=chat_id_str,
+                        dataset_id=dataset_id_str,
+                        dataset_version=1,
+                        dataset_fingerprint=fingerprint,
+                        operation_type="RANKING",
+                        operation_payload={"options": options, "entity": cand_grp, "metric": cand_val, "top_n": n_limit, "order": order},
+                        candidate_columns=[cand_grp, cand_val],
+                        missing_slots=["ranking_aggregation"],
+                        original_request=getattr(context, 'message', ''),
+                        latest_question=question,
+                        clarification_type="RANKING_AMBIGUITY",
+                        status="AWAITING_CLARIFICATION",
+                    )
+                    transformation_store.set_pending(pending_ctx)
                     return {
                         "intent": "clarification",
                         "confidence": 1.0,
                         "clarification": {
                             "status": "AWAITING_CLARIFICATION",
                             "clarification_type": "RANKING_AMBIGUITY",
+                            "transformation_id": transform_id,
                             "kicker": "RANKING INTENT CLARIFICATION",
                             "question": question,
                             "ambiguous_options": options,
@@ -3639,7 +3688,7 @@ class MasterRouter:
             pending = transformation_store.pending_for(chat_id, dataset_id)
         if not pending and session_id and dataset_id:
             pending = transformation_store.pending_for(session_id, dataset_id)
-        if not pending and dataset_id:
+        if not pending and dataset_id and not chat_id and not session_id:
             pending = transformation_store.pending_for_dataset(dataset_id)
 
         if pending is None:
@@ -3666,7 +3715,24 @@ class MasterRouter:
         message = (getattr(context, 'message', '') or '').strip()
         lowered = message.lower()
         workspace_action = getattr(context, 'workspace_action', None) or {}
-        if workspace_action.get('type') == 'TRANSFORMATION_CLARIFICATION':
+        if workspace_action.get('type') in ('TRANSFORMATION_CLARIFICATION', 'RANKING_CLARIFICATION'):
+            if workspace_action.get('clarification_type') == 'RANKING_AMBIGUITY':
+                chosen_op = workspace_action.get('chosen_operation')
+                if not chosen_op:
+                    action_val = str(workspace_action.get('value', '') or workspace_action.get('action', '')).upper()
+                    options = pending.operation_payload.get('options') or []
+                    for opt in options:
+                        if opt.get('action') == action_val or opt.get('label') == workspace_action.get('value'):
+                            chosen_op = opt.get('operation')
+                            break
+                if chosen_op:
+                    transformation_store.finish_pending(conversation_id, dataset_id, 'COMPLETED')
+                    return {
+                        'intent': 'analysis',
+                        'confidence': 1.0,
+                        'operation': chosen_op,
+                        'reason': 'structured ranking clarification resolved to operation',
+                    }
             action_value = workspace_action.get('value')
             if action_value == 'CANCEL':
                 transformation_store.finish_pending(conversation_id, dataset_id, 'CANCELLED')
@@ -3812,6 +3878,38 @@ class MasterRouter:
             operation['_pending_conversation_id'] = conversation_id
             return {'intent': 'TRANSFORM', 'confidence': 0.99, 'operation': operation,
                     'reason': 'resolved pending rename targets'}
+
+        if pending.clarification_type == 'RANKING_AMBIGUITY':
+            # If the user asks a completely new top/bottom ranking query, pass through to new analysis planning
+            if re.match(r'^(?:give\s+me\s+|show\s+me\s+|list\s+|find\s+|what\s+are\s+)?(?:the\s+)?(top|bottom|highest|lowest)\s+\d+', lowered):
+                transformation_store.finish_pending(conversation_id, dataset_id, 'INVALIDATED')
+                return None
+            options = pending.operation_payload.get('options') or []
+            entity = pending.operation_payload.get('entity')
+            metric = pending.operation_payload.get('metric')
+            top_n = pending.operation_payload.get('top_n', 10)
+            order = pending.operation_payload.get('order', 'desc')
+
+            clean_msg = re.sub(r'^(?:i meant|meaning|i mean|i want|please|rank by|by)\s*[:,-]?\s*', '', message, flags=re.IGNORECASE).strip().lower()
+
+            chosen_op = None
+            if any(w in clean_msg for w in ("average", "mean", "avg")) or re.search(r'\b(option 1|\b1\b|first option)\b', clean_msg):
+                chosen_op = {"type": "GROUP_MEAN", "column": entity, "value_column": metric, "top_n": top_n, "order": order}
+            elif any(w in clean_msg for w in ("min", "minimum", "lowest single", "lowest", "least", "smallest")) or (order == "asc" and re.search(r'\b(option 2|\b2\b|second option)\b', clean_msg)):
+                chosen_op = {"type": "GROUP_MIN", "column": entity, "value_column": metric, "top_n": top_n, "order": order}
+            elif any(w in clean_msg for w in ("max", "maximum", "highest single", "highest", "peak", "worst")) or (order == "desc" and re.search(r'\b(option 2|\b2\b|second option)\b', clean_msg)):
+                chosen_op = {"type": "GROUP_MAX", "column": entity, "value_column": metric, "top_n": top_n, "order": order}
+            elif any(w in clean_msg for w in ("count", "fewest", "number of", "positive", "filter", "delays > 0", "records with")) or re.search(r'\b(option 3|\b3\b|third option)\b', clean_msg):
+                chosen_op = {"type": "GROUP_COUNT_FILTERED", "column": entity, "filter_column": metric, "filter_op": ">", "filter_value": 0, "top_n": top_n, "order": order}
+
+            if chosen_op:
+                transformation_store.finish_pending(conversation_id, dataset_id, 'COMPLETED')
+                return {
+                    'intent': 'analysis',
+                    'confidence': 1.0,
+                    'operation': chosen_op,
+                    'reason': f"resolved ranking intent via text follow-up to {chosen_op.get('type')}",
+                }
 
         if 'clarify_extreme_intent' in pending.missing_slots or pending.clarification_type in ('EXTREME_VALUE_AMBIGUITY', 'VALUE_AMBIGUITY'):
             extremum = pending.operation_payload.get('extremum', 'max')

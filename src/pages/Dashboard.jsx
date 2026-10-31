@@ -27,6 +27,113 @@ function isUUID(str) {
   return typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
+function extractClarificationFromMessage(text, meta) {
+  if (meta?.transformation_clarification) {
+    return meta.transformation_clarification;
+  }
+  if (meta?.transformationClarification) {
+    return meta.transformationClarification;
+  }
+  if (!text || typeof text !== 'string') return null;
+
+  // Synthesize ranking clarification if text matches "How would you like to rank {entity} by {metric}?"
+  const rankMatch = text.match(/How would you like to rank\s+([A-Za-z0-9_ -]+?)\s+by\s+([A-Za-z0-9_ -]+?)\?/i);
+  if (rankMatch) {
+    const rawEntity = rankMatch[1].trim();
+    const rawMetric = rankMatch[2].trim();
+    const entity = rawEntity.replace(/s$/i, '').trim();
+    const metric = rawMetric;
+    const isAsc = /\b(least|lowest|minimum|bottom|smallest)\b/i.test(text);
+
+    const options = isAsc ? [
+      {
+        label: `Lowest average ${rawMetric}`,
+        description: `Rank ${rawEntity} by their lowest mean ${rawMetric} across all records.`,
+        action: 'RANKING_AVERAGE',
+        user_message: `${rawEntity} by lowest average ${rawMetric}`,
+        operation: { type: 'GROUP_MEAN', column: entity, value_column: metric, top_n: 10, order: 'asc' },
+      },
+      {
+        label: `Lowest single ${rawMetric} recorded`,
+        description: `Rank ${rawEntity} by their single lowest ${rawMetric} recorded.`,
+        action: 'RANKING_MINIMUM',
+        user_message: `${rawEntity} by minimum ${rawMetric}`,
+        operation: { type: 'GROUP_MIN', column: entity, value_column: metric, top_n: 10, order: 'asc' },
+      },
+      {
+        label: `Fewest records with positive ${rawMetric}`,
+        description: `Count records per ${rawEntity} where ${rawMetric} > 0.`,
+        action: 'RANKING_COUNT_FILTERED',
+        user_message: `${rawEntity} with fewest ${rawMetric} > 0`,
+        operation: { type: 'GROUP_COUNT_FILTERED', column: entity, filter_column: metric, filter_op: '>', filter_value: 0, top_n: 10, order: 'asc' },
+      },
+    ] : [
+      {
+        label: `Highest average ${rawMetric}`,
+        description: `Rank ${rawEntity} by their mean ${rawMetric} across all records.`,
+        action: 'RANKING_AVERAGE',
+        user_message: `top 10 ${rawEntity} by average ${rawMetric}`,
+        operation: { type: 'GROUP_MEAN', column: entity, value_column: metric, top_n: 10, order: 'desc' },
+      },
+      {
+        label: `Highest maximum ${rawMetric}`,
+        description: `Rank ${rawEntity} by their single highest ${rawMetric} recorded.`,
+        action: 'RANKING_MAXIMUM',
+        user_message: `top 10 ${rawEntity} by maximum ${rawMetric}`,
+        operation: { type: 'GROUP_MAX', column: entity, value_column: metric, top_n: 10, order: 'desc' },
+      },
+      {
+        label: `Most records with positive ${rawMetric}`,
+        description: `Count records per ${rawEntity} where ${rawMetric} > 0.`,
+        action: 'RANKING_COUNT_FILTERED',
+        user_message: `top 10 ${rawEntity} with the most ${rawMetric} > 0`,
+        operation: { type: 'GROUP_COUNT_FILTERED', column: entity, filter_column: metric, filter_op: '>', filter_value: 0, top_n: 10, order: 'desc' },
+      },
+    ];
+
+    return {
+      status: 'AWAITING_CLARIFICATION',
+      clarification_type: 'RANKING_AMBIGUITY',
+      kicker: 'RANKING INTENT CLARIFICATION',
+      question: text.trim(),
+      ambiguous_options: options,
+      candidate_columns: [entity, metric],
+      entity,
+      metric,
+      top_n: 10,
+      order: isAsc ? 'asc' : 'desc',
+    };
+  }
+
+  return null;
+}
+
+function mapBackendMessage(m) {
+  const isUser = m.role === 'user';
+  const meta = m.metadata || {};
+  const clarification = extractClarificationFromMessage(m.content, meta);
+  const transformPlan = meta.transform_plan || meta.transformPlan || null;
+  const transformationUpdate = meta.transformation_update || meta.transformationUpdate || null;
+
+  return {
+    id: m.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    sender: isUser ? 'user' : (m.role === 'system' ? 'system_error' : 'ai'),
+    text: m.content || '',
+    hasChart: Boolean(meta.evidence?.has_chart || meta.chart_data),
+    chartData: meta.chart_data || null,
+    evidence: meta.evidence || null,
+    createdAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+    ...(meta.isFileCard && {
+      isFileCard: true,
+      fileName: meta.fileName,
+      fileSize: meta.fileSize,
+    }),
+    ...(clarification && { transformationClarification: clarification }),
+    ...(transformPlan && { transformPlan }),
+    ...(transformationUpdate && { transformationUpdate }),
+  };
+}
+
 // Inner component — must be inside WorkspaceProvider to use useWorkspace
 const MIN_CHAT_LOAD_MS = 2500;
 
@@ -304,29 +411,22 @@ function DashboardInner() {
       // Re-hydrate messages from backend to ensure multi-device & reload consistency
       PlexisAPI.loadChat(chatRef).then((fullChat) => {
         if (!fullChat?.messages?.length) return;
-        const backendMsgs = fullChat.messages.map((m) => {
-          const isUser = m.role === 'user';
-          const meta = m.metadata || {};
-          return {
-            id: m.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            sender: isUser ? 'user' : (m.role === 'system' ? 'system_error' : 'ai'),
-            text: m.content || '',
-            hasChart: Boolean(meta.evidence?.has_chart || meta.chart_data),
-            chartData: meta.chart_data || null,
-            evidence: meta.evidence || null,
-            createdAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
-            ...(meta.isFileCard && {
-              isFileCard: true,
-              fileName: meta.fileName,
-              fileSize: meta.fileSize,
-            }),
-          };
-        });
+        const backendMsgs = fullChat.messages.map(mapBackendMessage);
         setConversations((prev) => {
           const c = prev.find((x) => x.id === target.id || x.chatId === target.id);
           if (!c) return prev;
           if (backendMsgs.length >= (c.messages?.length || 0)) {
-            const next = updateConversation(prev, c.id, { messages: backendMsgs });
+            const merged = backendMsgs.map((bMsg, idx) => {
+              const localMsg = c.messages?.[idx];
+              if (!localMsg) return bMsg;
+              return {
+                ...bMsg,
+                transformationClarification: bMsg.transformationClarification || localMsg.transformationClarification,
+                transformPlan: bMsg.transformPlan || localMsg.transformPlan,
+                transformationUpdate: bMsg.transformationUpdate || localMsg.transformationUpdate,
+              };
+            });
+            const next = updateConversation(prev, c.id, { messages: merged });
             saveConversations(userId, next);
             return next;
           }
@@ -348,24 +448,7 @@ function DashboardInner() {
         const fullChat = await PlexisAPI.loadChat(chatRef);
         if (!isMounted || !fullChat || !fullChat.chat) return;
 
-        const backendMsgs = (fullChat.messages || []).map((m) => {
-          const isUser = m.role === 'user';
-          const meta = m.metadata || {};
-          return {
-            id: m.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            sender: isUser ? 'user' : (m.role === 'system' ? 'system_error' : 'ai'),
-            text: m.content || '',
-            hasChart: Boolean(meta.evidence?.has_chart || meta.chart_data),
-            chartData: meta.chart_data || null,
-            evidence: meta.evidence || null,
-            createdAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
-            ...(meta.isFileCard && {
-              isFileCard: true,
-              fileName: meta.fileName,
-              fileSize: meta.fileSize,
-            }),
-          };
-        });
+        const backendMsgs = (fullChat.messages || []).map(mapBackendMessage);
 
         const newConv = {
           id: fullChat.chat.id,
@@ -437,24 +520,7 @@ function DashboardInner() {
         const fullChat = await PlexisAPI.loadChat(lookupTarget);
         if (!isMounted || !fullChat) return;
 
-        const backendMsgs = (fullChat.messages || []).map((m) => {
-          const isUser = m.role === 'user';
-          const meta = m.metadata || {};
-          return {
-            id: m.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            sender: isUser ? 'user' : 'ai',
-            text: m.content || '',
-            hasChart: Boolean(meta.evidence?.has_chart || meta.chart_data),
-            chartData: meta.chart_data || null,
-            evidence: meta.evidence || null,
-            createdAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
-            ...(meta.isFileCard && {
-              isFileCard: true,
-              fileName: meta.fileName,
-              fileSize: meta.fileSize,
-            }),
-          };
-        });
+        const backendMsgs = (fullChat.messages || []).map(mapBackendMessage);
 
         const finalMessages = backendMsgs.length > 0 ? backendMsgs : [
           {
@@ -466,8 +532,19 @@ function DashboardInner() {
         ];
 
         setConversations((prev) => {
+          const c = prev.find((x) => x.id === activeId || x.chatId === activeId);
+          const merged = finalMessages.map((bMsg, idx) => {
+            const localMsg = c?.messages?.[idx];
+            if (!localMsg) return bMsg;
+            return {
+              ...bMsg,
+              transformationClarification: bMsg.transformationClarification || localMsg.transformationClarification,
+              transformPlan: bMsg.transformPlan || localMsg.transformPlan,
+              transformationUpdate: bMsg.transformationUpdate || localMsg.transformationUpdate,
+            };
+          });
           const next = updateConversation(prev, activeId, {
-            messages: finalMessages,
+            messages: merged,
             chatId: fullChat.chat?.id || conv.chatId || activeId,
             datasetId: fullChat.current_dataset_id || conv.datasetId || null,
             title: fullChat.chat?.title || conv.title,

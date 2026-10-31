@@ -80,7 +80,17 @@ def sanitize_for_json(obj):
 
 
 
-def _try_persist_messages(chat_id, user_message, assistant_answer, evidence_dict, ctx):
+def _try_persist_messages(
+    chat_id,
+    user_message,
+    assistant_answer,
+    evidence_dict,
+    ctx,
+    transformation_clarification=None,
+    transform_plan=None,
+    transformation_update=None,
+    chart_data=None,
+):
     """
     Persist user + assistant messages to PostgreSQL.
     Returns the resolved or auto-created chat_id string, or None on failure.
@@ -143,14 +153,24 @@ def _try_persist_messages(chat_id, user_message, assistant_answer, evidence_dict
             )
 
             # Persist assistant message
+            assistant_meta = {
+                'evidence': evidence_dict,
+                'source': getattr(ctx, 'source', None),
+                'dataset_id': getattr(ctx, 'dataset_id', None),
+            }
+            if transformation_clarification:
+                assistant_meta['transformation_clarification'] = transformation_clarification
+            if transform_plan:
+                assistant_meta['transform_plan'] = transform_plan
+            if transformation_update:
+                assistant_meta['transformation_update'] = transformation_update
+            if chart_data:
+                assistant_meta['chart_data'] = chart_data
+
             message_repository.append_message(
                 db, chat_uuid, role='assistant', content=assistant_answer,
                 message_type='conversation',
-                metadata_json={
-                    'evidence': evidence_dict,
-                    'source': getattr(ctx, 'source', None),
-                    'dataset_id': getattr(ctx, 'dataset_id', None),
-                },
+                metadata_json=assistant_meta,
             )
 
             # Update chat's last_message_at
@@ -508,7 +528,17 @@ def ask():
         resolved_chat_id = getattr(ctx, 'chat_id', None) or chat_id
 
         # Persist messages to DB (non-blocking — errors never break response)
-        persisted_chat_id = _try_persist_messages(resolved_chat_id, message, final_result.answer, evidence_dict, ctx)
+        persisted_chat_id = _try_persist_messages(
+            resolved_chat_id,
+            message,
+            final_result.answer,
+            evidence_dict,
+            ctx,
+            transformation_clarification=transformation_clarification,
+            transform_plan=transform_plan,
+            transformation_update=transformation_update,
+            chart_data=final_result.chart_data if hasattr(final_result, 'chart_data') else None,
+        )
         if persisted_chat_id:
             resolved_chat_id = persisted_chat_id
 
