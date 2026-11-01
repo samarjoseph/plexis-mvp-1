@@ -251,6 +251,16 @@ class AnswerVerifier:
             if "columns" in dims and isinstance(dims["columns"], (list, set)):
                 auth["columns"].update(str(c).lower() for c in dims["columns"])
 
+        # Ingest numbers from the user query (e.g. "provide all 9 airlines", "top 5")
+        query_msg = getattr(context, "message", None) if context else None
+        if query_msg and isinstance(query_msg, str):
+            for qm in re.finditer(r'(?<![A-Za-z0-9_])([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(%|\$)?', query_msg):
+                try:
+                    q_num = float(qm.group(1).replace(",", ""))
+                    auth["metrics"][f"query_param_{q_num}"] = q_num
+                except ValueError:
+                    pass
+
         # Operation details from facts
         ops = facts_dict.get("operations", [])
         if isinstance(ops, list):
@@ -271,6 +281,21 @@ class AnswerVerifier:
                         auth["metrics"][f"{col}_{op_name}"] = val
                 elif isinstance(val, dict):
                     self._ingest_details(auth, val)
+                elif isinstance(val, list):
+                    list_len = float(len(val))
+                    auth["metrics"][f"{op_name}_count" if op_name else "list_count"] = list_len
+                    auth["metrics"]["distinct_count"] = list_len
+                    auth["metrics"]["unique_values_count"] = list_len
+                    auth["metrics"]["unique_count"] = list_len
+                    if col:
+                        auth["metrics"][f"{col}_distinct_count"] = list_len
+                        auth["metrics"][f"{col}_unique_count"] = list_len
+                        auth["metrics"][f"{col}_count"] = list_len
+                    for item in val:
+                        if isinstance(item, str):
+                            auth["labels"].add(item.lower().strip())
+                        elif isinstance(item, (int, float)) and not math.isnan(item):
+                            auth["metrics"][f"{col or 'item'}_{item}"] = float(item)
 
                 # Detailed statistics (from binary_indicator_comparison, grouped_rate, etc.)
                 details = op.get("details") or {}
@@ -286,6 +311,14 @@ class AnswerVerifier:
                     auth["metrics"]["evidence_value"] = ev["value"]
                 elif isinstance(ev, dict) and "value" in ev and isinstance(ev["value"], dict):
                     self._ingest_details(auth, ev["value"])
+                elif isinstance(ev, dict) and "value" in ev and isinstance(ev["value"], list):
+                    ev_list_len = float(len(ev["value"]))
+                    auth["metrics"]["evidence_list_count"] = ev_list_len
+                    auth["metrics"]["evidence_distinct_count"] = ev_list_len
+                    auth["metrics"]["unique_values_count"] = ev_list_len
+                    for item in ev["value"]:
+                        if isinstance(item, str):
+                            auth["labels"].add(item.lower().strip())
         elif isinstance(evidence, dict):
             if "details" in evidence and isinstance(evidence["details"], dict):
                 self._ingest_details(auth, evidence["details"])
@@ -293,6 +326,14 @@ class AnswerVerifier:
                 auth["metrics"]["evidence_value"] = evidence["value"]
             elif "value" in evidence and isinstance(evidence["value"], dict):
                 self._ingest_details(auth, evidence["value"])
+            elif "value" in evidence and isinstance(evidence["value"], list):
+                ev_list_len = float(len(evidence["value"]))
+                auth["metrics"]["evidence_list_count"] = ev_list_len
+                auth["metrics"]["evidence_distinct_count"] = ev_list_len
+                auth["metrics"]["unique_values_count"] = ev_list_len
+                for item in evidence["value"]:
+                    if isinstance(item, str):
+                        auth["labels"].add(item.lower().strip())
 
         return auth
 

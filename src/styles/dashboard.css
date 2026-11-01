@@ -4413,6 +4413,38 @@ body.is-dragging * {
   padding: 2px 8px;
 }
 
+.arc-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  padding: 1px;
+  gap: 2px;
+}
+
+.arc-toggle-btn {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.arc-toggle-btn.active {
+  background: rgba(99, 102, 241, 0.28);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.arc-toggle-btn:hover:not(.active) {
+  color: #e2e8f0;
+}
+
 .arc-list-copy-btn {
   font-size: 0.72rem;
   font-weight: 500;

@@ -464,8 +464,13 @@ function ArrayListResultView({ result }) {
   const { value, operation, column, details = {}, row_count } = result || {};
   const items = Array.isArray(value) ? value : [];
   const totalRows = details?.total_rows ?? row_count ?? 0;
-  const metricHeader = deriveMetricHeader(operation, column, 'Distinct Values');
+  const colName = formatCol(column || 'Entity');
   const [copied, setCopied] = useState(false);
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'chips'
+  const [expanded, setExpanded] = useState(false);
+
+  const isTruncated = items.length > 10;
+  const displayItems = isTruncated && !expanded ? items.slice(0, 10) : items;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(items.map(String).join(', '));
@@ -474,13 +479,37 @@ function ArrayListResultView({ result }) {
   };
 
   return (
-    <div className="arc-list-container">
-      <div className="arc-list-header">
-        <div className="arc-list-title-row">
-          <span className="arc-list-title">{metricHeader}</span>
-          <span className="arc-list-count-badge">
-            {items.length} {items.length === 1 ? 'item' : 'items'}
+    <div className="arc-table-container">
+      <div className="arc-record-header" style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="arc-record-tag">
+            {items.length} {items.length === 1 ? 'Distinct Value' : 'Distinct Values'}
           </span>
+          <span className="arc-record-title">
+            Column: {colName}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="arc-view-toggle">
+            <button
+              type="button"
+              className={`arc-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Table view"
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              className={`arc-toggle-btn ${viewMode === 'chips' ? 'active' : ''}`}
+              onClick={() => setViewMode('chips')}
+              title="Chips view"
+            >
+              Chips
+            </button>
+          </div>
+
           <button
             type="button"
             className="arc-list-copy-btn"
@@ -490,21 +519,65 @@ function ArrayListResultView({ result }) {
             {copied ? 'Copied!' : 'Copy'}
           </button>
         </div>
-        {totalRows > 0 && (
-          <span className="arc-scalar-sub">
-            Calculated across {totalRows.toLocaleString()} observations
-          </span>
-        )}
       </div>
 
-      <div className="arc-chips-grid">
-        {items.map((item, idx) => (
-          <div key={idx} className="arc-chip-item">
-            <span className="arc-chip-index">{idx + 1}</span>
-            <span className="arc-chip-value">{String(item)}</span>
+      {totalRows > 0 && (
+        <div className="arc-scalar-sub" style={{ marginBottom: '10px' }}>
+          Calculated across {totalRows.toLocaleString()} observations
+        </div>
+      )}
+
+      {viewMode === 'table' ? (
+        <>
+          <div className="arc-table-scroll">
+            <table className="arc-table" aria-label={`Distinct values for ${colName}`}>
+              <thead>
+                <tr>
+                  <th scope="col" className="arc-th arc-th-rank" style={{ width: '56px' }}>#</th>
+                  <th scope="col" className="arc-th arc-th-category">{colName}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayItems.map((item, idx) => (
+                  <tr key={idx} className="arc-tr">
+                    <td className="arc-td arc-td-rank" style={{ fontWeight: 600, color: 'var(--dash-dim, #94a3b8)' }}>
+                      #{idx + 1}
+                    </td>
+                    <td className="arc-td arc-td-category" style={{ fontWeight: 500, color: '#f8fafc' }}>
+                      {String(item)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))}
-      </div>
+
+          {isTruncated && (
+            <button
+              type="button"
+              className="arc-table-toggle"
+              onClick={() => setExpanded(v => !v)}
+              aria-expanded={expanded}
+            >
+              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              <span>
+                {expanded
+                  ? 'Collapse to first 10 items'
+                  : `Showing 10 of ${items.length} items · Show all ${items.length}`}
+              </span>
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="arc-chips-grid">
+          {items.map((item, idx) => (
+            <div key={idx} className="arc-chip-item">
+              <span className="arc-chip-index">{idx + 1}</span>
+              <span className="arc-chip-value">{String(item)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
