@@ -1,0 +1,11 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+Allow: /favicon.ico
+Allow: /favicon*.png
+Allow: /apple-touch-icon.png
+Allow: /favicon.svg
+Disallow: /dashboard
+Disallow: /early-access/admin
+
+Sitemap: https://plexisai.vercel.app/sitemap.xml

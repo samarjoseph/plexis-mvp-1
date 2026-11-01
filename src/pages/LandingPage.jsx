@@ -32,7 +32,7 @@ export default function LandingPage() {
           <div className="nav-brand-logo-wrap" aria-hidden="true">
             <PlexisLogo width={28} height={28} />
           </div>
-          <span className="nav-brand-text">Plexis</span>
+          <span className="nav-brand-text">Plexis AI</span>
         </div>
         <div className="nav-actions">
           <GoogleSignInButton variant="nav" label="Continue with Google" />
@@ -49,7 +49,7 @@ export default function LandingPage() {
           custom={0}
         >
           <span className="badge-dot"></span>
-          <span>Next-generation AI data intelligence</span>
+          <span>Plexis AI · Intelligent AI Data Analyst</span>
         </motion.div>
 
         <motion.h1
@@ -59,7 +59,7 @@ export default function LandingPage() {
           animate="visible"
           custom={1}
         >
-          AI-Powered <br className="mobile-break" /> Data Intelligence
+          Plexis AI – AI-Powered <br className="mobile-break" /> Data Analysis
         </motion.h1>
 
         <motion.p
@@ -69,8 +69,9 @@ export default function LandingPage() {
           animate="visible"
           custom={2}
         >
-          Upload datasets, analyze trends, generate insights, visualize patterns,
-          and research the web — all from one intelligent workspace.
+          Meet Plexis AI (PlexisAI), your intelligent AI data analyst. Upload CSV and Excel
+          datasets, discover instant insights, perform AI spreadsheet analysis, and transform
+          data seamlessly from one unified workspace.
         </motion.p>
       </section>
 
@@ -90,12 +91,12 @@ export default function LandingPage() {
 
         <div className="features-grid">
           {[
-            { icon: Database,      title: 'AI Data Analysis',       desc: 'Instant profiling, correlations, and structural insights powered by AI.' },
-            { icon: Shield,        title: 'Dataset Insights',        desc: 'Deep-dive analytical metadata and automated narrative generation.' },
-            { icon: Globe,         title: 'Web Research',            desc: 'Blend live web data with local dataset intelligence effortlessly.' },
-            { icon: BarChart3,     title: 'Advanced Charts',         desc: 'Generate complex charts and data visualizations from natural language.' },
-            { icon: Brain,         title: 'Conversation Memory',     desc: 'Persistent session context and user preferences for seamless workflows.' },
-            { icon: MessageSquare, title: 'Multi-Chat Workspace',    desc: 'Context-aware follow-ups with isolated chat memories and sessions.' },
+            { icon: Database,      title: 'AI Data Analysis',          desc: 'Instant profiling, correlations, and structural insights powered by AI data analysis.' },
+            { icon: Shield,        title: 'AI Spreadsheet Analysis',   desc: 'Analyze CSV and Excel tables with automated insight and formula precision.' },
+            { icon: Globe,         title: 'Web Research',              desc: 'Blend live web data with local dataset intelligence effortlessly.' },
+            { icon: BarChart3,     title: 'Advanced Charts',           desc: 'Generate complex charts and data visualizations from natural language.' },
+            { icon: Brain,         title: 'Conversation Memory',       desc: 'Persistent session context and user preferences for seamless workflows.' },
+            { icon: MessageSquare, title: 'Multi-Chat Workspace',      desc: 'Context-aware follow-ups with isolated chat memories and sessions.' },
           ].map((feature, i) => (
             <motion.div
               key={feature.title}
@@ -135,7 +136,7 @@ export default function LandingPage() {
         <div className="footer-content">
           <div className="footer-brand">
             <PlexisLogo width={20} height={20} />
-            <span>Plexis</span>
+            <span>Plexis AI</span>
           </div>
           <p className="footer-text">
             &copy; {new Date().getFullYear()} Plexis AI. All rights reserved.
