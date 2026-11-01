@@ -4,15 +4,15 @@
  * PURPOSE:
  *   Separates the user-facing analytical answer from supporting verification metadata.
  *   - Starts collapsed by default.
- *   - Shows a discreet disclosure bar with a shield/check icon and downward chevron.
- *   - When expanded, shows deterministic verification status, execution engine,
+ *   - Renders as subtle, light/faded grey text with a down arrow (no button border/glow).
+ *   - When expanded, reveals deterministic verification status, execution engine,
  *     scanned rows, execution timing, and source rows (if available).
  *   - Does NOT show a green VERIFIED badge if verification failed or was skipped.
  *   - Fully accessible with keyboard support and aria attributes.
  */
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, AlertCircle, ChevronDown, ChevronUp, CheckCircle, Database, Clock, Layers } from 'lucide-react';
+import { ShieldCheck, AlertCircle, ChevronDown, CheckCircle, Database, Clock, Layers } from 'lucide-react';
 import { formatCol, opLabel, deriveDimensionHeader, formatValue } from '../../utils/analyticalFormatting.js';
 
 export default function VerificationEvidencePanel({ analysisId, result }) {
@@ -40,38 +40,31 @@ export default function VerificationEvidencePanel({ analysisId, result }) {
 
   return (
     <div className="ve-container">
-      {/* ── Collapsed / Toggle Disclosure Bar (Compact Pill) ── */}
-      <motion.button
+      {/* ── Collapsed / Toggle Disclosure (Light/Faded Grey Text + Down Arrow) ── */}
+      <button
         type="button"
         className={`ve-trigger ve-trigger--${isVerified ? 'verified' : isFailed ? 'unverified' : 'neutral'}${isExpanded ? ' ve-trigger--expanded' : ''}`}
         onClick={() => setIsExpanded(v => !v)}
         aria-expanded={isExpanded}
         aria-controls={panelId}
         id={`ve-btn-${analysisId || 'analysis'}`}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        transition={{ duration: 0.15 }}
       >
         <div className="ve-trigger-left">
           {isVerified ? (
-            <div className="ve-icon-wrapper ve-icon-wrapper--verified">
-              <ShieldCheck size={12} className="ve-icon-verified" />
-            </div>
+            <ShieldCheck size={12} className="ve-trigger-icon" />
           ) : (
-            <div className="ve-icon-wrapper ve-icon-wrapper--unverified">
-              <AlertCircle size={12} className="ve-icon-unverified" />
-            </div>
+            <AlertCircle size={12} className="ve-trigger-icon" />
           )}
           <span className="ve-trigger-label">{statusLabel}</span>
         </div>
         <motion.div
           className="ve-trigger-right"
           animate={{ rotate: isExpanded ? 180 : 0 }}
-          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
         >
           <ChevronDown size={12} />
         </motion.div>
-      </motion.button>
+      </button>
 
       {/* ── Expanded Verification Details Panel ── */}
       <AnimatePresence initial={false}>

@@ -4688,51 +4688,54 @@ body.is-dragging * {
 .ve-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: auto;
   max-width: fit-content;
-  padding: 5px 12px 5px 8px;
-  border-radius: 9999px;
-  font-size: 0.72rem;
-  font-weight: 500;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--dash-dim, #94a3b8);
+  font-size: 0.73rem;
+  font-weight: 450;
   cursor: pointer;
   user-select: none;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   position: relative;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: color 0.18s ease, opacity 0.18s ease;
+  outline: none;
+}
+
+.ve-trigger:hover {
+  color: var(--dash-text, #e2e8f0);
+  background: transparent;
+  box-shadow: none;
+}
+
+.ve-trigger:focus-visible {
+  outline: 1px dotted rgba(255, 255, 255, 0.3);
+  outline-offset: 2px;
 }
 
 .ve-trigger-left {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
 }
 
-.ve-icon-wrapper {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 19px;
-  height: 19px;
-  border-radius: 50%;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+.ve-trigger-icon {
+  opacity: 0.75;
+  color: currentColor;
+  flex-shrink: 0;
+  transition: opacity 0.18s ease;
 }
 
-.ve-icon-wrapper--verified {
-  background: rgba(16, 185, 129, 0.16);
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
-}
-
-.ve-icon-wrapper--unverified {
-  background: rgba(245, 158, 11, 0.16);
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+.ve-trigger:hover .ve-trigger-icon {
+  opacity: 1;
 }
 
 .ve-trigger-label {
-  font-weight: 500;
-  letter-spacing: 0.015em;
+  font-weight: 450;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
@@ -4741,85 +4744,45 @@ body.is-dragging * {
   align-items: center;
   justify-content: center;
   margin-left: 2px;
-  opacity: 0.7;
-  transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0.65;
+  color: currentColor;
+  transition: opacity 0.18s ease;
 }
 
 .ve-trigger:hover .ve-trigger-right {
   opacity: 1;
 }
 
-/* ── Verified Theme (Plexis Neon Emerald) ── */
+.ve-trigger--expanded {
+  color: var(--dash-text, #f1f5f9);
+}
+
+.ve-trigger--expanded .ve-trigger-right {
+  opacity: 1;
+}
+
 .ve-trigger--verified {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(6, 182, 212, 0.05) 100%);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  color: #6ee7b7;
+  color: #94a3b8;
 }
 
 .ve-trigger--verified:hover {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.16) 0%, rgba(6, 182, 212, 0.09) 100%);
-  border-color: rgba(52, 211, 153, 0.5);
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  color: #a7f3d0;
+  color: #e2e8f0;
 }
 
-.ve-trigger--verified:hover .ve-icon-wrapper--verified {
-  transform: scale(1.12);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
-}
-
-.ve-trigger--verified .ve-trigger-right {
-  color: #34d399;
-}
-
-/* ── Unverified Theme (Plexis Amber Alert) ── */
 .ve-trigger--unverified {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(234, 88, 12, 0.05) 100%);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  color: #fcd34d;
+  color: #94a3b8;
 }
 
 .ve-trigger--unverified:hover {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.16) 0%, rgba(234, 88, 12, 0.09) 100%);
-  border-color: rgba(251, 191, 36, 0.5);
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  color: #fef08a;
-}
-
-.ve-trigger--unverified:hover .ve-icon-wrapper--unverified {
-  transform: scale(1.12);
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
-}
-
-.ve-trigger--unverified .ve-trigger-right {
   color: #fbbf24;
 }
 
-/* ── Neutral Theme ── */
 .ve-trigger--neutral {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  color: #cbd5e1;
+  color: #94a3b8;
 }
 
 .ve-trigger--neutral:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 0 14px rgba(255, 255, 255, 0.08);
-  color: #f8fafc;
-}
-
-.ve-trigger--expanded {
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 0 16px rgba(99, 102, 241, 0.2);
-}
-
-.ve-icon-verified {
-  color: #10b981;
-}
-
-.ve-icon-unverified {
-  color: #f59e0b;
+  color: #e2e8f0;
 }
 
 .ve-content {
