@@ -40,27 +40,38 @@ export default function VerificationEvidencePanel({ analysisId, result }) {
 
   return (
     <div className="ve-container">
-      {/* ── Collapsed / Toggle Disclosure Bar ── */}
-      <button
+      {/* ── Collapsed / Toggle Disclosure Bar (Compact Pill) ── */}
+      <motion.button
         type="button"
-        className={`ve-trigger${isExpanded ? ' ve-trigger--expanded' : ''}`}
+        className={`ve-trigger ve-trigger--${isVerified ? 'verified' : isFailed ? 'unverified' : 'neutral'}${isExpanded ? ' ve-trigger--expanded' : ''}`}
         onClick={() => setIsExpanded(v => !v)}
         aria-expanded={isExpanded}
         aria-controls={panelId}
         id={`ve-btn-${analysisId || 'analysis'}`}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        transition={{ duration: 0.15 }}
       >
         <div className="ve-trigger-left">
           {isVerified ? (
-            <ShieldCheck size={13} className="ve-icon-verified" />
+            <div className="ve-icon-wrapper ve-icon-wrapper--verified">
+              <ShieldCheck size={12} className="ve-icon-verified" />
+            </div>
           ) : (
-            <AlertCircle size={13} className="ve-icon-unverified" />
+            <div className="ve-icon-wrapper ve-icon-wrapper--unverified">
+              <AlertCircle size={12} className="ve-icon-unverified" />
+            </div>
           )}
           <span className="ve-trigger-label">{statusLabel}</span>
         </div>
-        <div className="ve-trigger-right">
-          {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-        </div>
-      </button>
+        <motion.div
+          className="ve-trigger-right"
+          animate={{ rotate: isExpanded ? 180 : 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <ChevronDown size={12} />
+        </motion.div>
+      </motion.button>
 
       {/* ── Expanded Verification Details Panel ── */}
       <AnimatePresence initial={false}>

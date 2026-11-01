@@ -4678,53 +4678,140 @@ body.is-dragging * {
 
 /* ── Collapsible Verification Evidence Panel (ve-*) ───────────────────── */
 .ve-container {
-  margin-top: 6px;
+  margin-top: 10px;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .ve-trigger {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 7px;
-  color: var(--dash-dim, #94a3b8);
+  gap: 8px;
+  width: auto;
+  max-width: fit-content;
+  padding: 5px 12px 5px 8px;
+  border-radius: 9999px;
   font-size: 0.72rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
   user-select: none;
-}
-
-.ve-trigger:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: var(--dash-text, #f1f5f9);
-}
-
-.ve-trigger--expanded {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(99, 102, 241, 0.2);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  position: relative;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .ve-trigger-left {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+}
+
+.ve-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+
+.ve-icon-wrapper--verified {
+  background: rgba(16, 185, 129, 0.16);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
+}
+
+.ve-icon-wrapper--unverified {
+  background: rgba(245, 158, 11, 0.16);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
 }
 
 .ve-trigger-label {
   font-weight: 500;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
 }
 
 .ve-trigger-right {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  color: var(--dash-dim, #94a3b8);
+  justify-content: center;
+  margin-left: 2px;
+  opacity: 0.7;
+  transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ve-trigger:hover .ve-trigger-right {
+  opacity: 1;
+}
+
+/* ── Verified Theme (Plexis Neon Emerald) ── */
+.ve-trigger--verified {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(6, 182, 212, 0.05) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+}
+
+.ve-trigger--verified:hover {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.16) 0%, rgba(6, 182, 212, 0.09) 100%);
+  border-color: rgba(52, 211, 153, 0.5);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: #a7f3d0;
+}
+
+.ve-trigger--verified:hover .ve-icon-wrapper--verified {
+  transform: scale(1.12);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+}
+
+.ve-trigger--verified .ve-trigger-right {
+  color: #34d399;
+}
+
+/* ── Unverified Theme (Plexis Amber Alert) ── */
+.ve-trigger--unverified {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(234, 88, 12, 0.05) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #fcd34d;
+}
+
+.ve-trigger--unverified:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.16) 0%, rgba(234, 88, 12, 0.09) 100%);
+  border-color: rgba(251, 191, 36, 0.5);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: #fef08a;
+}
+
+.ve-trigger--unverified:hover .ve-icon-wrapper--unverified {
+  transform: scale(1.12);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+}
+
+.ve-trigger--unverified .ve-trigger-right {
+  color: #fbbf24;
+}
+
+/* ── Neutral Theme ── */
+.ve-trigger--neutral {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: #cbd5e1;
+}
+
+.ve-trigger--neutral:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.ve-trigger--expanded {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.2);
 }
 
 .ve-icon-verified {
@@ -4737,12 +4824,12 @@ body.is-dragging * {
 
 .ve-content {
   overflow: hidden;
-  padding: 10px 12px;
-  background: rgba(15, 23, 42, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-top: none;
-  border-bottom-left-radius: 7px;
-  border-bottom-right-radius: 7px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
   font-size: 0.74rem;
 }
 
