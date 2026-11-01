@@ -27,6 +27,7 @@ export default function ChatInputBar({
   initialText = '',
 }) {
   const [draftText, setDraftText] = useState(initialText);
+  const [isMultiline, setIsMultiline] = useState(false);
   const textareaRef = useRef(null);
   const fileRef = useRef(null);
 
@@ -35,8 +36,27 @@ export default function ChatInputBar({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    const newHeight = Math.min(Math.max(el.scrollHeight, 24), 160);
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 480;
+    const minH = isMobile ? 32 : 36;
+    const scrollH = el.scrollHeight;
+    const isMulti = scrollH > minH + 4 || el.value.includes('\n');
+    setIsMultiline(isMulti);
+    if (!isMulti && !el.value.trim()) {
+      el.style.height = '';
+      el.style.overflowY = 'hidden';
+      return;
+    }
+    const newHeight = Math.min(Math.max(scrollH, minH), 160);
     el.style.height = `${newHeight}px`;
+    el.style.overflowY = scrollH > 160 ? 'auto' : 'hidden';
+  }, []);
+
+  const resetHeight = useCallback(() => {
+    setIsMultiline(false);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '';
+      textareaRef.current.style.overflowY = 'hidden';
+    }
   }, []);
 
   // Subscribe to prefill and clear events from EventBus
@@ -54,16 +74,20 @@ export default function ChatInputBar({
 
     const unsubClear = EventBus.on(Events.CLEAR_CHAT_INPUT, () => {
       setDraftText('');
-      if (textareaRef.current) {
-        textareaRef.current.style.height = '24px';
-      }
+      resetHeight();
     });
 
     return () => {
       unsubPrefill();
       unsubClear();
     };
-  }, [adjustHeight]);
+  }, [adjustHeight, resetHeight]);
+
+  useEffect(() => {
+    if (initialText) {
+      adjustHeight();
+    }
+  }, [initialText, adjustHeight]);
 
   const handleChange = (e) => {
     // Urgent, synchronous local update
@@ -80,9 +104,7 @@ export default function ChatInputBar({
 
     // Immediately clear local input draft and reset height
     setDraftText('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = '24px';
-    }
+    resetHeight();
   };
 
   const handleKeyDown = (e) => {
@@ -107,7 +129,7 @@ export default function ChatInputBar({
           </div>
         )}
 
-        <div className="v2-input-row">
+        <div className={`v2-input-row ${isMultiline ? 'v2-input-row--multiline' : ''}`}>
           <Tooltip label="Upload Dataset" shortcut="Ctrl+U" side="top">
             <button
               type="button"
@@ -154,7 +176,6 @@ export default function ChatInputBar({
             value={draftText}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            style={{ height: '24px' }}
           />
 
           <Tooltip label="Send Message" shortcut="⏎ Enter" side="top">

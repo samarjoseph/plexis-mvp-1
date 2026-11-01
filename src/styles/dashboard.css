@@ -1435,13 +1435,18 @@
 
 .v2-input-row {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.v2-input-row--multiline {
   align-items: flex-end;
-  gap: 6px;
 }
 
 .v2-attach-btn {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   border: none;
   background: transparent;
@@ -1452,7 +1457,7 @@
   justify-content: center;
   transition: all 0.15s;
   flex-shrink: 0;
-  margin-bottom: 2px;
+  margin: 0;
 }
 
 .v2-attach-btn:hover {
@@ -1470,25 +1475,30 @@
   background: transparent;
   border: none;
   color: var(--dash-text);
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   font-family: var(--dash-font);
   resize: none;
-  padding: 8px 4px;
-  min-height: 24px;
-  height: 24px;
+  padding: 7px 10px;
+  min-height: 36px;
+  height: 36px;
   max-height: 160px;
   outline: none;
-  line-height: 1.5;
+  line-height: 22px;
+  box-sizing: border-box;
+  overflow-y: hidden;
+  margin: 0;
 }
 
 .v2-input-field::placeholder {
   color: var(--dash-dim);
+  line-height: 22px;
+  opacity: 0.85;
 }
 
 .v2-send-btn {
   width: 36px;
   height: 36px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: none;
   cursor: pointer;
   display: flex;
@@ -1498,7 +1508,7 @@
   color: white;
   transition: all 0.25s var(--dash-ease);
   flex-shrink: 0;
-  margin-bottom: 2px;
+  margin: 0;
   box-shadow: 0 2px 8px var(--dash-accent-glow);
 }
 
@@ -5518,6 +5528,8 @@ body.is-dragging * {
 
   .v2-input-field {
     font-size: 0.88rem;
+    padding: 7px 8px;
+    line-height: 22px;
   }
 
   /* Result cards & tables */
@@ -5656,11 +5668,16 @@ body.is-dragging * {
 
   .v2-input-field {
     font-size: 0.82rem;
+    min-height: 32px;
+    height: 32px;
+    padding: 5px 8px;
+    line-height: 22px;
   }
 
   .v2-attach-btn, .v2-send-btn {
     width: 32px;
     height: 32px;
+    margin: 0;
   }
 
   /* Full width mobile analytics on small phones */
