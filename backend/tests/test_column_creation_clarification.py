@@ -192,3 +192,97 @@ def test_create_column_text_follow_ups(sample_dataset, monkeypatch):
     assert expr['operator'] == 'divide'
     assert expr['left']['name'] == 'Departure_Delay'
     assert expr['right']['value'] == 60
+
+
+def test_fast_path_column_creation_without_llm(sample_dataset, monkeypatch):
+    """Ensure column creation with no formula triggers clarification without calling LLM."""
+    ds_id, df = sample_dataset
+    engine = TransformEngine()
+
+    from transformation.ir_planner import ir_planner
+    def mock_plan(*args, **kwargs):
+        raise AssertionError("ir_planner.plan should NOT be called for underspecified column addition!")
+    monkeypatch.setattr(ir_planner, 'plan', mock_plan)
+
+    ctx = ExecutionContext(
+        message='add a column "departure_percent"',
+        dataset_id=ds_id,
+        chat_id='test_chat_col_fast_1',
+        intent='TRANSFORM'
+    )
+    ctx.llm_operation = {
+        'type': 'IR_REQUIRED',
+        'column': 'departure_percent',
+        'value': None
+    }
+
+    res = engine.handle(ctx)
+    assert res.success is True
+    assert 'clarification' in res.metadata
+    clarif = res.metadata['clarification']
+    assert clarif['status'] == 'AWAITING_CLARIFICATION'
+    assert clarif['clarification_type'] == 'EXPRESSION_REQUIRED'
+    assert clarif['missing_slots'] == ['expression']
+    assert 'departure_percent' in clarif['question']
+
+
+def test_literal_column_creation_without_llm(sample_dataset, monkeypatch):
+    """Ensure column creation with a static value directly plans a LITERAL step without calling LLM."""
+    ds_id, df = sample_dataset
+    engine = TransformEngine()
+
+    from transformation.ir_planner import ir_planner
+    def mock_plan(*args, **kwargs):
+        raise AssertionError("ir_planner.plan should NOT be called when literal value is provided!")
+    monkeypatch.setattr(ir_planner, 'plan', mock_plan)
+
+    ctx = ExecutionContext(
+        message="add column status with 'active'",
+        dataset_id=ds_id,
+        chat_id='test_chat_col_literal_1',
+        intent='TRANSFORM'
+    )
+    ctx.llm_operation = {
+        'type': 'IR_REQUIRED',
+        'column': 'status',
+        'value': 'active'
+    }
+
+    res = engine.handle(ctx)
+    assert res.success is True
+    assert 'transform_plan' in res.metadata
+    plan = res.metadata['transform_plan']
+    assert 'status' in plan['affected_columns']
+    assert plan['affected_cells_count'] == 3
+
+
+def test_llm_failure_graceful_fallback_to_clarification(sample_dataset, monkeypatch):
+    """Ensure that if the external LLM times out or raises 504 on a formula, it falls back to clarification."""
+    ds_id, df = sample_dataset
+    engine = TransformEngine()
+
+    from transformation.ir_planner import ir_planner
+    def mock_failing_plan(*args, **kwargs):
+        raise RuntimeError("504 DEADLINE_EXCEEDED: Deadline expired before operation could complete.")
+    monkeypatch.setattr(ir_planner, 'plan', mock_failing_plan)
+
+    ctx = ExecutionContext(
+        message='add column ratio = Departure_Delay / Arrival_Delay',
+        dataset_id=ds_id,
+        chat_id='test_chat_col_fallback_1',
+        intent='TRANSFORM'
+    )
+    ctx.llm_operation = {
+        'type': 'IR_REQUIRED',
+        'column': 'ratio',
+        'value': None
+    }
+
+    res = engine.handle(ctx)
+    assert res.success is True
+    assert 'clarification' in res.metadata
+    clarif = res.metadata['clarification']
+    assert clarif['status'] == 'AWAITING_CLARIFICATION'
+    assert clarif['clarification_type'] == 'EXPRESSION_REQUIRED'
+    assert 'ratio' in clarif['question']
+
