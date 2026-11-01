@@ -36,9 +36,13 @@ class FallbackEngine:
         max_attempts = 5
 
         while attempts < max_attempts:
-            # Enforce max 12s total fallback budget so requests never hang for 40s
-            if _t.time() - start_time_exec > 12.0 and len(failed_model_ids) > 0:
-                logger.warning("[FallbackEngine] Total fallback budget (12s) reached. Aborting further model attempts.")
+            # Enforce fallback budget while ensuring at least 2 model attempts are tried
+            elapsed = _t.time() - start_time_exec
+            if elapsed > 18.0 and attempts >= 2:
+                logger.warning(
+                    "[FallbackEngine] Total fallback budget (18s) reached after %d attempts. Aborting further model attempts.",
+                    attempts
+                )
                 break
             model_meta = model_selector.select_by_model_fallback(
                 task=request.task or "fallback",

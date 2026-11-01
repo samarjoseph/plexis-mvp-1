@@ -520,7 +520,11 @@ class IRPlanner:
                     max_tokens=2048,
                 )
             )
-            raw_text = (response.text or "").strip() if response and getattr(response, 'text', None) else ""
+            if not response or not response.success or not (response.text or "").strip():
+                err_msg = response.error if response and response.error else "Model returned an empty response."
+                logger.error("[IRPlanner] LLM generation failed: %s", err_msg)
+                raise RuntimeError(f"Transformation planning failed: {err_msg}")
+            raw_text = response.text.strip()
         except Exception as e:
             logger.error("[IRPlanner] LLM call failed: %s", e)
             raise RuntimeError(f"Transformation planning failed: {e}") from e

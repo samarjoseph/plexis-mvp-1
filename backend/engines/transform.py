@@ -298,7 +298,10 @@ class TransformEngine(BaseEngine):
                 )
             logger.error('[TransformEngine] Planner error: %s', e, exc_info=True)
             return EngineResult(
-                answer='Failed to plan transformation.',
+                answer=(
+                    "I couldn't plan that transformation right now due to a temporary model service issue. "
+                    "Please try again or rephrase your request."
+                ),
                 source='transform', provider='system', success=False,
                 error=str(e), should_compose=False,
             )
