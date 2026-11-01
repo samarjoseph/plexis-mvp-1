@@ -122,6 +122,12 @@ export default function TransformPlanCard({ plan, datasetId, onApply, onCancel, 
                           : `Floor at ${operation_payload.min}`
                       ) : plan.operation_type === 'UPDATE_EXTREMUM' ? (
                         `Set ${operation_payload?.extremum || 'extremum'} to ${operation_payload?.new_value}`
+                      ) : plan.operation_type === 'DROP_COLUMN' ? (
+                        <span>Drop column</span>
+                      ) : plan.operation_type === 'ADD_COLUMN' ? (
+                        <span>Add column</span>
+                      ) : plan.operation_type === 'RENAME_COLUMN' ? (
+                        <>Rename to <code>{after}</code></>
                       ) : (
                         <>Replace with <code>{after}</code></>
                       )}
@@ -138,7 +144,10 @@ export default function TransformPlanCard({ plan, datasetId, onApply, onCancel, 
       <div className="tpc-summary">
         {hasChanges ? (
           impactType === 'schema' ? (
-            <span><strong>{columnsChanged}</strong> column{columnsChanged === 1 ? '' : 's'} will be renamed/changed.</span>
+            <span>
+              <strong>{columnsChanged}</strong> column{columnsChanged === 1 ? '' : 's'} will be{' '}
+              {plan.operation_type === 'DROP_COLUMN' ? 'dropped' : plan.operation_type === 'ADD_COLUMN' ? 'added' : plan.operation_type === 'RENAME_COLUMN' ? 'renamed' : 'changed'}.
+            </span>
           ) : (
             <span>
               <strong>{affected_cells_count}</strong> {affected_cells_count === 1 ? 'cell' : 'cells'} will change.

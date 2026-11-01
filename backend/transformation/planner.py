@@ -425,7 +425,7 @@ class TransformationPlanner:
             affected_rows_count=n_rows, affected_cells_count=0,
             affected_columns=[column], before_sample=sample,
             dataset_fingerprint=fingerprint,
-            warnings=[f"Warning: Dropping column '{column}' cannot be undone without a version snapshot."],
+            warnings=[f"Dropping column '{column}' will remove all data in this column. A version snapshot is created so you can undo at any time."],
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 

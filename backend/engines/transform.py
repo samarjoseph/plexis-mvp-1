@@ -318,19 +318,56 @@ class TransformEngine(BaseEngine):
 
         # Build user-facing answer
         cells = plan.affected_cells_count
-        answer = (
-            f"{plan.operation_label}.\n\n"
-            f"{cells} {'cell' if cells == 1 else 'cells'} will change "
-            f"across {len(plan.affected_columns)} column(s). "
-            f"Review the plan below and click **Review Changes** to see the full before/after diff."
+        is_schema_op = (
+            plan.operation_type in ('DROP_COLUMN', 'RENAME_COLUMN', 'ADD_COLUMN')
+            or (plan.operation_payload or {}).get('impact', {}).get('type') == 'schema'
+            or bool(plan.affected_columns and plan.operation_type in ('DROP_COLUMN', 'RENAME_COLUMN'))
         )
-        if plan.warnings:
-            answer += '\n\n⚠️ ' + ' '.join(plan.warnings)
-        if cells == 0:
+
+        if is_schema_op:
+            cols_count = len(plan.affected_columns) or 1
+            if plan.operation_type == 'DROP_COLUMN':
+                col_name = plan.affected_columns[0] if plan.affected_columns else ''
+                answer = (
+                    f"{plan.operation_label}.\n\n"
+                    f"Column '{col_name}' will be dropped from the dataset. "
+                    f"Review the plan below and click **Apply Changes**."
+                )
+            elif plan.operation_type == 'RENAME_COLUMN':
+                answer = (
+                    f"{plan.operation_label}.\n\n"
+                    f"{cols_count} column{' will' if cols_count == 1 else 's will'} be renamed. "
+                    f"Review the plan below and click **Apply Changes**."
+                )
+            elif plan.operation_type == 'ADD_COLUMN':
+                col_name = plan.affected_columns[0] if plan.affected_columns else ''
+                answer = (
+                    f"{plan.operation_label}.\n\n"
+                    f"Column '{col_name}' will be added to the dataset. "
+                    f"Review the plan below and click **Apply Changes**."
+                )
+            else:
+                answer = (
+                    f"{plan.operation_label}.\n\n"
+                    f"Schema will be updated across {cols_count} column(s). "
+                    f"Review the plan below and click **Apply Changes**."
+                )
+            if plan.warnings:
+                answer += '\n\n⚠️ ' + ' '.join(plan.warnings)
+        elif cells == 0 and not plan.affected_columns:
             answer = (
                 f"{plan.operation_label}. No changes needed — "
                 + (plan.warnings[0] if plan.warnings else 'data already satisfies this condition.')
             )
+        else:
+            answer = (
+                f"{plan.operation_label}.\n\n"
+                f"{cells} {'cell' if cells == 1 else 'cells'} will change "
+                f"across {len(plan.affected_columns)} column(s). "
+                f"Review the plan below and click **Review Changes** to see the full before/after diff."
+            )
+            if plan.warnings:
+                answer += '\n\n⚠️ ' + ' '.join(plan.warnings)
 
         result_metadata = {'transform_plan': self._plan_to_dict(plan)}
         if operation.get('_supersedes_plan_id'):
