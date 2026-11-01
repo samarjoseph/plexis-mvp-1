@@ -120,6 +120,7 @@ export function formatValue(value) {
     if (Number.isFinite(value) && value % 1 === 0) return value.toLocaleString();
     return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
   }
+  if (Array.isArray(value)) return value.map(String).join(', ');
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }

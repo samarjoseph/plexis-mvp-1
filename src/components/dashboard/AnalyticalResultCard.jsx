@@ -160,6 +160,10 @@ export function AnalyticalResultView({ result }) {
     return Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null;
   }, [value]);
 
+  const isArrayList = useMemo(() => {
+    return Array.isArray(value) && value.every(v => typeof v !== 'object' || v === null);
+  }, [value]);
+
   const isRanking = Boolean(
     operation?.toLowerCase?.() === 'top_n' ||
     operation?.toLowerCase?.() === 'bottom_n' ||
@@ -226,8 +230,13 @@ export function AnalyticalResultView({ result }) {
         />
       )}
 
-      {/* Enriched Scalar / Extremum / Comparison View (when not grouped and not row ranking) */}
-      {!isGrouped && !isRanking && (
+      {/* List of Categorical / Distinct Values (e.g. Unique Values, Column Names) */}
+      {!isGrouped && !isRanking && isArrayList && (
+        <ArrayListResultView result={result} />
+      )}
+
+      {/* Enriched Scalar / Extremum / Comparison View (when not grouped, not row ranking, and not array list) */}
+      {!isGrouped && !isRanking && !isArrayList && (
         <ScalarOrEnrichedResultView result={result} />
       )}
     </div>
@@ -282,11 +291,14 @@ function ScalarOrEnrichedResultView({ result }) {
     if (unit) {
       return <span className="arc-scalar-unit">{unit}</span>;
     }
+    if (typeof value !== 'number') {
+      return null;
+    }
     if (unit_status === 'unknown' || (!unit && unit_label && unit_status !== 'not_applicable')) {
       return <span className="arc-unit-unknown">{unit_label || 'Unit not specified in dataset metadata'}</span>;
     }
     return null;
-  }, [unit, unit_status, unit_label]);
+  }, [unit, unit_status, unit_label, value]);
 
   // ── A. Comparison Result View ──
   if (isComparison) {
@@ -442,6 +454,57 @@ function ScalarOrEnrichedResultView({ result }) {
           Calculated across {totalRows.toLocaleString()} observations
         </span>
       )}
+    </div>
+  );
+}
+
+// ── Sub-component: Array List / Distinct Values View ───────────────────────
+
+function ArrayListResultView({ result }) {
+  const { value, operation, column, details = {}, row_count } = result || {};
+  const items = Array.isArray(value) ? value : [];
+  const totalRows = details?.total_rows ?? row_count ?? 0;
+  const metricHeader = deriveMetricHeader(operation, column, 'Distinct Values');
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(items.map(String).join(', '));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="arc-list-container">
+      <div className="arc-list-header">
+        <div className="arc-list-title-row">
+          <span className="arc-list-title">{metricHeader}</span>
+          <span className="arc-list-count-badge">
+            {items.length} {items.length === 1 ? 'item' : 'items'}
+          </span>
+          <button
+            type="button"
+            className="arc-list-copy-btn"
+            onClick={handleCopy}
+            title="Copy list as comma-separated values"
+          >
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+        {totalRows > 0 && (
+          <span className="arc-scalar-sub">
+            Calculated across {totalRows.toLocaleString()} observations
+          </span>
+        )}
+      </div>
+
+      <div className="arc-chips-grid">
+        {items.map((item, idx) => (
+          <div key={idx} className="arc-chip-item">
+            <span className="arc-chip-index">{idx + 1}</span>
+            <span className="arc-chip-value">{String(item)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

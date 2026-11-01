@@ -4376,6 +4376,102 @@ body.is-dragging * {
   font-weight: 500;
 }
 
+/* ── Distinct / Categorical Values List View ── */
+.arc-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.arc-list-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.arc-list-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.arc-list-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.arc-list-count-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  border-radius: 12px;
+  padding: 2px 8px;
+}
+
+.arc-list-copy-btn {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: auto;
+}
+
+.arc-list-copy-btn:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.arc-chips-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.arc-chip-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  color: #f1f5f9;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.arc-chip-item:hover {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.arc-chip-index {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #818cf8;
+  font-family: var(--dash-mono, 'JetBrains Mono', monospace);
+}
+
+.arc-chip-value {
+  font-weight: 500;
+  color: #f8fafc;
+  word-break: break-word;
+}
+
 /* Grounded record context card */
 .arc-record-context {
   background: rgba(255, 255, 255, 0.02);
