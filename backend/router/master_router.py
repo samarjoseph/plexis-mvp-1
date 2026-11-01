@@ -960,7 +960,7 @@ class MasterRouter:
 
         # Check for explicit clarification action first (e.g. user selected a ranking interpretation)
         workspace_action = getattr(context, 'workspace_action', None) or {}
-        if workspace_action.get('type') in ('RANKING_CLARIFICATION', 'TRANSFORMATION_CLARIFICATION') and workspace_action.get('chosen_operation'):
+        if workspace_action.get('type') == 'RANKING_CLARIFICATION' and workspace_action.get('chosen_operation'):
             chosen_op = workspace_action['chosen_operation']
             logger.info("[Router] Authoritative execution of chosen clarification operation: %s", chosen_op)
             payload = {
@@ -4088,6 +4088,49 @@ class MasterRouter:
                         'reason': 'structured clarification resolved extreme value ambiguity',
                     }
 
+            if workspace_action.get('clarification_type') == 'EXPRESSION_REQUIRED':
+                chosen_op = workspace_action.get('chosen_operation')
+                target_col = pending.operation_payload.get('column') or (pending.candidate_columns[0] if pending.candidate_columns else 'new_column')
+                if chosen_op:
+                    operation = dict(chosen_op)
+                else:
+                    action_val = str(workspace_action.get('action') or workspace_action.get('value') or '').upper()
+                    if action_val in ('INIT_ZERO', '0', 'OPTION_1'):
+                        expr = {
+                            'type': 'LITERAL', 'value': 0,
+                            'typed_literal': {
+                                '__typed_literal__': True, 'value': 0, 'value_type': 'integer',
+                                'source_form': '0', 'explicit': True, 'was_quoted': False,
+                            }
+                        }
+                    elif action_val in ('INIT_NULL', 'NULL', 'OPTION_2'):
+                        expr = {
+                            'type': 'LITERAL', 'value': None,
+                            'typed_literal': {
+                                '__typed_literal__': True, 'value': None, 'value_type': 'null',
+                                'source_form': 'null', 'explicit': True, 'was_quoted': False,
+                            }
+                        }
+                    elif action_val.startswith('COPY_'):
+                        col_ref = action_val.replace('COPY_', '')
+                        expr = {'type': 'COLUMN', 'name': col_ref}
+                    else:
+                        expr = {'type': 'LITERAL', 'value': 0}
+                    operation = {
+                        'type': 'IR_REQUIRED',
+                        '_action': 'CREATE_COLUMN',
+                        'column': target_col,
+                        'expression': expr,
+                    }
+                operation.pop('_missing_slots', None)
+                operation['_pending_transformation_id'] = pending.transformation_id
+                operation['_pending_conversation_id'] = conversation_id
+                transformation_store.finish_pending(conversation_id, dataset_id, 'COMPLETED')
+                return {
+                    'intent': 'TRANSFORM', 'confidence': 0.99, 'operation': operation,
+                    'reason': 'structured clarification resolved expression required',
+                }
+
             if workspace_action.get('clarification_type') == 'COLUMN_SCOPE':
                 if action_value == 'ALL_MATCHING_COLUMNS':
                     selected = list(pending.candidate_columns)
@@ -4216,6 +4259,96 @@ class MasterRouter:
             operation['_pending_conversation_id'] = conversation_id
             return {'intent': 'TRANSFORM', 'confidence': 0.99, 'operation': operation,
                     'reason': 'resolved pending fill value'}
+
+        if 'expression' in pending.missing_slots or pending.clarification_type == 'EXPRESSION_REQUIRED':
+            target_col = pending.operation_payload.get('column') or (pending.candidate_columns[0] if pending.candidate_columns else 'new_column')
+            clean_msg = message.strip()
+            clean_lower = clean_msg.lower()
+            clean_val = re.sub(r'^(?:i meant|meaning|i mean|i want|please|set it to|set to|fill with|initialize with|init with|use|make it)\s*[:,-]?\s*', '', clean_lower).strip()
+
+            expr = None
+            if clean_val in ('0', 'zero', 'option 1', '1', 'initialize with 0'):
+                expr = {
+                    'type': 'LITERAL', 'value': 0,
+                    'typed_literal': {
+                        '__typed_literal__': True, 'value': 0, 'value_type': 'integer',
+                        'source_form': '0', 'explicit': True, 'was_quoted': False,
+                    }
+                }
+            elif clean_val in ('null', 'none', 'empty', 'nan', 'option 2', '2', 'initialize with null'):
+                expr = {
+                    'type': 'LITERAL', 'value': None,
+                    'typed_literal': {
+                        '__typed_literal__': True, 'value': None, 'value_type': 'null',
+                        'source_form': 'null', 'explicit': True, 'was_quoted': False,
+                    }
+                }
+            elif clean_val.startswith('copy from ') or clean_val.startswith('copy '):
+                cand_name = re.sub(r'^copy\s+(?:from\s+)?', '', clean_msg, flags=re.IGNORECASE).strip()
+                matched_cand = next((c for c in pending.candidate_columns if c.lower() == cand_name.lower()), cand_name)
+                expr = {'type': 'COLUMN', 'name': matched_cand}
+            elif any(c.lower() == clean_msg.lower() for c in pending.candidate_columns):
+                matched_cand = next(c for c in pending.candidate_columns if c.lower() == clean_msg.lower())
+                expr = {'type': 'COLUMN', 'name': matched_cand}
+            else:
+                # Check for simple arithmetic: column op number or column op column
+                # e.g. "Departure_Delay / 60", "Departure_Delay * 0.1", "a + b"
+                arith_match = re.match(r'^([A-Za-z0-9_]+)\s*([+\-*/%])\s*([A-Za-z0-9_.]+)$', clean_msg)
+                if arith_match:
+                    left_raw, op_sym, right_raw = arith_match.groups()
+                    op_map = {'+': 'add', '-': 'subtract', '*': 'multiply', '/': 'divide', '%': 'modulo'}
+                    
+                    def _parse_term(term):
+                        cand = next((c for c in pending.candidate_columns if c.lower() == term.lower()), None)
+                        if cand:
+                            return {'type': 'COLUMN', 'name': cand}
+                        try:
+                            if '.' in term:
+                                return {'type': 'LITERAL', 'value': float(term)}
+                            return {'type': 'LITERAL', 'value': int(term)}
+                        except ValueError:
+                            return {'type': 'COLUMN', 'name': term}
+
+                    expr = {
+                        'type': 'ARITHMETIC',
+                        'operator': op_map.get(op_sym, 'add'),
+                        'left': _parse_term(left_raw),
+                        'right': _parse_term(right_raw),
+                    }
+                else:
+                    combined_prompt = f"Create column '{target_col}' with expression: {clean_msg}"
+                    operation = {
+                        'type': 'IR_REQUIRED',
+                        '_action': 'CREATE_COLUMN',
+                        'column': target_col,
+                        'user_prompt': combined_prompt,
+                    }
+                    operation['_pending_transformation_id'] = pending.transformation_id
+                    operation['_pending_conversation_id'] = conversation_id
+                    transformation_store.finish_pending(conversation_id, dataset_id, 'COMPLETED')
+                    return {
+                        'intent': 'TRANSFORM',
+                        'confidence': 0.99,
+                        'operation': operation,
+                        'reason': 'resolved pending column expression with custom formula',
+                    }
+
+            operation = {
+                'type': 'IR_REQUIRED',
+                '_action': 'CREATE_COLUMN',
+                'column': target_col,
+                'expression': expr,
+            }
+            operation.pop('_missing_slots', None)
+            operation['_pending_transformation_id'] = pending.transformation_id
+            operation['_pending_conversation_id'] = conversation_id
+            transformation_store.finish_pending(conversation_id, dataset_id, 'COMPLETED')
+            return {
+                'intent': 'TRANSFORM',
+                'confidence': 0.99,
+                'operation': operation,
+                'reason': 'resolved pending column expression with literal/column',
+            }
 
         # A reviewable plan is still an active structured conversation. Route
         # corrections against its typed operation payload before normal intent

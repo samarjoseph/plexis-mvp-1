@@ -126,8 +126,29 @@ Return ONLY a JSON object:
 9. For cleaning strings (strip + lowercase + etc.), use multiple steps.
 10. If the request requires GROUP_BY, AGGREGATE, MERGE, PIVOT, MELT, or EXPLODE, respond with: {{"goal": "...", "steps": [], "metadata": {{"unsupported": "GROUP_BY"}}}}
 11. Ensure step IDs are unique.
+12. When creating or adding a new column with a constant or default value (e.g. 0, null, or empty string), use CREATE_COLUMN with a LITERAL expression: {{"type": "LITERAL", "value": 0}}.
 
 ## EXAMPLES
+
+### Example 0: Add column with initial/default value
+User: "Add a column departure_percent set to 0"
+Schema: Departure_Delay (float64), Airline (string)
+
+```json
+{{
+  "goal": "Add departure_percent column initialized with 0",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "CREATE_COLUMN",
+      "params": {{"column": "departure_percent"}},
+      "expression": {{"type": "LITERAL", "value": 0}},
+      "depends_on": [],
+      "label": "Create departure_percent column initialized with 0"
+    }}
+  ]
+}}
+```
 
 ### Example 1: Create age groups
 User: "Create an age_group column where under 18 is Minor, 18-64 is Adult, 65+ is Senior"

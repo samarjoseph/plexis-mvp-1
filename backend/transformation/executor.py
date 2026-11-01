@@ -393,6 +393,13 @@ class TransformationExecutor:
             col = payload.get('column') or payload.get('name') or payload.get('new_column') or (plan.affected_columns[0] if plan.affected_columns else None)
             if col and col not in new_df.columns:
                 raise RuntimeError(f"Postcondition failed: Column '{col}' was not added to dataset.")
+        if op_type == 'IR_COMPOSITE':
+            ir_dict = payload.get('ir') or {}
+            for step in ir_dict.get('steps', []):
+                if step.get('operation') == 'CREATE_COLUMN':
+                    c_name = step.get('params', {}).get('column')
+                    if c_name and c_name not in new_df.columns:
+                        raise RuntimeError(f"Postcondition failed: Created column '{c_name}' is missing from transformed dataset.")
         
         if op_type == 'CLIP':
             col = payload.get('column') or (plan.affected_columns[0] if plan.affected_columns else None)

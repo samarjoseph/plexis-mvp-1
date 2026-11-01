@@ -13,8 +13,11 @@ after explicit user approval.
 """
 from __future__ import annotations
 import logging
+import re
 import uuid
 from typing import Optional
+
+import pandas as pd
 
 from engines.base import BaseEngine, EngineResult
 from core.context import ExecutionContext
@@ -128,17 +131,163 @@ class TransformEngine(BaseEngine):
                 from transformation.ir_planner import ir_planner
                 from transformation.validator import ir_validator
                 from transformation.compiler import ir_compiler
+                from transformation.ir import TransformationIR, TransformStep, PRIMITIVE_REGISTRY
                 
-                # We need column types for schema
-                dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-                nullable = {col: df[col].isnull().any() for col in df.columns}
+                # Fast path: If expression and column are already resolved (e.g. follow-up or choice click)
+                if operation.get('expression') and operation.get('column'):
+                    col = operation['column']
+                    expr = operation['expression']
+                    ir = TransformationIR(
+                        goal=f"Create column '{col}'",
+                        steps=[
+                            TransformStep(
+                                id='step_1',
+                                operation=operation.get('_action') or 'CREATE_COLUMN',
+                                params={'column': col},
+                                expression=expr,
+                                label=f"Create column '{col}'",
+                            )
+                        ]
+                    )
+                else:
+                    # We need column types for schema
+                    dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+                    nullable = {col: df[col].isnull().any() for col in df.columns}
+                    
+                    # Call IR planner
+                    user_msg = operation.get('user_prompt') or getattr(context, 'message', '')
+                    ir = ir_planner.plan(user_msg, list(df.columns), dtypes, nullable)
                 
-                # Call IR planner
-                user_msg = getattr(context, 'message', '')
-                ir = ir_planner.plan(user_msg, list(df.columns), dtypes, nullable)
-                
+                # Check if any step requires an expression but has None
+                missing_expr_step = None
+                for s in ir.steps:
+                    spec = PRIMITIVE_REGISTRY.get(s.operation)
+                    if (spec and spec.requires_expression and not s.expression) or (s.operation in ('CREATE_COLUMN', 'MODIFY_COLUMN') and not s.expression):
+                        missing_expr_step = s
+                        break
+
                 # Validate IR
                 validation = ir_validator.validate(ir, df)
+                if not missing_expr_step and not validation.valid:
+                    for err in validation.errors:
+                        if "requires an expression" in err:
+                            for s in ir.steps:
+                                if s.id in err:
+                                    missing_expr_step = s
+                                    break
+                            if not missing_expr_step and ir.steps:
+                                missing_expr_step = ir.steps[0]
+                            break
+
+                if missing_expr_step is not None:
+                    col_name = missing_expr_step.params.get('column')
+                    user_msg = operation.get('user_prompt') or getattr(context, 'message', '')
+                    if not col_name:
+                        col_match = re.search(r'(?:column|col)\s+["\']?([^"\'\s]+)["\']?', user_msg, re.IGNORECASE)
+                        col_name = col_match.group(1) if col_match else 'new_column'
+
+                    # Find candidate columns:
+                    # 1. Matching tokens from col_name
+                    tokens = [t.lower() for t in re.findall(r'[A-Za-z0-9]+', col_name) if len(t) > 2]
+                    overlap_cols = [c for c in df.columns if c != col_name and any(t in c.lower() for t in tokens)]
+                    # 2. Numeric columns
+                    num_cols = [c for c in df.columns if c != col_name and c not in overlap_cols and pd.api.types.is_numeric_dtype(df[c])]
+                    # 3. Other columns
+                    other_cols = [c for c in df.columns if c != col_name and c not in overlap_cols and c not in num_cols]
+                    
+                    cand_cols = (overlap_cols + num_cols + other_cols)[:6]
+
+                    options = [
+                        {
+                            'label': 'Initialize with 0',
+                            'description': f"Create column '{col_name}' populated with 0",
+                            'action': 'INIT_ZERO',
+                            'operation': {
+                                'type': 'IR_REQUIRED',
+                                '_action': 'CREATE_COLUMN',
+                                'column': col_name,
+                                'expression': {
+                                    'type': 'LITERAL',
+                                    'value': 0,
+                                    'typed_literal': {
+                                        '__typed_literal__': True,
+                                        'value': 0,
+                                        'value_type': 'integer',
+                                        'source_form': '0',
+                                        'explicit': True,
+                                        'was_quoted': False,
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            'label': 'Initialize with null',
+                            'description': f"Create empty column '{col_name}' with null values",
+                            'action': 'INIT_NULL',
+                            'operation': {
+                                'type': 'IR_REQUIRED',
+                                '_action': 'CREATE_COLUMN',
+                                'column': col_name,
+                                'expression': {
+                                    'type': 'LITERAL',
+                                    'value': None,
+                                    'typed_literal': {
+                                        '__typed_literal__': True,
+                                        'value': None,
+                                        'value_type': 'null',
+                                        'source_form': 'null',
+                                        'explicit': True,
+                                        'was_quoted': False,
+                                    }
+                                }
+                            }
+                        }
+                    ]
+
+                    if cand_cols:
+                        best_cand = cand_cols[0]
+                        options.append({
+                            'label': f"Copy from {best_cand}",
+                            'description': f"Populate '{col_name}' with values from '{best_cand}'",
+                            'action': f"COPY_{best_cand}",
+                            'operation': {
+                                'type': 'IR_REQUIRED',
+                                '_action': 'CREATE_COLUMN',
+                                'column': col_name,
+                                'expression': {
+                                    'type': 'COLUMN',
+                                    'name': best_cand
+                                }
+                            }
+                        })
+
+                    if cand_cols:
+                        example_cols = ', '.join(f'`{c}`' for c in cand_cols[:2])
+                        question = (
+                            f"How should the new column **'{col_name}'** be calculated or populated? "
+                            f"Please specify a formula (for example, using columns like {example_cols}) "
+                            f"or choose an initial value below."
+                        )
+                    else:
+                        question = (
+                            f"How should the new column **'{col_name}'** be calculated or populated? "
+                            f"Please specify a formula or choose an initial value below."
+                        )
+
+                    raise TransformationClarificationRequired(
+                        question,
+                        missing_slots=['expression'],
+                        candidate_columns=cand_cols,
+                        clarification_type='EXPRESSION_REQUIRED',
+                        operation_payload={
+                            'type': 'IR_REQUIRED',
+                            '_action': 'CREATE_COLUMN',
+                            'column': col_name,
+                            'original_request': user_msg,
+                        },
+                        ambiguous_options=options,
+                    )
+
                 if not validation.valid:
                     if getattr(validation, 'unsupported', None):
                         err_msg = f"This transformation requires a {validation.unsupported} primitive that is not currently available."
