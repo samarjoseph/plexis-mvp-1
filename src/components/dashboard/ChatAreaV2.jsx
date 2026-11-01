@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileSpreadsheet, Search, LineChart, MessageSquare, Menu, BarChart3,
+  Table2, ArrowUpRight,
 } from 'lucide-react';
 import PlexisLogo from '../brand/PlexisLogo';
 import MessageBubbleV2 from './MessageBubbleV2';
@@ -13,8 +14,37 @@ import { useAuth } from '../../context/AuthContext';
 import { LogoToggle } from './SidebarV2';
 import Tooltip from '../ui/Tooltip';
 import WorkspaceToggleButton from '../workspace/WorkspaceToggleButton.jsx';
+import { useWorkspace } from '../../context/WorkspaceContext.jsx';
 import { EventBus } from '../../events/EventBus';
 import { Events } from '../../events/Events';
+
+/* ─────────────────────────────────────────────────────────────────
+   Animation variants for welcome container and cards
+   ───────────────────────────────────────────────────────────────── */
+const welcomeContainerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.08,
+      delayChildren: 0.1,
+    },
+  },
+};
+
+const welcomeCardVariants = {
+  hidden: { opacity: 0, y: 16, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      type: 'spring',
+      stiffness: 400,
+      damping: 26,
+    },
+  },
+};
 
 /* ─────────────────────────────────────────────────────────────────
    useIsDesktop: true when viewport >= 1024px
@@ -42,6 +72,8 @@ const ChatMessageList = memo(function ChatMessageList({
   showWelcome,
   greeting,
   firstName,
+  activeDatasetId,
+  activeSessionId,
   onUploadClick,
   onPrefill,
   onRetry,
@@ -54,14 +86,24 @@ const ChatMessageList = memo(function ChatMessageList({
   chatBodyRef,
   scrollRef,
 }) {
+  const { openWorkspace } = useWorkspace();
+
+  const handleSpreadsheetClick = useCallback(() => {
+    if (activeDatasetId) {
+      openWorkspace(activeDatasetId, activeSessionId);
+    } else {
+      onUploadClick?.();
+    }
+  }, [activeDatasetId, activeSessionId, openWorkspace, onUploadClick]);
+
   return (
     <div className="v2-chat-messages" ref={chatBodyRef}>
       {showWelcome && (
         <motion.div
           className="v2-welcome"
-          initial={{ opacity: 0, y: 24 }}
+          initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
         >
           <div className="v2-welcome-icon">
             <PlexisLogo width={26} height={26} />
@@ -71,55 +113,86 @@ const ChatMessageList = memo(function ChatMessageList({
           </h2>
           <p>What would you like to explore today?</p>
 
-          <div className="v2-welcome-cards">
-            <button
+          <motion.div
+            className="v2-welcome-cards"
+            variants={welcomeContainerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            <motion.button
               type="button"
-              className="v2-welcome-card"
+              variants={welcomeCardVariants}
+              whileHover={{ y: -4, scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              className="v2-welcome-card v2-welcome-card--upload"
               onClick={onUploadClick}
             >
               <div className="v2-welcome-card-icon">
-                <FileSpreadsheet size={18} />
+                <FileSpreadsheet size={19} />
               </div>
-              <span className="v2-welcome-card-title">Upload Dataset</span>
-              <span className="v2-welcome-card-desc">Analyze CSV files with AI</span>
-            </button>
+              <div className="v2-welcome-card-content">
+                <span className="v2-welcome-card-title">Upload Dataset</span>
+                <span className="v2-welcome-card-desc">Analyze CSV & Excel with AI</span>
+              </div>
+              <ArrowUpRight className="v2-welcome-card-arrow" size={15} />
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
-              className="v2-welcome-card"
-              onClick={() => onPrefill('Research the latest trends in AI data analytics.')}
+              variants={welcomeCardVariants}
+              whileHover={{ y: -4, scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              className="v2-welcome-card v2-welcome-card--spreadsheet"
+              onClick={handleSpreadsheetClick}
             >
               <div className="v2-welcome-card-icon">
-                <Search size={18} />
+                <Table2 size={19} />
               </div>
-              <span className="v2-welcome-card-title">Research the Web</span>
-              <span className="v2-welcome-card-desc">Get live web insights</span>
-            </button>
+              <div className="v2-welcome-card-content">
+                <span className="v2-welcome-card-title">View Live Spreadsheet</span>
+                <span className="v2-welcome-card-desc">
+                  {activeDatasetId ? 'Inspect & filter active data' : 'Open interactive data table'}
+                </span>
+              </div>
+              <ArrowUpRight className="v2-welcome-card-arrow" size={15} />
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
-              className="v2-welcome-card"
+              variants={welcomeCardVariants}
+              whileHover={{ y: -4, scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              className="v2-welcome-card v2-welcome-card--insights"
               onClick={() => onPrefill('Generate insights from the current dataset.')}
             >
               <div className="v2-welcome-card-icon">
-                <LineChart size={18} />
+                <LineChart size={19} />
               </div>
-              <span className="v2-welcome-card-title">Generate Insights</span>
-              <span className="v2-welcome-card-desc">Extract patterns & trends</span>
-            </button>
+              <div className="v2-welcome-card-content">
+                <span className="v2-welcome-card-title">Generate Insights</span>
+                <span className="v2-welcome-card-desc">Extract patterns & statistics</span>
+              </div>
+              <ArrowUpRight className="v2-welcome-card-arrow" size={15} />
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
-              className="v2-welcome-card"
+              variants={welcomeCardVariants}
+              whileHover={{ y: -4, scale: 1.02 }}
+              whileTap={{ scale: 0.96 }}
+              className="v2-welcome-card v2-welcome-card--ask"
               onClick={() => onPrefill('Ask Plexis anything.')}
             >
               <div className="v2-welcome-card-icon">
-                <MessageSquare size={18} />
+                <MessageSquare size={19} />
               </div>
-              <span className="v2-welcome-card-title">Ask Anything</span>
-              <span className="v2-welcome-card-desc">Chat with Plexis AI</span>
-            </button>
-          </div>
+              <div className="v2-welcome-card-content">
+                <span className="v2-welcome-card-title">Ask Anything</span>
+                <span className="v2-welcome-card-desc">Chat with Plexis AI freely</span>
+              </div>
+              <ArrowUpRight className="v2-welcome-card-arrow" size={15} />
+            </motion.button>
+          </motion.div>
         </motion.div>
       )}
 
@@ -330,6 +403,8 @@ export default function ChatAreaV2({
         showWelcome={showWelcome}
         greeting={greeting}
         firstName={firstName}
+        activeDatasetId={activeDatasetId}
+        activeSessionId={activeSessionId}
         onUploadClick={handleUploadClick}
         onPrefill={handlePrefill}
         onRetry={onRetry}
