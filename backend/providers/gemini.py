@@ -34,7 +34,7 @@ def _get_genai_client(api_key: str):
 
     try:
         retry_opts = _types.HttpRetryOptions(attempts=1) if hasattr(_types, 'HttpRetryOptions') else None
-        http_opts = _types.HttpOptions(timeout=8000, retry_options=retry_opts) if hasattr(_types, 'HttpOptions') else None
+        http_opts = _types.HttpOptions(timeout=15000, retry_options=retry_opts) if hasattr(_types, 'HttpOptions') else None
         client = _genai.Client(api_key=api_key, http_options=http_opts)
         return client, _genai
     except Exception as e:

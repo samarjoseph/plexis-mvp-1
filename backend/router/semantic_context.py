@@ -197,6 +197,55 @@ class SemanticContextBuilder:
                 for turn in history[-4:]
             ]
 
+        # ── 4. Active Workflow & Conversational Memory ──────────────────────
+        pending_dict = None
+        try:
+            from transformation.store import transformation_store
+            chat_id = str(getattr(context, 'chat_id', None) or '')
+            session_id = str(getattr(context, 'session_id', None) or '')
+            dataset_id = str(getattr(context, 'dataset_id', '') or '')
+            workspace_action = getattr(context, 'workspace_action', None) or {}
+            transformation_id = str(workspace_action.get('transformation_id') or '')
+
+            pending = None
+            if transformation_id:
+                pending = transformation_store.get_pending_by_id(transformation_id)
+            if not pending and chat_id and dataset_id:
+                pending = transformation_store.pending_for(chat_id, dataset_id)
+            if not pending and session_id and dataset_id:
+                pending = transformation_store.pending_for(session_id, dataset_id)
+            if not pending and dataset_id and not chat_id and not session_id:
+                pending = transformation_store.pending_for_dataset(dataset_id)
+
+            if pending:
+                pending_dict = {
+                    "transformation_id": pending.transformation_id,
+                    "action": pending.action or pending.operation_payload.get('_action') or pending.operation_payload.get('type'),
+                    "target_column": pending.operation_payload.get('column') or (pending.candidate_columns[0] if pending.candidate_columns else None),
+                    "candidate_columns": pending.candidate_columns,
+                    "clarification_type": pending.clarification_type,
+                    "missing_slots": list(pending.missing_slots),
+                    "user_prompt": pending.user_prompt or pending.operation_payload.get('user_prompt', ''),
+                    "options": [opt.get('label') for opt in pending.operation_payload.get('options', []) if isinstance(opt, dict)],
+                }
+        except Exception as e:
+            logger.debug(f"Pending transformation extraction failed: {e}")
+
+        # ── 5. Conversation memorizer analysis ──────────────────────────────
+        try:
+            from memory.memorizer import conversation_memorizer
+            user_msg = getattr(context, 'message', '') or getattr(context, 'normalized_query', '')
+            memorized = conversation_memorizer.analyze_flow(
+                conversation_history=history,
+                current_message=user_msg,
+                pending_workflow=pending_dict,
+                workspace_action=getattr(context, 'workspace_action', None),
+                dataset_schema=result.get("columns", []),
+            )
+            result["memorized_context"] = memorized
+        except Exception as e:
+            logger.debug(f"Conversation memorizer failed: {e}")
+
         return result
 
     # ── Column extraction ─────────────────────────────────────────────────────

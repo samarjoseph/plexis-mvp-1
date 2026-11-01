@@ -993,7 +993,20 @@ class MasterRouter:
         # Guard against non-mutating requests being falsely classified as TRANSFORM
         if intent in ("transform", "spreadsheet_ops"):
             msg_check = getattr(context, 'message', '') or ''
-            if not _has_mutation_intent(msg_check):
+            workspace_action = getattr(context, 'workspace_action', None) or {}
+            
+            # Clarifications, pending follow-ups, and already-structured operations must NEVER be hijacked
+            is_clarification = (
+                workspace_action.get('type') in ('TRANSFORMATION_CLARIFICATION', 'RANKING_CLARIFICATION')
+                or 'clarification' in payload.get('reason', '').lower()
+                or 'resolved pending' in payload.get('reason', '').lower()
+                or bool(payload.get('operation') and payload.get('operation', {}).get('_pending_transformation_id'))
+                or bool(payload.get('operation') and payload.get('operation', {}).get('type') in (
+                    'ADD_COLUMN', 'DROP_COLUMN', 'RENAME_COLUMN', 'FILL_MISSING', 'DROP_DUPLICATES',
+                    'FILTER_ROWS', 'CAST_DTYPE', 'SORT_ROWS', 'IR_REQUIRED', 'CLIP', 'UPDATE_EXTREMUM'
+                ))
+            )
+            if not is_clarification and not _has_mutation_intent(msg_check):
                 dataset_id = getattr(context, 'dataset_id', None)
                 logger.warning(
                     f"[Router] Query '{msg_check[:80]}' misclassified as {intent} without mutation intent. "
@@ -3949,6 +3962,7 @@ class MasterRouter:
         transformation_id = str(workspace_action.get('transformation_id') or '')
 
         from transformation.store import transformation_store
+        from memory.memorizer import conversation_memorizer
         pending = None
         if transformation_id:
             pending = transformation_store.get_pending_by_id(transformation_id)
@@ -4103,7 +4117,7 @@ class MasterRouter:
                                 'source_form': '0', 'explicit': True, 'was_quoted': False,
                             }
                         }
-                    elif action_val in ('INIT_NULL', 'NULL', 'OPTION_2'):
+                    elif action_val in ('INIT_NULL', 'NULL', 'OPTION_2') or conversation_memorizer.is_empty_null_intent(action_val):
                         expr = {
                             'type': 'LITERAL', 'value': None,
                             'typed_literal': {
@@ -4275,7 +4289,7 @@ class MasterRouter:
                         'source_form': '0', 'explicit': True, 'was_quoted': False,
                     }
                 }
-            elif clean_val in ('null', 'none', 'empty', 'nan', 'option 2', '2', 'initialize with null'):
+            elif clean_val in ('null', 'none', 'empty', 'nan', 'option 2', '2', 'initialize with null') or conversation_memorizer.is_empty_null_intent(clean_val):
                 expr = {
                     'type': 'LITERAL', 'value': None,
                     'typed_literal': {

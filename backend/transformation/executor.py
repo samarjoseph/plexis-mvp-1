@@ -193,6 +193,18 @@ class TransformationExecutor:
                 raise RuntimeError(f"IR Execution failed: {'; '.join(sim.errors)}")
             return sim.result_df
 
+        # ── Primary: DuckDB Transformation Engine (SQL-first) ─────────────
+        from transformation.duckdb_engine import duckdb_transformation_engine
+        if duckdb_transformation_engine.can_handle(op):
+            try:
+                transformed_df, metrics = duckdb_transformation_engine.execute(
+                    df, op, payload, plan.dataset_id
+                )
+                logger.info(f"[TransformationExecutor] Executed {op} via DuckDB: {metrics}")
+                return transformed_df
+            except Exception as e:
+                logger.warning(f"[TransformationExecutor] DuckDB execution failed for {op}: {e}. Falling back to Pandas.", exc_info=True)
+
         if op == 'FILL_MISSING':
             fill_value = payload.get('value', 0)
             columns = payload.get('columns') or df.columns.tolist()
@@ -388,6 +400,15 @@ class TransformationExecutor:
         """Verify that the execution produced the expected postconditions."""
         op_type = (plan.operation_type or '').upper()
         payload = plan.operation_payload or {}
+
+        # First run DuckDB invariant validation
+        from transformation.duckdb_engine import duckdb_transformation_engine
+        try:
+            duckdb_transformation_engine.validate_invariants(old_df, new_df, op_type, payload)
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.warning("[TransformationExecutor] Invariant validation warning: %s", e)
 
         if op_type == 'ADD_COLUMN':
             col = payload.get('column') or payload.get('name') or payload.get('new_column') or (plan.affected_columns[0] if plan.affected_columns else None)

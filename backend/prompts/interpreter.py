@@ -130,15 +130,52 @@ def build_interpreter_prompt(
     else:
         history_block = ""
 
-    # â”€â”€ Build the full prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Build the full prompt ─────────────────────────────────────────────────
+    # Conversational memory and active workflow context
+    memorized = semantic_context.get("memorized_context", {})
+    if memorized and (memorized.get("is_followup") or memorized.get("context_summary")):
+        flow_summary = memorized.get("context_summary", "")
+        last_q = memorized.get("last_assistant_question", "")
+        stage = memorized.get("workflow_stage", "")
+        target_col = memorized.get("target_column")
+        action = memorized.get("workflow_action")
+
+        mem_lines = [
+            f"  Workflow State: {stage}",
+            f"  Flow Summary: {flow_summary}",
+        ]
+        if last_q:
+            mem_lines.append(f"  Assistant Last Question: \"{last_q}\"")
+        if target_col:
+            mem_lines.append(f"  Target Column: \"{target_col}\"")
+        if action:
+            mem_lines.append(f"  Target Action: \"{action}\"")
+
+        mem_lines.append(
+            "  CRITICAL WORKFLOW CONTEXT RULE:\n"
+            "    When the user is responding to an assistant question (e.g. how to populate a new column),\n"
+            "    answers like 'don\'t populate , leave blank', 'leave empty', 'null', '0', or formulas\n"
+            "    are INTENT=TRANSFORM completing that operation (e.g. ADD_COLUMN). They are NEVER read-only queries\n"
+            "    about missing values or statistics!"
+        )
+        memory_block = "CONVERSATION FLOW & WORKFLOW MEMORY:\n" + "\n".join(mem_lines)
+    else:
+        memory_block = ""
+
     sections = [
-        s for s in [col_block, ref_block, cap_block, ws_block, history_block] if s
+        s for s in [col_block, ref_block, cap_block, ws_block, history_block, memory_block] if s
     ]
     context_block = "\n\n".join(sections) if sections else "(no additional context)"
 
     # â”€â”€ Interpretation rules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     dataset_rule = (
         "\nROUTING RULES FOR DATASET QUESTIONS:\n"
+        "  FOLLOW-UP & CLARIFICATION RULES:\n"
+        "    - If the assistant asked how to calculate or populate a new column (e.g. 'gender'), and user replies\n"
+        "      with 'don\'t populate , leave blank', 'blank', 'empty', 'null', or '0':\n"
+        "      -> INTENT: TRANSFORM\n"
+        "      -> OPERATION: {\"type\": \"ADD_COLUMN\", \"column\": target_column, \"value\": null}\n"
+        "      -> NEVER classify as DATA_OPERATION or MISSING_COUNT_TOTAL!\n"
         "  READ operations (DATA_OPERATION):\n"
         "    min/max/average/count/top/bottom/missing/duplicates/filter/sort/\n"
         "    correlation/outliers/standard deviation on any listed column.\n"

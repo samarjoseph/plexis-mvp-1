@@ -29,19 +29,57 @@ logger = logging.getLogger(__name__)
 MAX_UNDO_DEPTH = 50
 
 
-@dataclass
 class UndoEntry:
-    """A single undo-history record for one successful transformation."""
-    dataset_id: str
-    plan_id: str
-    operation_type: str
-    operation_label: str
-    previous_df: pd.DataFrame        # Snapshot before mutation
-    previous_version: int             # Dataset version before mutation
-    result_version: int               # Dataset version after mutation
-    changed_cells: int
-    affected_columns: List[str]
-    timestamp: str                    # ISO 8601
+    """
+    A single undo-history record for one successful transformation.
+    Memory-optimized: uses compact compressed parquet snapshots to prevent Render 512MB RAM exhaustion.
+    """
+    def __init__(
+        self,
+        dataset_id: str,
+        plan_id: str,
+        operation_type: str,
+        operation_label: str,
+        previous_df: pd.DataFrame,
+        previous_version: int,
+        result_version: int,
+        changed_cells: int = 0,
+        affected_columns: Optional[List[str]] = None,
+        timestamp: Optional[str] = None,
+    ):
+        self.dataset_id = dataset_id
+        self.plan_id = plan_id
+        self.operation_type = operation_type
+        self.operation_label = operation_label
+        self.previous_version = previous_version
+        self.result_version = result_version
+        self.changed_cells = changed_cells
+        self.affected_columns = affected_columns or []
+        self.timestamp = timestamp or datetime.now(timezone.utc).isoformat()
+        
+        # Cache active DataFrame for immediate undo, compress to Parquet bytes for older stack entries
+        self._cached_df = previous_df.copy()
+        try:
+            import io
+            buf = io.BytesIO()
+            previous_df.to_parquet(buf, compression='snappy')
+            self._parquet_bytes = buf.getvalue()
+        except Exception:
+            self._parquet_bytes = None
+
+    @property
+    def previous_df(self) -> pd.DataFrame:
+        if self._cached_df is not None:
+            return self._cached_df.copy()
+        if self._parquet_bytes is not None:
+            import io
+            return pd.read_parquet(io.BytesIO(self._parquet_bytes))
+        raise RuntimeError("No snapshot available in UndoEntry")
+
+    def evict_ram_cache(self) -> None:
+        """Evict the heavy DataFrame from RAM, retaining only compressed Parquet bytes."""
+        if self._parquet_bytes is not None:
+            self._cached_df = None
 
 
 class TransformationHistory:
@@ -106,6 +144,10 @@ class TransformationHistory:
         with self._lock:
             stack = self._history[dataset_id]
             stack.append(entry)
+
+            # Memory optimization: evict full DataFrames from RAM for entries older than the latest 2
+            for old_entry in stack[:-2]:
+                old_entry.evict_ram_cache()
 
             # Trim old entries to respect MAX_UNDO_DEPTH
             if len(stack) > MAX_UNDO_DEPTH:

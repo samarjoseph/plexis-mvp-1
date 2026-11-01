@@ -156,7 +156,16 @@ export default function TransformationClarificationCard({ clarification, onActio
         className="tcc-custom-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (customScope.trim()) onAction?.(customScope.trim(), null);
+          const trimmed = customScope.trim();
+          if (trimmed) {
+            onAction?.(trimmed, {
+              type: 'TRANSFORMATION_CLARIFICATION',
+              clarification_type: clarification?.clarification_type,
+              transformation_id: clarification?.transformation_id,
+              value: trimmed,
+              is_custom: true,
+            });
+          }
         }}
       >
         <input
