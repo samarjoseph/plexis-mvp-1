@@ -504,6 +504,21 @@ class IRCompiler:
             diff = pd.to_datetime(df[col_a]) - pd.to_datetime(df[col_b])
             df[out_col] = diff.dt.days
 
+        elif op == 'FILL_PATTERN':
+            col = p['column']
+            pattern = p.get('pattern', [])
+            if isinstance(pattern, str):
+                import ast
+                try:
+                    pattern = ast.literal_eval(pattern)
+                except Exception:
+                    pattern = [x.strip().strip("'\"") for x in pattern.replace('[', '').replace(']', '').split(',') if x.strip()]
+            if not isinstance(pattern, list):
+                pattern = [pattern]
+            n_pat = len(pattern) if pattern else 1
+            n_rows = len(df)
+            df[col] = [pattern[i % n_pat] for i in range(n_rows)]
+
     def simulation_to_plan(self, ir: TransformationIR, sim: SimulationResult, dataset_id: str, fingerprint: str) -> TransformationPlan:
         """Convert a SimulationResult into the existing TransformationPlan contract."""
         

@@ -121,12 +121,13 @@ Return ONLY a JSON object:
 4. If a column name is ambiguous, pick the most likely match.
 5. Use depends_on when a step uses a column created by a previous step.
 6. For simple operations (fill, rename, drop, sort, etc.), use the appropriate primitive directly.
-7. For computed columns, use CREATE_COLUMN with an expression.
-8. For modifying existing column values, use MODIFY_COLUMN with an expression.
+7. For computed columns that do NOT exist in the schema, use CREATE_COLUMN with an expression.
+8. For modifying existing column values that ALREADY exist in the schema, use MODIFY_COLUMN, FILL, FILL_PATTERN, or REPLACE. NEVER use CREATE_COLUMN if the column already exists in the schema.
 9. For cleaning strings (strip + lowercase + etc.), use multiple steps.
 10. If the request requires GROUP_BY, AGGREGATE, MERGE, PIVOT, MELT, or EXPLODE, respond with: {{"goal": "...", "steps": [], "metadata": {{"unsupported": "GROUP_BY"}}}}
 11. Ensure step IDs are unique.
 12. When creating or adding a new column with a constant or default value (e.g. 0, null, or empty string), use CREATE_COLUMN with a LITERAL expression: {{"type": "LITERAL", "value": 0}}.
+13. When filling or populating a column with alternating, cyclical, or consecutive values (e.g. 'fill values A and B consecutively', 'alternate yes and no'), use FILL_PATTERN with params: {{"column": ..., "pattern": [...], "mode": "alternating"}}.
 
 ## EXAMPLES
 
@@ -397,6 +398,25 @@ Schema: region (string), revenue (float64)
   "goal": "Group sales by region with total revenue",
   "steps": [],
   "metadata": {{"unsupported": "GROUP_BY"}}
+}}
+```
+
+### Example 11: Fill alternating pattern or sequence
+User: "in gender columns fill the values male and female consecutively"
+Schema: gender (string) [nullable], age (int64)
+
+```json
+{{
+  "goal": "Fill alternating pattern of 'male' and 'female' in gender column",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "FILL_PATTERN",
+      "params": {{"column": "gender", "pattern": ["male", "female"], "mode": "alternating"}},
+      "depends_on": [],
+      "label": "Fill alternating values ['male', 'female'] in 'gender'"
+    }}
+  ]
 }}
 ```
 

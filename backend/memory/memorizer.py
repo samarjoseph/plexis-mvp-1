@@ -82,11 +82,14 @@ class ConversationMemorizer:
             if val_m:
                 pattern = [val_m.group(1), val_m.group(2)]
             else:
-                pattern = ["male", "female"]
+                pattern = None
+
+        if not col or not pattern:
+            return None
 
         return {
             "type": "FILL_PATTERN",
-            "column": col or "gender",
+            "column": col,
             "pattern": pattern,
             "mode": "alternating"
         }
@@ -119,10 +122,13 @@ class ConversationMemorizer:
             if target_col and target_pattern:
                 break
 
+        if not target_col or not target_pattern:
+            return None
+
         return {
             "type": "FILL_PATTERN",
-            "column": target_col or "gender",
-            "pattern": target_pattern or ["male", "female"],
+            "column": target_col,
+            "pattern": target_pattern,
             "mode": "alternating"
         }
 
@@ -370,7 +376,7 @@ class ConversationMemorizer:
             is_empty_or_null = self.is_empty_null_intent(clean_msg)
             is_zero = clean_msg in ('0', 'zero', 'initialize with 0', 'init with 0', 'i meant: initialize with 0', 'option 1', '1')
             
-            if clarification_type == "EXPRESSION_REQUIRED" or workflow_action in ("CREATE_COLUMN", "ADD_COLUMN"):
+            if clarification_type == "EXPRESSION_REQUIRED" or workflow_action in ("CREATE_COLUMN", "ADD_COLUMN", "MODIFY_COLUMN"):
                 col_to_use = target_column
                 if not col_to_use:
                     for turn in reversed(conversation_history):
@@ -378,13 +384,29 @@ class ConversationMemorizer:
                         col_to_use = self.extract_target_column(content, valid_cols)
                         if col_to_use:
                             break
-                col_to_use = col_to_use or "gender"
+                if not col_to_use and valid_cols:
+                    col_to_use = valid_cols[0]
+
+                is_existing = bool(valid_cols and col_to_use in valid_cols)
+                resolved_action = "MODIFY_COLUMN" if is_existing else "CREATE_COLUMN"
+
+                if not col_to_use:
+                    return {
+                        "is_followup": is_followup,
+                        "workflow_stage": workflow_stage,
+                        "clarification_type": clarification_type,
+                        "target_column": None,
+                        "workflow_action": workflow_action,
+                        "context_summary": "Follow-up without target column",
+                        "inferred_intent": None,
+                        "inferred_operation": None,
+                    }
 
                 if is_empty_or_null:
                     inferred_intent = "TRANSFORM"
                     inferred_operation = {
                         "type": "IR_REQUIRED",
-                        "_action": "CREATE_COLUMN",
+                        "_action": resolved_action,
                         "column": col_to_use,
                         "expression": {
                             'type': 'LITERAL',
@@ -400,14 +422,14 @@ class ConversationMemorizer:
                         }
                     }
                     context_summary = (
-                        f"User is answering assistant's question on how to populate new column '{col_to_use}'. "
+                        f"User is answering assistant's question on how to populate column '{col_to_use}'. "
                         f"User instructed to leave it blank/unpopulated (null value)."
                     )
                 elif is_zero:
                     inferred_intent = "TRANSFORM"
                     inferred_operation = {
                         "type": "IR_REQUIRED",
-                        "_action": "CREATE_COLUMN",
+                        "_action": resolved_action,
                         "column": col_to_use,
                         "expression": {
                             'type': 'LITERAL',
@@ -423,7 +445,7 @@ class ConversationMemorizer:
                         }
                     }
                     context_summary = (
-                        f"User is answering assistant's question on how to populate new column '{col_to_use}'. "
+                        f"User is answering assistant's question on how to populate column '{col_to_use}'. "
                         f"User instructed to initialize with 0."
                     )
                 else:

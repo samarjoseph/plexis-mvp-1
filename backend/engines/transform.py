@@ -140,54 +140,84 @@ class TransformEngine(BaseEngine):
                     if col_match and col_match.group(1).lower() not in ('called', 'named', 'that', 'the', 'a', 'new', 'column', 'col'):
                         target_col = col_match.group(1)
 
-                # Fast path 1: If expression and column are already resolved (e.g. follow-up or choice click)
-                if operation.get('expression') and (operation.get('column') or target_col):
+                # Fast path 0: Pattern or sequence fill
+                if operation.get('pattern') and (operation.get('column') or target_col):
                     col = operation.get('column') or target_col
-                    expr = operation['expression']
+                    pattern = operation['pattern']
                     ir = TransformationIR(
-                        goal=f"Create column '{col}'",
+                        goal=f"Fill alternating pattern in '{col}'",
                         steps=[
                             TransformStep(
                                 id='step_1',
-                                operation=operation.get('_action') or 'CREATE_COLUMN',
+                                operation='FILL_PATTERN',
+                                params={'column': col, 'pattern': pattern, 'mode': operation.get('mode', 'alternating')},
+                                label=f"Fill alternating pattern in '{col}'",
+                            )
+                        ]
+                    )
+                # Fast path 1: If expression and column are already resolved (e.g. follow-up or choice click)
+                elif operation.get('expression') and (operation.get('column') or target_col):
+                    col = operation.get('column') or target_col
+                    is_existing = col in df.columns
+                    action = operation.get('_action') or ('MODIFY_COLUMN' if is_existing else 'CREATE_COLUMN')
+                    expr = operation['expression']
+                    ir = TransformationIR(
+                        goal=f"{'Update' if is_existing else 'Create'} column '{col}'",
+                        steps=[
+                            TransformStep(
+                                id='step_1',
+                                operation=action,
                                 params={'column': col},
                                 expression=expr,
-                                label=f"Create column '{col}'",
+                                label=f"{'Update' if is_existing else 'Create'} column '{col}'",
                             )
                         ]
                     )
                 # Fast path 2: Literal value provided without expression (e.g. add column status with 'active' / 0)
                 elif (operation.get('column') or target_col) and operation.get('value') is not None:
                     col = operation.get('column') or target_col
+                    is_existing = col in df.columns
+                    action = operation.get('_action') or ('MODIFY_COLUMN' if is_existing else 'CREATE_COLUMN')
                     val = operation['value']
                     operation['expression'] = {
                         'type': 'LITERAL',
                         'value': val,
                     }
                     ir = TransformationIR(
-                        goal=f"Create column '{col}'",
+                        goal=f"{'Update' if is_existing else 'Create'} column '{col}'",
                         steps=[
                             TransformStep(
                                 id='step_1',
-                                operation=operation.get('_action') or 'CREATE_COLUMN',
+                                operation=action,
                                 params={'column': col},
                                 expression=operation['expression'],
-                                label=f"Create column '{col}'",
+                                label=f"{'Update' if is_existing else 'Create'} column '{col}'",
                             )
                         ]
                     )
                 else:
-                    # Check whether user_msg specifies an explicit formula or calculation
+                    # Check whether user is explicitly asking to add/create a NEW column without any formula, value, or pattern
+                    is_explicit_create = bool(
+                        operation.get('_action') in ('CREATE_COLUMN', 'ADD_COLUMN')
+                        or re.search(r'\b(?:add|create)\s+(?:a\s+)?(?:new\s+)?(?:column|col)\b', user_msg, re.IGNORECASE)
+                    )
                     has_explicit_formula = bool(re.search(
                         r'(?:[=+*/%]|(?:\s-\s)|\b(?:with|equal\s+to|set\s+to|calculate|calculated|compute|computed|as|from|where|when|divided\s+by|multiplied\s+by|plus|minus)\b)',
                         user_msg,
                         re.IGNORECASE
                     ))
 
-                    # Fast path 3: If user asks to add/create a column without formula or value,
+                    # Fast path 3: If user explicitly asks to create a NEW column that does not exist yet without formula/value/pattern,
                     # trigger clarification immediately without calling LLM (avoids 504 timeouts & stalls)
-                    if target_col and not has_explicit_formula and operation.get('value') is None:
-                        self._raise_create_column_clarification(df, target_col, user_msg)
+                    if (
+                        is_explicit_create
+                        and target_col
+                        and (target_col not in df.columns)
+                        and not has_explicit_formula
+                        and operation.get('value') is None
+                        and not operation.get('pattern')
+                    ):
+                        self._raise_column_clarification(df, target_col, user_msg, is_existing=False)
 
                     # We need column types for schema
                     dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
@@ -202,7 +232,7 @@ class TransformEngine(BaseEngine):
                                 '[TransformEngine] IR planning LLM failed (%s); falling back to column clarification for %r',
                                 llm_err, target_col
                             )
-                            self._raise_create_column_clarification(df, target_col, user_msg)
+                            self._raise_column_clarification(df, target_col, user_msg, is_existing=(target_col in df.columns))
                         raise
                 
                 # Check if any step requires an expression but has None
@@ -228,7 +258,7 @@ class TransformEngine(BaseEngine):
 
                 if missing_expr_step is not None:
                     col_name = missing_expr_step.params.get('column') or target_col or 'new_column'
-                    self._raise_create_column_clarification(df, col_name, user_msg)
+                    self._raise_column_clarification(df, col_name, user_msg, is_existing=(col_name in df.columns))
 
                 if not validation.valid:
                     if getattr(validation, 'unsupported', None):
@@ -449,7 +479,7 @@ class TransformEngine(BaseEngine):
         pending.dataset_fingerprint = plan.dataset_fingerprint
         transformation_store.activate_plan(pending)
 
-    def _raise_create_column_clarification(self, df: pd.DataFrame, col_name: str, user_msg: str):
+    def _raise_column_clarification(self, df: pd.DataFrame, col_name: str, user_msg: str, is_existing: bool = False):
         # Find candidate columns:
         # 1. Matching tokens from col_name
         tokens = [t.lower() for t in re.findall(r'[A-Za-z0-9]+', col_name) if len(t) > 2]
@@ -461,14 +491,17 @@ class TransformEngine(BaseEngine):
         
         cand_cols = (overlap_cols + num_cols + other_cols)[:6]
 
+        action_type = 'MODIFY_COLUMN' if is_existing else 'CREATE_COLUMN'
+        verb_create = 'Update' if is_existing else 'Create'
+
         options = [
             {
-                'label': 'Initialize with 0',
-                'description': f"Create column '{col_name}' populated with 0",
+                'label': 'Set values to 0' if is_existing else 'Initialize with 0',
+                'description': f"{verb_create} column '{col_name}' with 0",
                 'action': 'INIT_ZERO',
                 'operation': {
                     'type': 'IR_REQUIRED',
-                    '_action': 'CREATE_COLUMN',
+                    '_action': action_type,
                     'column': col_name,
                     'expression': {
                         'type': 'LITERAL',
@@ -485,12 +518,12 @@ class TransformEngine(BaseEngine):
                 }
             },
             {
-                'label': 'Initialize with null',
-                'description': f"Create empty column '{col_name}' with null values",
+                'label': 'Set values to null / empty' if is_existing else 'Initialize with null',
+                'description': f"{verb_create} column '{col_name}' with null values",
                 'action': 'INIT_NULL',
                 'operation': {
                     'type': 'IR_REQUIRED',
-                    '_action': 'CREATE_COLUMN',
+                    '_action': action_type,
                     'column': col_name,
                     'expression': {
                         'type': 'LITERAL',
@@ -516,7 +549,7 @@ class TransformEngine(BaseEngine):
                 'action': f"COPY_{best_cand}",
                 'operation': {
                     'type': 'IR_REQUIRED',
-                    '_action': 'CREATE_COLUMN',
+                    '_action': action_type,
                     'column': col_name,
                     'expression': {
                         'type': 'COLUMN',
@@ -525,18 +558,32 @@ class TransformEngine(BaseEngine):
                 }
             })
 
-        if cand_cols:
-            example_cols = ', '.join(f'`{c}`' for c in cand_cols[:2])
-            question = (
-                f"How should the new column **'{col_name}'** be calculated or populated? "
-                f"Please specify a formula (for example, using columns like {example_cols}) "
-                f"or choose an initial value below."
-            )
+        if is_existing:
+            if cand_cols:
+                example_cols = ', '.join(f'`{c}`' for c in cand_cols[:2])
+                question = (
+                    f"How would you like to update or populate the column **'{col_name}'**? "
+                    f"Please specify a formula (for example, using columns like {example_cols}), "
+                    f"values, or choose an option below."
+                )
+            else:
+                question = (
+                    f"How would you like to update or populate the column **'{col_name}'**? "
+                    f"Please specify a formula, values, or choose an option below."
+                )
         else:
-            question = (
-                f"How should the new column **'{col_name}'** be calculated or populated? "
-                f"Please specify a formula or choose an initial value below."
-            )
+            if cand_cols:
+                example_cols = ', '.join(f'`{c}`' for c in cand_cols[:2])
+                question = (
+                    f"How should the new column **'{col_name}'** be calculated or populated? "
+                    f"Please specify a formula (for example, using columns like {example_cols}) "
+                    f"or choose an initial value below."
+                )
+            else:
+                question = (
+                    f"How should the new column **'{col_name}'** be calculated or populated? "
+                    f"Please specify a formula or choose an initial value below."
+                )
 
         raise TransformationClarificationRequired(
             question,
@@ -545,12 +592,16 @@ class TransformEngine(BaseEngine):
             clarification_type='EXPRESSION_REQUIRED',
             operation_payload={
                 'type': 'IR_REQUIRED',
-                '_action': 'CREATE_COLUMN',
+                '_action': action_type,
                 'column': col_name,
                 'original_request': user_msg,
             },
             ambiguous_options=options,
         )
+
+    def _raise_create_column_clarification(self, df: pd.DataFrame, col_name: str, user_msg: str):
+        is_existing = bool(df is not None and col_name in df.columns)
+        return self._raise_column_clarification(df, col_name, user_msg, is_existing=is_existing)
 
     def _question_for_slots(self, operation_type, slots, operation):
         if 'fill_value' in slots:

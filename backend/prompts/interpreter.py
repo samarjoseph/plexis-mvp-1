@@ -261,7 +261,7 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     {"type": "UPDATE_EXTREMUM", "column": "column_name", "extremum": "max", "new_value": 60}
     {"type": "UPDATE_EXTREMUM", "column": "column_name", "extremum": "min", "new_value": 10}
     {"type": "EXTREME_VALUE_AMBIGUITY", "column": "column_name", "extremum": "max", "target_value": 60}
-    {"type": "FILL_PATTERN", "column": "gender", "pattern": ["male", "female"], "mode": "alternating"}
+    {"type": "FILL_PATTERN", "column": "column_name", "pattern": ["value_a", "value_b"], "mode": "alternating"}
 
   IMPORTANT KEYS:
     - FILL_MISSING uses "value" (not "fill_value"): number, or "mean"/"median"/"mode"/"ffill"/"bfill"
@@ -270,7 +270,7 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     - FILTER_ROWS uses "action": "KEEP" or "REMOVE"
     - DROP_COLUMN uses "column" (singular string, not "columns")
     - FILL_PATTERN uses "column", "pattern": [string, ...], "mode": "alternating"
-    - When user specifies alternating or consecutive row values (e.g. 'male and female consecutively', '1st male, 2nd female'): use TRANSFORM with FILL_PATTERN.
+    - When user specifies alternating, cycling, or consecutive row values (e.g. 'values A and B consecutively', 'alternate yes and no'): use TRANSFORM with FILL_PATTERN.
     - When user asks to re-trigger, re-create, or show a transformation plan: use TRANSFORM.
     - EXPLICIT QUOTES: If the user wraps a value in quotes (like 'none' or "false"), you MUST preserve it as a string exactly as written. DO NOT evaluate it to a JSON null or boolean.
     - NEVER translate comparative words ("highest", "lowest", "maximum", "minimum", "max", "min") into literal string values in REPLACE_VALUES unless the user explicitly requested literal text replacement (e.g. 'replace the word "max" with...').

@@ -853,13 +853,22 @@ def _normalize_transform_operation(op: dict) -> dict:
         if '_missing_slots' not in op:
             op['_missing_slots'] = ['clarify_extreme_intent']
 
-    KNOWN_SIMPLE_OPERATIONS = {
+    from transformation.planner import ALLOWED_OPERATIONS
+    try:
+        from transformation.ir import PRIMITIVE_REGISTRY
+        ir_prims = set(PRIMITIVE_REGISTRY.keys())
+    except Exception:
+        ir_prims = set()
+
+    ALL_SUPPORTED_OPERATIONS = set(ALLOWED_OPERATIONS) | ir_prims | {
         'FILL_MISSING', 'DROP_DUPLICATES', 'RENAME_COLUMN', 'DROP_COLUMN',
-        'FILTER_ROWS', 'CAST_DTYPE', 'REPLACE_VALUES', 'SORT_ROWS',
-        'CLIP', 'UPDATE_EXTREMUM', 'EXTREME_VALUE_AMBIGUITY'
+        'ADD_COLUMN', 'FILTER_ROWS', 'CAST_DTYPE', 'REPLACE_VALUES', 'SORT_ROWS',
+        'CLIP', 'UPDATE_EXTREMUM', 'EXTREME_VALUE_AMBIGUITY', 'FILL_PATTERN',
+        'POPULATE_SEQUENCE', 'CREATE_COLUMN', 'MODIFY_COLUMN', 'NORMALIZE_TEXT',
+        'REMOVE_EMPTY_ROWS'
     }
-    
-    if op_type not in KNOWN_SIMPLE_OPERATIONS:
+
+    if op_type not in ALL_SUPPORTED_OPERATIONS:
         op['type'] = 'IR_REQUIRED'
 
     return op

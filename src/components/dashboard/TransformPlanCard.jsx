@@ -40,19 +40,26 @@ export default function TransformPlanCard({ plan, datasetId, onApply, onCancel, 
 
   const hasChanges = affected_cells_count > 0 || (impactType === 'schema' && columnsChanged > 0);
 
-  // Build per-column summary from before_sample
+  // Build per-column summary from before_sample and plan metadata
   const columnSummary = React.useMemo(() => {
     const map = {};
     before_sample.forEach(({ column, after }) => {
       if (!map[column]) map[column] = { count: 0, after: String(after ?? '—') };
       map[column].count += 1;
     });
-    // Fallback: use affected_columns list if before_sample is empty
-    if (Object.keys(map).length === 0 && affected_columns.length > 0) {
+    // Ensure accurate cell counts (before_sample is capped at 20 preview rows)
+    if (affected_columns.length === 1 && affected_cells_count > 0) {
+      const col = affected_columns[0];
+      if (map[col]) {
+        map[col].count = affected_cells_count;
+      } else {
+        map[col] = { count: affected_cells_count, after: '—' };
+      }
+    } else if (Object.keys(map).length === 0 && affected_columns.length > 0) {
       affected_columns.forEach(col => { map[col] = { count: affected_cells_count || 0, after: '—' }; });
     }
     return map;
-  }, [before_sample, affected_columns]);
+  }, [before_sample, affected_columns, affected_cells_count]);
 
   const handleApply = async (planId, dsId) => {
     setIsApplying(true);

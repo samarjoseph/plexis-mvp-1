@@ -998,8 +998,18 @@ class TransformationPlanner:
 
 
     def _plan_fill_pattern(self, df: pd.DataFrame, op: Dict[str, Any], plan_id: str, dataset_id: str, fingerprint: str) -> TransformationPlan:
-        column = op.get('column') or op.get('name') or op.get('target_column') or 'gender'
-        pattern = op.get('pattern') or op.get('values') or ['male', 'female']
+        column = op.get('column') or op.get('name') or op.get('target_column')
+        if not column:
+            if len(df.columns) == 1:
+                column = df.columns[0]
+            else:
+                raise ValueError("Target column must be specified for FILL_PATTERN")
+
+        resolved_col = self._resolve_column_name(df, column)
+        if resolved_col:
+            column = resolved_col
+
+        pattern = op.get('pattern') or op.get('values')
         if isinstance(pattern, str):
             import ast
             try:
@@ -1007,6 +1017,9 @@ class TransformationPlanner:
                 pattern = parsed if isinstance(parsed, list) else [pattern]
             except Exception:
                 pattern = [p.strip().strip("'\"") for p in pattern.replace('[', '').replace(']', '').split(',') if p.strip()]
+
+        if not pattern or not isinstance(pattern, (list, tuple)):
+            raise ValueError(f"Pattern values must be specified as a sequence for column '{column}'")
 
         n_rows = len(df)
         n_pat = len(pattern) if pattern else 1

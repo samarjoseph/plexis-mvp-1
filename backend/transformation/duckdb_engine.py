@@ -409,7 +409,9 @@ class DuckDBTransformationEngine:
 
             elif op in ("FILL_PATTERN", "POPULATE_SEQUENCE"):
                 col = payload.get("column", "")
-                pattern = payload.get("pattern") or ["male", "female"]
+                pattern = payload.get("pattern") or payload.get("values")
+                if not pattern:
+                    return df.copy(), metrics
                 if isinstance(pattern, str):
                     import ast
                     try:

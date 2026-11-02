@@ -216,6 +216,14 @@ class IRValidator:
                 out_col = step.params.get('output_column')
                 if out_col:
                     current_columns.add(out_col)
+
+            elif step.operation == 'FILL_PATTERN':
+                col_name = step.params.get('column')
+                if col_name and col_name not in current_columns:
+                    current_columns.add(col_name)
+                pattern = step.params.get('pattern')
+                if not pattern or not isinstance(pattern, (list, tuple)):
+                    errors.append(f"Step {step.id}: FILL_PATTERN requires a non-empty list of values for 'pattern'")
                         
         if errors:
             return ValidationResult(valid=False, errors=errors, warnings=warnings)

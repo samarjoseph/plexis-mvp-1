@@ -354,6 +354,9 @@ _register(PrimitiveSpec('EXTRACT_DATE_PART', 'Extract part of a date column',
 _register(PrimitiveSpec('DATE_DIFF', 'Compute difference between two date columns',
                         required_params=['column_a', 'column_b', 'output_column'],
                         optional_params=['unit'], modifies_shape=True))
+_register(PrimitiveSpec('FILL_PATTERN', 'Fill column with an alternating pattern or sequence of values',
+                        required_params=['column', 'pattern'],
+                        optional_params=['mode'], modifies_shape=False))
 
 # ── Deferred capabilities (known but not yet executable) ─────────────────────
 DEFERRED_CAPABILITIES = frozenset({
