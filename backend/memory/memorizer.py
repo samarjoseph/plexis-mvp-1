@@ -127,6 +127,77 @@ class ConversationMemorizer:
         }
 
     @staticmethod
+    def detect_chat_command(text: str, current_chat_title: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Detect user natural-language commands to rename, delete, pin, or unpin chats.
+        Supports case-insensitive matching.
+        """
+        import re
+        clean = text.strip()
+
+        # 1. RENAME CHAT
+        rename_m = re.search(
+            r'^(?:please\s+)?(?:rename|change\s+(?:the\s+)?(?:chat\s+)?title(?:\s+of)?)\s+(?:(?:the\s+)?(?:chat\s+)?)?(?:["\']([^"\']+)["\']|([a-zA-Z0-9_\s\-]+?))\s+(?:chat\s+)?to\s+["\']?([^"\']+)["\']?$',
+            clean,
+            re.IGNORECASE
+        )
+        if rename_m:
+            raw_target = (rename_m.group(1) or rename_m.group(2) or '').strip()
+            new_title = rename_m.group(3).strip().strip('"\'')
+            is_current = raw_target.lower() in ('this', 'this chat', 'current', 'current chat', 'chat', '')
+            return {
+                'action': 'rename_chat',
+                'target_title': None if is_current else raw_target,
+                'new_title': new_title
+            }
+
+        # 2. DELETE CHAT
+        delete_m = re.search(
+            r'^(?:please\s+)?(?:delete|remove)\s+(?:the\s+)?(?:chat\s+)?(?:["\']([^"\']+)["\']|([a-zA-Z0-9_\s\-]+?))(?:\s+chat)?$',
+            clean,
+            re.IGNORECASE
+        )
+        if delete_m:
+            raw_target = (delete_m.group(1) or delete_m.group(2) or '').strip()
+            # Avoid matching non-chat deletes like "delete column age" or "delete rows"
+            if not re.search(r'\b(?:column|columns|col|row|rows|duplicates|nulls|missing)\b', raw_target, re.IGNORECASE):
+                is_current = raw_target.lower() in ('this', 'this chat', 'current', 'current chat')
+                return {
+                    'action': 'delete_chat',
+                    'target_title': None if is_current else raw_target
+                }
+
+        # 3. UNPIN CHAT
+        unpin_m = re.search(
+            r'^(?:please\s+)?unpin\s+(?:the\s+)?(?:chat\s+)?(?:["\']([^"\']+)["\']|([a-zA-Z0-9_\s\-]+?))(?:\s+chat)?$',
+            clean,
+            re.IGNORECASE
+        )
+        if unpin_m:
+            raw_target = (unpin_m.group(1) or unpin_m.group(2) or '').strip()
+            is_current = raw_target.lower() in ('this', 'this chat', 'current', 'current chat')
+            return {
+                'action': 'unpin_chat',
+                'target_title': None if is_current else raw_target
+            }
+
+        # 4. PIN CHAT
+        pin_m = re.search(
+            r'^(?:please\s+)?pin\s+(?:the\s+)?(?:chat\s+)?(?:["\']([^"\']+)["\']|([a-zA-Z0-9_\s\-]+?))(?:\s+chat)?$',
+            clean,
+            re.IGNORECASE
+        )
+        if pin_m:
+            raw_target = (pin_m.group(1) or pin_m.group(2) or '').strip()
+            is_current = raw_target.lower() in ('this', 'this chat', 'current', 'current chat')
+            return {
+                'action': 'pin_chat',
+                'target_title': None if is_current else raw_target
+            }
+
+        return None
+
+    @staticmethod
     def detect_ui_command(text: str) -> Optional[List[Dict[str, Any]]]:
         """
         Detect user natural-language commands to control workspace views and panels.
@@ -212,6 +283,8 @@ class ConversationMemorizer:
         elif workspace_action:
             clarification_type = workspace_action.get("clarification_type", "")
             target_column = workspace_action.get("target_column") or workspace_action.get("column")
+            if not target_column and workspace_action.get("chosen_operation"):
+                target_column = workspace_action["chosen_operation"].get("column")
             workflow_action = workspace_action.get("action")
 
         # Fallback: check if the assistant's last message was a clarification question
@@ -219,8 +292,8 @@ class ConversationMemorizer:
             # Check for column clarification patterns in assistant message
             # e.g. "How should the new column **'gender'** be calculated or populated?"
             import re
-            col_match = re.search(r"(?:column|field)\s+[\*\'\"]*([A-Za-z0-9_.\-]+)[\*\'\"]*", last_assistant_msg, re.IGNORECASE)
-            if col_match:
+            col_match = re.search(r"(?:new\s+column|column|field)\s+[\*\'\"]*([A-Za-z0-9_.\-]+)[\*\'\"]*", last_assistant_msg, re.IGNORECASE)
+            if col_match and col_match.group(1).lower() not in ('the', 'a', 'new', 'column', 'col', 'field'):
                 target_column = col_match.group(1)
             if "how should the new column" in last_assistant_msg.lower() or "calculated or populated" in last_assistant_msg.lower():
                 clarification_type = clarification_type or "EXPRESSION_REQUIRED"
@@ -228,6 +301,10 @@ class ConversationMemorizer:
             elif "which columns should i rename" in last_assistant_msg.lower():
                 clarification_type = clarification_type or "COLUMN_SCOPE"
                 workflow_action = workflow_action or "RENAME_COLUMN"
+
+        if not target_column and last_user_msg:
+            valid_cols = [c.get("name") or c.get("label") for c in dataset_schema] if dataset_schema else []
+            target_column = self.extract_target_column(last_user_msg, valid_cols)
 
         # 3. Determine if current message is a follow-up response
         is_followup = False
@@ -291,22 +368,67 @@ class ConversationMemorizer:
 
             # Check if user intends to leave the column blank / unpopulated / null
             is_empty_or_null = self.is_empty_null_intent(clean_msg)
+            is_zero = clean_msg in ('0', 'zero', 'initialize with 0', 'init with 0', 'i meant: initialize with 0', 'option 1', '1')
             
             if clarification_type == "EXPRESSION_REQUIRED" or workflow_action in ("CREATE_COLUMN", "ADD_COLUMN"):
+                col_to_use = target_column
+                if not col_to_use:
+                    for turn in reversed(conversation_history):
+                        content = turn.get("content", "")
+                        col_to_use = self.extract_target_column(content, valid_cols)
+                        if col_to_use:
+                            break
+                col_to_use = col_to_use or "gender"
+
                 if is_empty_or_null:
                     inferred_intent = "TRANSFORM"
                     inferred_operation = {
-                        "type": "ADD_COLUMN",
-                        "column": target_column or "new_column",
-                        "value": None,
+                        "type": "IR_REQUIRED",
+                        "_action": "CREATE_COLUMN",
+                        "column": col_to_use,
+                        "expression": {
+                            'type': 'LITERAL',
+                            'value': None,
+                            'typed_literal': {
+                                '__typed_literal__': True,
+                                'value': None,
+                                'value_type': 'null',
+                                'source_form': 'null',
+                                'explicit': True,
+                                'was_quoted': False,
+                            }
+                        }
                     }
                     context_summary = (
-                        f"User is answering assistant's question on how to populate new column '{target_column}'. "
+                        f"User is answering assistant's question on how to populate new column '{col_to_use}'. "
                         f"User instructed to leave it blank/unpopulated (null value)."
+                    )
+                elif is_zero:
+                    inferred_intent = "TRANSFORM"
+                    inferred_operation = {
+                        "type": "IR_REQUIRED",
+                        "_action": "CREATE_COLUMN",
+                        "column": col_to_use,
+                        "expression": {
+                            'type': 'LITERAL',
+                            'value': 0,
+                            'typed_literal': {
+                                '__typed_literal__': True,
+                                'value': 0,
+                                'value_type': 'integer',
+                                'source_form': '0',
+                                'explicit': True,
+                                'was_quoted': False,
+                            }
+                        }
+                    }
+                    context_summary = (
+                        f"User is answering assistant's question on how to populate new column '{col_to_use}'. "
+                        f"User instructed to initialize with 0."
                     )
                 else:
                     context_summary = (
-                        f"User is providing a calculation or initial value for new column '{target_column}' "
+                        f"User is providing a calculation or initial value for new column '{col_to_use}' "
                         f"in response to assistant clarification."
                     )
             elif clarification_type == "COLUMN_SCOPE":

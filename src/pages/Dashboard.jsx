@@ -1341,6 +1341,70 @@ function DashboardInner() {
         });
       }
 
+      // Execute chat management commands from backend response (rename, delete, pin, unpin chats)
+      if (apiResult?.chat_command) {
+        const { action, target_title, new_title, resolved_chat_id } = apiResult.chat_command;
+        const matchTitle = (t) => t && target_title && t.trim().toLowerCase() === target_title.trim().toLowerCase();
+
+        let targetConv = null;
+        if (resolved_chat_id) {
+          targetConv = conversations.find(c => c.id === resolved_chat_id || c.chatId === resolved_chat_id);
+        }
+        if (!targetConv && target_title) {
+          targetConv = conversations.find(c => matchTitle(c.title));
+        }
+        if (!targetConv && !target_title) {
+          targetConv = currentConv;
+        }
+
+        if (targetConv) {
+          const chatTargetId = targetConv.id;
+          const dbId = targetConv.chatId || (isUUID(chatTargetId) ? chatTargetId : null);
+
+          if (action === 'delete_chat') {
+            setConversations((prev) => {
+              const next = deleteConversation(prev, chatTargetId);
+              saveConversations(userId, next);
+              return next;
+            });
+            if (activeId === chatTargetId || currentConv.id === chatTargetId) {
+              const remaining = conversations.filter(c => c.id !== chatTargetId && c.chatId !== chatTargetId);
+              const nextActive = remaining.length > 0 ? remaining[0] : null;
+              setActiveId(nextActive ? nextActive.id : null);
+              if (nextActive?.slug && nextActive.slug.includes('-')) {
+                navigate(`/dashboard/${nextActive.slug}`);
+              } else {
+                navigate('/dashboard');
+              }
+            }
+            if (dbId) {
+              PlexisAPI.deleteChat(dbId).catch(err => console.warn('[Dashboard] deleteChat error:', err));
+            }
+          } else if (action === 'rename_chat' && new_title) {
+            setConversations((prev) => {
+              const next = renameConversation(prev, chatTargetId, new_title);
+              saveConversations(userId, next);
+              return next;
+            });
+            if (dbId) {
+              PlexisAPI.renameChat(dbId, new_title).catch(err => console.warn('[Dashboard] renameChat error:', err));
+            }
+          } else if (action === 'pin_chat') {
+            setConversations((prev) => {
+              const next = prev.map(c => (c.id === chatTargetId || c.chatId === chatTargetId) ? { ...c, pinned: true } : c);
+              saveConversations(userId, next);
+              return next;
+            });
+          } else if (action === 'unpin_chat') {
+            setConversations((prev) => {
+              const next = prev.map(c => (c.id === chatTargetId || c.chatId === chatTargetId) ? { ...c, pinned: false } : c);
+              saveConversations(userId, next);
+              return next;
+            });
+          }
+        }
+      }
+
       // Open Investigation tab if backend flags it (desktop only, don't cover mobile chat view)
       if (apiResult?.trigger_investigation && currentConv.datasetId && typeof window !== 'undefined' && window.innerWidth >= 1024) {
         EventBus.emit(Events.INVESTIGATION_REQUESTED, { datasetId: currentConv.datasetId });
@@ -1584,7 +1648,13 @@ function DashboardInner() {
             }
           }
         }}
-        onTogglePin={(id) => setConversations((p) => togglePinConversation(p, id))}
+        onTogglePin={(id) => {
+          setConversations((p) => {
+            const next = togglePinConversation(p, id);
+            saveConversations(userId, next);
+            return next;
+          });
+        }}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 

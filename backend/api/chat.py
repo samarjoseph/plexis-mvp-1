@@ -523,6 +523,27 @@ def ask():
         response['transformation_update'] = transformation_update
         response['trigger_investigation'] = trigger_investigation
         response['ui_commands'] = final_result.metadata.get('ui_commands') if final_result.metadata else None
+        chat_cmd = final_result.metadata.get('chat_command') if final_result.metadata else None
+        response['chat_command'] = chat_cmd
+
+        if chat_cmd and chat_cmd.get('resolved_chat_id'):
+            try:
+                from uuid import UUID
+                target_chat_uuid = UUID(str(chat_cmd['resolved_chat_id']))
+                from db.session import get_db
+                from db.services.chat_service import chat_service
+                from db.repositories.chat_repository import chat_repository
+                db = get_db()
+                current_user_id = getattr(ctx, 'user_id', None)
+                if db and current_user_id:
+                    if chat_cmd.get('action') == 'delete_chat':
+                        chat_service.delete_chat(db, target_chat_uuid, current_user_id)
+                        db.commit()
+                    elif chat_cmd.get('action') == 'rename_chat' and chat_cmd.get('new_title'):
+                        chat_repository.update_title(db, target_chat_uuid, str(chat_cmd['new_title']).strip(), current_user_id)
+                        db.commit()
+            except Exception as e:
+                logger.debug("[ChatAPI] Error executing chat_command on DB: %s", e)
 
         # Expose chat_id to frontend — may have been auto-created by the
         # analytics pipeline to satisfy FK constraints on analysis_sessions

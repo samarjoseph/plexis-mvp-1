@@ -960,6 +960,57 @@ class MasterRouter:
 
         from memory.memorizer import conversation_memorizer
 
+        # Check for natural language chat commands (rename, delete, pin, unpin chats)
+        chat_cmd = conversation_memorizer.detect_chat_command(getattr(context, 'message', '') or '')
+        if chat_cmd:
+            action = chat_cmd["action"]
+            target = chat_cmd.get("target_title")
+            target_desc = f'"{target}"' if target else "this"
+            
+            if action == "delete_chat":
+                ans = f"Done! I've removed the {target_desc} chat from your history."
+            elif action == "rename_chat":
+                new_title = chat_cmd.get("new_title", "")
+                ans = f"Done! I've renamed the {target_desc} chat to \"{new_title}\"."
+            elif action == "pin_chat":
+                ans = f"Done! I've pinned {target_desc} chat."
+            elif action == "unpin_chat":
+                ans = f"Done! I've unpinned {target_desc} chat."
+            else:
+                ans = "Chat updated."
+
+            # If user_id is known, attempt to find chat UUID from DB case-insensitively
+            resolved_chat_id = None
+            try:
+                user_id = getattr(context, 'user_id', None)
+                if user_id:
+                    from db.session import get_db
+                    from db.repositories.chat_repository import chat_repository
+                    db = get_db()
+                    if db:
+                        if target:
+                            user_chats = chat_repository.list_by_user(db, user_id)
+                            for c in user_chats:
+                                if c.title and c.title.strip().lower() == target.strip().lower():
+                                    resolved_chat_id = str(c.id)
+                                    break
+                        else:
+                            resolved_chat_id = str(getattr(context, 'chat_id', '') or '')
+            except Exception as e:
+                logger.debug("[Router] Could not resolve chat DB id: %s", e)
+
+            chat_cmd["resolved_chat_id"] = resolved_chat_id
+
+            context.complete_stage(stage)
+            return EngineResult(
+                answer=ans,
+                source="system",
+                provider="system",
+                success=True,
+                metadata={"chat_command": chat_cmd},
+                should_compose=False,
+            )
+
         # Check for natural language UI commands (open/close spreadsheet, analytics, sidebar)
         ui_cmds = conversation_memorizer.detect_ui_command(getattr(context, 'message', '') or '')
         if ui_cmds:
@@ -985,24 +1036,25 @@ class MasterRouter:
 
         # Check for conversational transformation re-trigger or pattern filling (e.g. alternating male/female)
         mem_analysis = conversation_memorizer.analyze_flow(
-            conversation_history=getattr(context, 'client_messages', []) or [],
+            conversation_history=getattr(context, 'conversation_history', []) or getattr(context, 'client_messages', []) or [],
             current_message=getattr(context, 'message', '') or '',
             pending_workflow=None,
             workspace_action=getattr(context, 'workspace_action', None),
             dataset_schema=getattr(context, 'dataset_schema', None),
         )
 
-        # Check for explicit clarification action first (e.g. user selected a ranking interpretation)
+        # Check for explicit clarification action first (e.g. user selected a ranking interpretation or transformation option)
         workspace_action = getattr(context, 'workspace_action', None) or {}
-        if workspace_action.get('type') == 'RANKING_CLARIFICATION' and workspace_action.get('chosen_operation'):
+        if workspace_action.get('type') in ('RANKING_CLARIFICATION', 'TRANSFORMATION_CLARIFICATION') and workspace_action.get('chosen_operation'):
             chosen_op = workspace_action['chosen_operation']
-            logger.info("[Router] Authoritative execution of chosen clarification operation: %s", chosen_op)
+            chosen_intent = "DATA_OPERATION" if workspace_action.get('type') == 'RANKING_CLARIFICATION' else "TRANSFORM"
+            logger.info("[Router] Authoritative execution of chosen clarification operation: %s (intent=%s)", chosen_op, chosen_intent)
             payload = {
-                "intent": "DATA_OPERATION",
+                "intent": chosen_intent,
                 "confidence": 1.0,
                 "operations": [chosen_op],
                 "operation": chosen_op,
-                "reason": f"Authoritative execution of selected ranking option: {workspace_action.get('action') or chosen_op.get('type')}"
+                "reason": f"Authoritative execution of selected clarification option: {workspace_action.get('action') or chosen_op.get('type')}"
             }
         else:
             # Check if conversation memorizer already resolved a transformation re-trigger or pattern fill
@@ -1394,7 +1446,7 @@ class MasterRouter:
                     }
 
             # ── Dynamic Missing Values Audit (Any loaded dataset, Q31) ─────────
-            if re.search(r'\b(?:missing\s+values?|nulls?|empty\s+cells?|completeness\s+audit)\b', message) and not re.search(r'\b(?:impute|fill|drop|replace|by|for each|per|across|group|correlation|correlations|pearson|spearman|matrix)\b', message):
+            if re.search(r'\b(?:missing\s+values?|nulls?|empty\s+cells?|completeness\s+audit)\b', message) and not re.search(r'\b(?:impute|fill|drop|replace|by|for each|per|across|group|correlation|correlations|pearson|spearman|matrix|initialize|init|set|populate|i meant)\b', message):
                 logger.debug("[Router] fast-path: dynamic missing values audit")
                 if df is not None:
                     missing_counts = df.isna().sum()
