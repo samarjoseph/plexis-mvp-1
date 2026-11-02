@@ -34,6 +34,132 @@ class ConversationMemorizer:
     Tracks and synthesizes conversational flow and active workflow state.
     """
 
+    @staticmethod
+    def extract_target_column(text: str, valid_columns: Optional[List[str]] = None) -> Optional[str]:
+        """Extract referenced column name from text."""
+        import re
+        if valid_columns:
+            for c in valid_columns:
+                if re.search(rf'\b{re.escape(c)}\b', text, re.IGNORECASE):
+                    return c
+
+        # 1. "gender column" or "gender col"
+        m = re.search(r'\b([a-zA-Z0-9_.\-]+)\s+columns?\b', text, re.IGNORECASE)
+        if m and m.group(1).lower() not in ('the', 'a', 'new', 'this', 'that', 'every', 'each', 'drop', 'add', 'fill', 'in', 'on', 'for'):
+            return m.group(1).strip()
+
+        # 2. "column 'gender'" or "column gender"
+        m = re.search(r'''\bcolumns?\s+['"`*]*([a-zA-Z0-9_.\-]+)['"`*]*\b''', text, re.IGNORECASE)
+        if m and m.group(1).lower() not in ('the', 'a', 'new', 'this', 'that', 'every', 'each', 'with', 'to', 'for', 'in', 'is', 'has'):
+            return m.group(1).strip()
+
+        return None
+
+    def detect_pattern_transformation(self, text: str, valid_columns: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Detect if user query requests populating or filling a column with consecutive,
+        alternating, or repeating values.
+        """
+        import re
+        clean = text.strip()
+        clean_lower = clean.lower()
+
+        is_pattern = bool(re.search(
+            r'\b(?:consecutively|alternating|alternate|alternately|cyclical|in\s+turn|repeating|1st\s+.*2nd|first\s+.*second|so\s+on\s+till|so\s+on\s+to)\b',
+            clean_lower
+        ))
+        if not is_pattern:
+            return None
+
+        col = self.extract_target_column(clean, valid_columns)
+
+        # Extract pattern values from quotes or word tokens
+        quotes = re.findall(r'''["']([^"']+)["']''', clean)
+        if len(quotes) >= 2:
+            pattern = quotes[:10]
+        else:
+            val_m = re.search(r'\b(?:values?|pattern)\s+([a-zA-Z0-9_]+)\s+and\s+([a-zA-Z0-9_]+)\b', clean_lower)
+            if val_m:
+                pattern = [val_m.group(1), val_m.group(2)]
+            else:
+                pattern = ["male", "female"]
+
+        return {
+            "type": "FILL_PATTERN",
+            "column": col or "gender",
+            "pattern": pattern,
+            "mode": "alternating"
+        }
+
+    def detect_retrigger_request(
+        self, text: str, conversation_history: List[Dict[str, Any]], valid_columns: Optional[List[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect if user requests to re-trigger, re-create, or view a previously discussed transformation plan.
+        """
+        import re
+        clean_lower = text.strip().lower()
+        is_retrigger = bool(re.search(
+            r'\b(?:re-?trigger|where\s+is\s+the\s+.*plan|show\s+(?:the\s+)?plan|re-?create\s+(?:the\s+)?plan|generate\s+(?:the\s+)?plan|make\s+(?:the\s+)?plan|re-?run\s+(?:the\s+)?plan)\b',
+            clean_lower
+        ))
+        if not is_retrigger:
+            return None
+
+        target_col = None
+        target_pattern = None
+        for turn in reversed(conversation_history):
+            content = turn.get("content", "")
+            if not target_col:
+                target_col = self.extract_target_column(content, valid_columns)
+            if not target_pattern:
+                quotes = re.findall(r'''["']([^"']+)["']''', content)
+                if len(quotes) >= 2:
+                    target_pattern = quotes[:10]
+            if target_col and target_pattern:
+                break
+
+        return {
+            "type": "FILL_PATTERN",
+            "column": target_col or "gender",
+            "pattern": target_pattern or ["male", "female"],
+            "mode": "alternating"
+        }
+
+    @staticmethod
+    def detect_ui_command(text: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Detect user natural-language commands to control workspace views and panels.
+        """
+        import re
+        clean_lower = text.strip().lower()
+
+        # Spreadsheet commands
+        if re.search(r'\b(?:open|show|view|display|launch)\s+(?:the\s+)?(?:live\s+)?(?:spreadsheet|sheet|table|grid|dataset)\b', clean_lower):
+            return [{"action": "open_spreadsheet"}]
+        if re.search(r'\b(?:close|hide|collapse|minimize)\s+(?:the\s+)?(?:spreadsheet|sheet|table|grid)\b', clean_lower):
+            return [{"action": "close_spreadsheet"}]
+
+        # Analytics panel commands
+        if re.search(r'\b(?:open|show|view|display)\s+(?:the\s+)?(?:analytics|charts?|insights?)\s*(?:panel)?\b', clean_lower):
+            return [{"action": "open_analytics"}]
+        if re.search(r'\b(?:close|hide|collapse)\s+(?:the\s+)?(?:analytics|charts?|insights?)\s*(?:panel)?\b', clean_lower):
+            return [{"action": "close_analytics"}]
+
+        # Sidebar commands
+        if re.search(r'\b(?:open|show)\s+(?:the\s+)?sidebar\b', clean_lower):
+            return [{"action": "open_sidebar"}]
+        if re.search(r'\b(?:close|hide|collapse)\s+(?:the\s+)?sidebar\b', clean_lower):
+            return [{"action": "close_sidebar"}]
+
+        # Column locator commands
+        loc_m = re.search(r'\b(?:locate|find|highlight)\s+(?:column\s+)?([a-zA-Z0-9_.\-]+)\s+(?:in|on)\s+(?:the\s+)?(?:spreadsheet|sheet|table)\b', clean_lower)
+        if loc_m:
+            return [{"action": "open_spreadsheet"}, {"action": "locate_column", "column": loc_m.group(1).strip()}]
+
+        return None
+
+
     def analyze_flow(
         self,
         conversation_history: List[Dict[str, Any]],
@@ -109,6 +235,54 @@ class ConversationMemorizer:
         inferred_intent = None
         inferred_operation = None
         context_summary = ""
+
+        # Check for pattern-based transformation instruction (e.g. alternating male/female)
+        valid_cols = [c.get("name") or c.get("label") for c in dataset_schema] if dataset_schema else []
+        pat_op = self.detect_pattern_transformation(current_message, valid_cols)
+        if pat_op:
+            is_followup = True
+            workflow_stage = "TRANSFORMATION_REFINEMENT"
+            inferred_intent = "TRANSFORM"
+            inferred_operation = pat_op
+            context_summary = (
+                f"User requested populating column '{pat_op.get('column')}' with pattern "
+                f"{pat_op.get('pattern')} ({pat_op.get('mode')})."
+            )
+            return {
+                "is_followup": is_followup,
+                "workflow_stage": workflow_stage,
+                "clarification_type": clarification_type,
+                "target_column": pat_op.get("column"),
+                "workflow_action": "FILL_PATTERN",
+                "context_summary": context_summary,
+                "inferred_intent": inferred_intent,
+                "inferred_operation": inferred_operation,
+                "last_assistant_question": last_assistant_msg[:250] if last_assistant_msg else None,
+                "last_user_query": last_user_msg[:250] if last_user_msg else None,
+            }
+
+        # Check for re-trigger / show plan request
+        retrigger_op = self.detect_retrigger_request(current_message, conversation_history, valid_cols)
+        if retrigger_op:
+            is_followup = True
+            workflow_stage = "TRANSFORMATION_RETRIGGER"
+            inferred_intent = "TRANSFORM"
+            inferred_operation = retrigger_op
+            context_summary = (
+                f"User requested re-triggering the transformation plan for column '{retrigger_op.get('column')}'."
+            )
+            return {
+                "is_followup": is_followup,
+                "workflow_stage": workflow_stage,
+                "clarification_type": clarification_type,
+                "target_column": retrigger_op.get("column"),
+                "workflow_action": retrigger_op.get("type"),
+                "context_summary": context_summary,
+                "inferred_intent": inferred_intent,
+                "inferred_operation": inferred_operation,
+                "last_assistant_question": last_assistant_msg[:250] if last_assistant_msg else None,
+                "last_user_query": last_user_msg[:250] if last_user_msg else None,
+            }
 
         # Check if the user is answering a clarification
         if clarification_type in ("EXPRESSION_REQUIRED", "COLUMN_SCOPE", "VALUE_AMBIGUITY", "EXTREME_VALUE_AMBIGUITY") or has_pending:

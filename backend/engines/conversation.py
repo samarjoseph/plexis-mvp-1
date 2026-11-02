@@ -51,6 +51,26 @@ class ConversationEngine(BaseEngine):
         if context.intent == 'title_generation':
             return self._generate_title(context)
 
+        # Safety delegation: If user asked to re-trigger or generate a transformation plan, delegate to transform_engine
+        from memory.memorizer import conversation_memorizer
+        retrigger_op = conversation_memorizer.detect_retrigger_request(
+            getattr(context, 'message', '') or '',
+            getattr(context, 'client_messages', []) or [],
+            [c.get("name") or c.get("label") for c in getattr(context, 'dataset_schema', []) or []]
+        )
+        if retrigger_op:
+            logger.info("[ConversationEngine] Delegating re-trigger request to transform engine: %s", retrigger_op)
+            context.route_payload = {
+                "intent": "TRANSFORM",
+                "confidence": 0.99,
+                "operations": [retrigger_op],
+                "operation": retrigger_op,
+                "reason": "Delegated from conversation engine on re-trigger request"
+            }
+            context.intent = "transform"
+            from engines.transform import transform_engine
+            return transform_engine.handle(context)
+
         # Route explain_evidence to a dedicated grounded explanation path.
         # This MUST happen before generic chat so the LLM receives structured
         # result context rather than a bare text trigger.

@@ -13,8 +13,10 @@
  *   onCancel: () => void
  */
 import React, { useState } from 'react';
-import { Settings, AlertTriangle, ChevronRight, X, Sparkles } from 'lucide-react';
+import { Settings, AlertTriangle, ChevronRight, X, Sparkles, Table } from 'lucide-react';
 import TransformReviewCard from './TransformReviewCard';
+import { EventBus } from '../../events/EventBus.js';
+import { Events } from '../../events/Events.js';
 
 export default function TransformPlanCard({ plan, datasetId, onApply, onCancel, transformationUpdate }) {
   const [showReview, setShowReview] = useState(false);
@@ -122,6 +124,8 @@ export default function TransformPlanCard({ plan, datasetId, onApply, onCancel, 
                           : `Floor at ${operation_payload.min}`
                       ) : plan.operation_type === 'UPDATE_EXTREMUM' ? (
                         `Set ${operation_payload?.extremum || 'extremum'} to ${operation_payload?.new_value}`
+                      ) : plan.operation_type === 'FILL_PATTERN' ? (
+                        <span>Fill alternating <code>{(operation_payload?.pattern || []).join(', ')}</code></span>
                       ) : plan.operation_type === 'DROP_COLUMN' ? (
                         <span>Drop column</span>
                       ) : plan.operation_type === 'ADD_COLUMN' ? (
@@ -205,6 +209,19 @@ export default function TransformPlanCard({ plan, datasetId, onApply, onCancel, 
         >
           <ChevronRight size={13} />
           Review Changes
+        </button>
+        <button
+          type="button"
+          className="tpc-btn"
+          onClick={() => {
+            if (datasetId) {
+              EventBus.emit(Events.WORKSPACE_OPENED, { datasetId });
+            }
+          }}
+          title="Open live spreadsheet view for this dataset"
+        >
+          <Table size={13} />
+          View Spreadsheet
         </button>
         <button
           type="button"

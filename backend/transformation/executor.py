@@ -250,6 +250,22 @@ class TransformationExecutor:
                 return df.drop(columns=[column])
             return df
 
+        elif op in ('FILL_PATTERN', 'POPULATE_SEQUENCE'):
+            col = payload.get('column', '')
+            pattern = payload.get('pattern') or ['male', 'female']
+            if isinstance(pattern, str):
+                import ast
+                try:
+                    parsed = ast.literal_eval(pattern)
+                    pattern = parsed if isinstance(parsed, list) else [pattern]
+                except Exception:
+                    pattern = [p.strip().strip("'\"") for p in pattern.replace('[', '').replace(']', '').split(',') if p.strip()]
+            if col:
+                n_rows = len(df)
+                n_pat = len(pattern) if pattern else 1
+                df[col] = [pattern[i % n_pat] for i in range(n_rows)]
+            return df
+
         elif op == 'ADD_COLUMN':
             column = payload.get('column') or payload.get('name') or payload.get('new_column', '')
             val = payload.get('value', None)

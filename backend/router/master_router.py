@@ -958,6 +958,40 @@ class MasterRouter:
                 should_compose=False,
             )
 
+        from memory.memorizer import conversation_memorizer
+
+        # Check for natural language UI commands (open/close spreadsheet, analytics, sidebar)
+        ui_cmds = conversation_memorizer.detect_ui_command(getattr(context, 'message', '') or '')
+        if ui_cmds:
+            first_act = ui_cmds[0]["action"]
+            label_map = {
+                "open_spreadsheet": "I've opened the live spreadsheet workspace for you.",
+                "close_spreadsheet": "I've closed the spreadsheet workspace.",
+                "open_analytics": "I've opened the analytics and charts panel.",
+                "close_analytics": "I've closed the analytics panel.",
+                "open_sidebar": "I've opened the sidebar.",
+                "close_sidebar": "I've collapsed the sidebar.",
+            }
+            ans = label_map.get(first_act, "Workspace view updated.")
+            context.complete_stage(stage)
+            return EngineResult(
+                answer=ans,
+                source="system",
+                provider="system",
+                success=True,
+                metadata={"ui_commands": ui_cmds},
+                should_compose=False,
+            )
+
+        # Check for conversational transformation re-trigger or pattern filling (e.g. alternating male/female)
+        mem_analysis = conversation_memorizer.analyze_flow(
+            conversation_history=getattr(context, 'client_messages', []) or [],
+            current_message=getattr(context, 'message', '') or '',
+            pending_workflow=None,
+            workspace_action=getattr(context, 'workspace_action', None),
+            dataset_schema=getattr(context, 'dataset_schema', None),
+        )
+
         # Check for explicit clarification action first (e.g. user selected a ranking interpretation)
         workspace_action = getattr(context, 'workspace_action', None) or {}
         if workspace_action.get('type') == 'RANKING_CLARIFICATION' and workspace_action.get('chosen_operation'):
@@ -971,8 +1005,20 @@ class MasterRouter:
                 "reason": f"Authoritative execution of selected ranking option: {workspace_action.get('action') or chosen_op.get('type')}"
             }
         else:
-            # ── Step 1: Fast-path (no LLM needed) ────────────────────────────────
-            payload = self._fast_path(context)
+            # Check if conversation memorizer already resolved a transformation re-trigger or pattern fill
+            if mem_analysis.get("inferred_intent") == "TRANSFORM" and mem_analysis.get("inferred_operation"):
+                inferred_op = mem_analysis["inferred_operation"]
+                logger.info("[Router] Routing transformation via conversation memory: %s", inferred_op)
+                payload = {
+                    "intent": "TRANSFORM",
+                    "confidence": 0.99,
+                    "operations": [inferred_op],
+                    "operation": inferred_op,
+                    "reason": mem_analysis.get("context_summary", "Conversational transformation request/refinement")
+                }
+            else:
+                # ── Step 1: Fast-path (no LLM needed) ────────────────────────────────
+                payload = self._fast_path(context)
 
         if payload is None:
             # ── Step 2: Build semantic supporting context (20% layer) ─────────
@@ -1003,7 +1049,8 @@ class MasterRouter:
                 or bool(payload.get('operation') and payload.get('operation', {}).get('_pending_transformation_id'))
                 or bool(payload.get('operation') and payload.get('operation', {}).get('type') in (
                     'ADD_COLUMN', 'DROP_COLUMN', 'RENAME_COLUMN', 'FILL_MISSING', 'DROP_DUPLICATES',
-                    'FILTER_ROWS', 'CAST_DTYPE', 'SORT_ROWS', 'IR_REQUIRED', 'CLIP', 'UPDATE_EXTREMUM'
+                    'FILTER_ROWS', 'CAST_DTYPE', 'SORT_ROWS', 'IR_REQUIRED', 'CLIP', 'UPDATE_EXTREMUM',
+                    'FILL_PATTERN', 'POPULATE_SEQUENCE'
                 ))
             )
             if not is_clarification and not _has_mutation_intent(msg_check):

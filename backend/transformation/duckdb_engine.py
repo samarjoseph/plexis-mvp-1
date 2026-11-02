@@ -48,6 +48,7 @@ class DuckDBTransformationEngine:
         "DROP_DUPLICATES", "FILL_MISSING", "RENAME_COLUMN", "DROP_COLUMN",
         "ADD_COLUMN", "FILTER_ROWS", "SORT_ROWS", "CLIP", "UPDATE_EXTREMUM",
         "REPLACE_VALUES", "CAST_DTYPE", "REMOVE_EMPTY_ROWS", "NORMALIZE_TEXT",
+        "FILL_PATTERN", "POPULATE_SEQUENCE",
     })
 
     _ALLOWED_OPERATORS = frozenset({"==", "=", "!=", ">", "<", ">=", "<="})
@@ -404,6 +405,38 @@ class DuckDBTransformationEngine:
                 res_df = con.execute(query, params).df()
                 metrics["columns"] = columns
                 metrics["replacements"] = len(mapping)
+                return res_df, metrics
+
+            elif op in ("FILL_PATTERN", "POPULATE_SEQUENCE"):
+                col = payload.get("column", "")
+                pattern = payload.get("pattern") or ["male", "female"]
+                if isinstance(pattern, str):
+                    import ast
+                    try:
+                        parsed = ast.literal_eval(pattern)
+                        pattern = parsed if isinstance(parsed, list) else [pattern]
+                    except Exception:
+                        pattern = [p.strip().strip("'\"") for p in pattern.replace('[', '').replace(']', '').split(',') if p.strip()]
+
+                n_pat = len(pattern) if pattern else 1
+                q_col = self.quote_ident(col)
+                case_clauses = [f"WHEN {i} THEN ?" for i in range(n_pat)]
+                expr = f"CASE ((ROW_NUMBER() OVER () - 1) % {n_pat}) {' '.join(case_clauses)} END"
+
+                if col in df.columns:
+                    select_exprs = [
+                        f"{expr} AS {q_col}" if c == col else self.quote_ident(c)
+                        for c in df.columns
+                    ]
+                else:
+                    select_exprs = [self.quote_ident(c) for c in df.columns] + [f"{expr} AS {q_col}"]
+
+                query = f"SELECT {', '.join(select_exprs)} FROM df_working"
+                res_df = con.execute(query, pattern).df()
+                metrics["column"] = col
+                metrics["pattern"] = pattern
+                metrics["mode"] = "alternating"
+                metrics["rows_updated"] = len(res_df)
                 return res_df, metrics
 
             elif op == "REMOVE_EMPTY_ROWS":

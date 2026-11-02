@@ -103,6 +103,8 @@ ALLOWED_OPERATIONS = frozenset({
     'CLIP',
     'UPDATE_EXTREMUM',
     'EXTREME_VALUE_AMBIGUITY',
+    'FILL_PATTERN',
+    'POPULATE_SEQUENCE',
 })
 
 
@@ -192,6 +194,8 @@ class TransformationPlanner:
             return self._plan_update_extremum(df, operation, plan_id, dataset_id, fingerprint)
         elif op_type == 'EXTREME_VALUE_AMBIGUITY':
             return self._plan_extreme_ambiguity(df, operation, plan_id, dataset_id, fingerprint)
+        elif op_type in ('FILL_PATTERN', 'POPULATE_SEQUENCE'):
+            return self._plan_fill_pattern(df, operation, plan_id, dataset_id, fingerprint)
         else:
             raise ValueError(f"Unhandled operation: {op_type}")
 
@@ -991,6 +995,53 @@ class TransformationPlanner:
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 
+
+
+    def _plan_fill_pattern(self, df: pd.DataFrame, op: Dict[str, Any], plan_id: str, dataset_id: str, fingerprint: str) -> TransformationPlan:
+        column = op.get('column') or op.get('name') or op.get('target_column') or 'gender'
+        pattern = op.get('pattern') or op.get('values') or ['male', 'female']
+        if isinstance(pattern, str):
+            import ast
+            try:
+                parsed = ast.literal_eval(pattern)
+                pattern = parsed if isinstance(parsed, list) else [pattern]
+            except Exception:
+                pattern = [p.strip().strip("'\"") for p in pattern.replace('[', '').replace(']', '').split(',') if p.strip()]
+
+        n_rows = len(df)
+        n_pat = len(pattern) if pattern else 1
+
+        sample = []
+        is_existing = column in df.columns
+        for idx in range(min(20, n_rows)):
+            assigned_val = pattern[idx % n_pat]
+            before_val = df[column].iloc[idx] if is_existing else None
+            sample.append(AffectedCell(
+                row_index=idx,
+                source_row_number=idx + 1,
+                column=column,
+                before=str(before_val) if before_val is not None else None,
+                after=assigned_val,
+            ))
+
+        pattern_repr = ', '.join(f"'{p}'" for p in pattern)
+        label = f"Fill alternating pattern ({pattern_repr}) in '{column}'"
+        code = f"df['{column}'] = np.resize({pattern!r}, len(df))"
+
+        payload = dict(op)
+        payload['column'] = column
+        payload['pattern'] = pattern
+        payload['mode'] = 'alternating'
+
+        return TransformationPlan(
+            plan_id=plan_id, dataset_id=dataset_id,
+            operation_type='FILL_PATTERN', operation_label=label,
+            operation_code=code, operation_payload=payload,
+            affected_rows_count=n_rows, affected_cells_count=n_rows,
+            affected_columns=[column], before_sample=sample,
+            dataset_fingerprint=fingerprint,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
 
     def _plan_extreme_ambiguity(self, df: pd.DataFrame, op: Dict[str, Any], plan_id: str, dataset_id: str, fingerprint: str) -> TransformationPlan:
         raw_col = op.get('column')

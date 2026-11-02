@@ -522,6 +522,7 @@ def ask():
         response['transformation_clarification'] = transformation_clarification
         response['transformation_update'] = transformation_update
         response['trigger_investigation'] = trigger_investigation
+        response['ui_commands'] = final_result.metadata.get('ui_commands') if final_result.metadata else None
 
         # Expose chat_id to frontend — may have been auto-created by the
         # analytics pipeline to satisfy FK constraints on analysis_sessions

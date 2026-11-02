@@ -1320,6 +1320,27 @@ function DashboardInner() {
         }),
       };
 
+      // Execute UI commands from backend response (open/close spreadsheet, analytics, sidebar)
+      if (apiResult?.ui_commands && Array.isArray(apiResult.ui_commands)) {
+        apiResult.ui_commands.forEach((cmd) => {
+          if (cmd.action === 'open_spreadsheet') {
+            EventBus.emit(Events.WORKSPACE_OPENED, { datasetId: cmd.dataset_id || currentConv.datasetId });
+          } else if (cmd.action === 'close_spreadsheet') {
+            EventBus.emit(Events.WORKSPACE_CLOSED);
+          } else if (cmd.action === 'open_analytics') {
+            setAnalyticsCollapsed(false);
+          } else if (cmd.action === 'close_analytics') {
+            setAnalyticsCollapsed(true);
+          } else if (cmd.action === 'open_sidebar') {
+            setSidebarCollapsed(false);
+          } else if (cmd.action === 'close_sidebar') {
+            setSidebarCollapsed(true);
+          } else if (cmd.action === 'locate_column') {
+            EventBus.emit(Events.WORKSPACE_OPENED, { datasetId: cmd.dataset_id || currentConv.datasetId });
+          }
+        });
+      }
+
       // Open Investigation tab if backend flags it (desktop only, don't cover mobile chat view)
       if (apiResult?.trigger_investigation && currentConv.datasetId && typeof window !== 'undefined' && window.innerWidth >= 1024) {
         EventBus.emit(Events.INVESTIGATION_REQUESTED, { datasetId: currentConv.datasetId });
