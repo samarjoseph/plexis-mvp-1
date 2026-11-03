@@ -159,6 +159,14 @@ export default function TransformPlanCard({ plan, datasetId, onApply, onCancel, 
               <strong>{columnsChanged}</strong> column{columnsChanged === 1 ? '' : 's'} will be{' '}
               {plan.operation_type === 'DROP_COLUMN' ? 'dropped' : plan.operation_type === 'ADD_COLUMN' ? 'added' : plan.operation_type === 'RENAME_COLUMN' ? 'renamed' : 'changed'}.
             </span>
+          ) : plan.operation_type === 'DROP_COLUMN' ? (
+            <span>
+              <strong>{affected_cells_count}</strong> {affected_cells_count === 1 ? 'cell' : 'cells'} in column &lsquo;{affected_columns[0]}&rsquo; will be removed.
+            </span>
+          ) : plan.operation_type === 'ADD_COLUMN' ? (
+            <span>
+              <strong>{affected_cells_count}</strong> new {affected_cells_count === 1 ? 'cell' : 'cells'} will be created in column &lsquo;{affected_columns[0]}&rsquo;.
+            </span>
           ) : (
             <span>
               <strong>{affected_cells_count}</strong> {affected_cells_count === 1 ? 'cell' : 'cells'} will change.

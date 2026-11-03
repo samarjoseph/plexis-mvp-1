@@ -414,25 +414,35 @@ class TransformationPlanner:
         column = op.get('column', '')
         if column not in df.columns:
             raise ValueError(f"Column '{column}' not found in dataset.")
-            
-        if 'impact' not in op:
-            op['impact'] = {'type': 'schema', 'columns_changed': 1, 'cells_changed': 0}
-            
+
         n_rows = len(df)
-        sample = [AffectedCell(
-            row_index=-1, source_row_number=None,
-            column=column, before=f"Column header: '{column}'", after='Column dropped'
-        )]
+
+        # Build a representative sample (up to 20 actual row values)
+        sample = []
+        for idx in df.index[:20]:
+            val = df.loc[idx, column]
+            sample.append(AffectedCell(
+                row_index=int(idx),
+                source_row_number=int(idx) + 1,
+                column=column,
+                before=str(val) if val is not None and not (isinstance(val, float) and pd.isna(val)) else None,
+                after='[column dropped]',
+            ))
+
+        # Accurate impact: n_rows cells are actually removed from the dataset
+        if 'impact' not in op:
+            op['impact'] = {'type': 'cell', 'columns_changed': 1, 'cells_changed': n_rows}
+
         label = f"Drop column '{column}'"
         code = f"df.drop(columns=['{column}'])"
         return TransformationPlan(
             plan_id=plan_id, dataset_id=dataset_id,
             operation_type='DROP_COLUMN', operation_label=label,
             operation_code=code, operation_payload=op,
-            affected_rows_count=n_rows, affected_cells_count=0,
+            affected_rows_count=n_rows, affected_cells_count=n_rows,
             affected_columns=[column], before_sample=sample,
             dataset_fingerprint=fingerprint,
-            warnings=[f"Dropping column '{column}' will remove all data in this column. A version snapshot is created so you can undo at any time."],
+            warnings=[f"Dropping column '{column}' will remove all {n_rows} values in this column. A version snapshot is created so you can undo at any time."],
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -447,14 +457,29 @@ class TransformationPlanner:
         default_val_repr = repr(value) if value is not None else "None"
         
         n_rows = len(df)
-        sample = [AffectedCell(
-            row_index=-1, source_row_number=None,
-            column=column, before="[None]", after=f"New column: '{column}' (initial value: {default_val_repr})"
-        )]
+
+        # Build a representative sample (up to 20 rows) showing actual row indices
+        sample = []
+        for idx in df.index[:20]:
+            sample.append(AffectedCell(
+                row_index=int(idx),
+                source_row_number=int(idx) + 1,
+                column=column,
+                before=None,
+                after=default_val_repr,
+            ))
+        if not sample:
+            # Empty dataframe — keep a schema-level marker
+            sample = [AffectedCell(
+                row_index=-1, source_row_number=None,
+                column=column, before="[None]",
+                after=f"New column: '{column}' (initial value: {default_val_repr})"
+            )]
+
         label = f"Add column '{column}'"
         code = f"df['{column}'] = {default_val_repr}"
         if 'impact' not in op:
-            op['impact'] = {'type': 'schema', 'columns_changed': 1, 'cells_changed': n_rows}
+            op['impact'] = {'type': 'cell', 'columns_changed': 1, 'cells_changed': n_rows}
             
         return TransformationPlan(
             plan_id=plan_id, dataset_id=dataset_id,
@@ -1101,17 +1126,23 @@ class TransformationPlanner:
         n_cells = n_rows * len(df.columns)
 
         sample = []
-        for idx, row in affected_rows.head(20).iterrows():
-            # Identify the first null column in this row for display
-            null_cols = [c for c in columns if pd.isnull(row.get(c)) or str(row.get(c, '')).strip() == '']
-            display_col = null_cols[0] if null_cols else (columns[0] if columns else df.columns[0])
-            sample.append(AffectedCell(
-                row_index=int(idx),
-                source_row_number=int(idx) + 1,
-                column=display_col,
-                before=str(row[display_col]) if display_col in row.index else None,
-                after='[row removed]',
-            ))
+        # Show all columns for each removed row (up to 20 sample entries total)
+        # This makes the per-column count in the plan table accurate and informative
+        max_sample = 20
+        for idx, row in affected_rows.iterrows():
+            if len(sample) >= max_sample:
+                break
+            for col in df.columns:          # all columns, not just null ones
+                if len(sample) >= max_sample:
+                    break
+                val = row.get(col)
+                sample.append(AffectedCell(
+                    row_index=int(idx),
+                    source_row_number=int(idx) + 1,
+                    column=col,
+                    before=str(val) if val is not None and not (isinstance(val, float) and pd.isna(val)) else None,
+                    after='[row removed]',
+                ))
 
         scope_desc = 'any column' if how == 'any' else 'all columns'
         if len(columns) < len(df.columns):
