@@ -262,6 +262,9 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     {"type": "UPDATE_EXTREMUM", "column": "column_name", "extremum": "min", "new_value": 10}
     {"type": "EXTREME_VALUE_AMBIGUITY", "column": "column_name", "extremum": "max", "target_value": 60}
     {"type": "FILL_PATTERN", "column": "column_name", "pattern": ["value_a", "value_b"], "mode": "alternating"}
+    {"type": "REMOVE_EMPTY_ROWS", "how": "any"}
+    {"type": "REMOVE_EMPTY_ROWS", "how": "any", "columns": ["col1", "col2"]}
+    {"type": "REMOVE_EMPTY_ROWS", "how": "all"}
 
   IMPORTANT KEYS:
     - FILL_MISSING uses "value" (not "fill_value"): number, or "mean"/"median"/"mode"/"ffill"/"bfill"
@@ -270,6 +273,7 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     - FILTER_ROWS uses "action": "KEEP" or "REMOVE"
     - DROP_COLUMN uses "column" (singular string, not "columns")
     - FILL_PATTERN uses "column", "pattern": [string, ...], "mode": "alternating"
+    - REMOVE_EMPTY_ROWS: use when user wants to DELETE/REMOVE/DROP rows that have missing, null, NaN, empty, or blank values. Use "how": "any" to remove rows with ANY missing value, "how": "all" to remove rows where ALL values are missing. Optionally restrict to specific columns using "columns". NEVER use FILTER_ROWS for this — use REMOVE_EMPTY_ROWS.
     - When user specifies alternating, cycling, or consecutive row values (e.g. 'values A and B consecutively', 'alternate yes and no'): use TRANSFORM with FILL_PATTERN.
     - When user asks to re-trigger, re-create, or show a transformation plan: use TRANSFORM.
     - EXPLICIT QUOTES: If the user wraps a value in quotes (like 'none' or "false"), you MUST preserve it as a string exactly as written. DO NOT evaluate it to a JSON null or boolean.

@@ -158,6 +158,8 @@ _TRANSFORM_RX = re.compile(
     r'|keep\s+(?:only\s+)?(?:rows?\s+)?(?:where|when|if)\b'
     r'|remove\s+(?:the\s+)?(?:rows?\s+)?(?:where|when|if)\b'
     r'|delete\s+(?:the\s+)?(?:rows?\s+)?(?:where|when|if)\b'
+    r'|(?:delete|remove|drop)\s+(?:the\s+)?(?:rows?\s+)?(?:with|that\s+have|having)\s+(?:missing|null|nan|empty|blank)\s*(?:values?)?\b'
+    r'|(?:delete|remove|drop)\s+(?:the\s+)?missing\s+rows?\b'
     r'|remove\s+(?:\w+\s+)?(?:younger|older|greater|less|above|below|under|over)\s+than\b'
     r'|keep\s+(?:only\s+)?(?:\w+\s+)?(?:older|younger|greater|less|above|below)\s+than\b'
     r'|convert\s+\w+\s+to\s+(?:int|float|string|str|bool|integer|number|numeric|text)'
@@ -209,6 +211,29 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None) -
             return strategy_map[fill_raw.lower()]
         lit = parse_with_explicit_type(fill_raw)
         return lit.python_value
+
+    # ── REMOVE_EMPTY_ROWS ─────────────────────────────────────────────────────
+    # "delete the rows where values are missing", "remove rows with missing values",
+    # "drop rows that have null values", "delete rows with empty values", etc.
+    # Must run BEFORE FILTER_ROWS patterns so it takes precedence.
+    _remove_null_rows_rx = re.search(
+        r'(?:delete|remove|drop|eliminate)\s+(?:the\s+)?(?:rows?\s+)?'
+        r'(?:where\s+(?:the\s+)?(?:values?\s+(?:are|is)\s+)?(?:missing|null|nan|empty|blank)|'
+        r'with\s+(?:missing|null|nan|empty|blank)\s*(?:values?)?|'
+        r'that\s+have\s+(?:missing|null|nan|empty|blank)\s*(?:values?)?|'
+        r'having\s+(?:missing|null|nan|empty|blank)\s*(?:values?)?)\b',
+        msg, re.IGNORECASE,
+    )
+    if _remove_null_rows_rx:
+        return {"type": "REMOVE_EMPTY_ROWS", "how": "any"}
+
+    # "remove missing rows", "delete empty rows", "drop null rows"
+    _remove_null_rows_simple_rx = re.search(
+        r'(?:delete|remove|drop)\s+(?:the\s+)?(?:missing|null|nan|empty|blank)\s+rows?\b',
+        msg, re.IGNORECASE,
+    )
+    if _remove_null_rows_simple_rx:
+        return {"type": "REMOVE_EMPTY_ROWS", "how": "any"}
 
     # ── FILL_MISSING ──────────────────────────────────────────────────────────
     m = re.search(
@@ -781,6 +806,18 @@ def _normalize_transform_operation(op: dict) -> dict:
         # Ensure action key exists (default KEEP)
         if 'action' not in op:
             op['action'] = 'KEEP'
+        # Safety net: if FILTER_ROWS has no column but the value/operator imply a null-check,
+        # promote it to REMOVE_EMPTY_ROWS so the planner can handle it correctly.
+        column = op.get('column', '')
+        value = op.get('value')
+        operator = str(op.get('operator', '')).lower()
+        if not column and (value is None or operator in ('is_null', 'isnull', 'is null', 'is_missing')):
+            op['type'] = 'REMOVE_EMPTY_ROWS'
+            op['how'] = 'any'
+            op.pop('column', None)
+            op.pop('operator', None)
+            op.pop('value', None)
+            op.pop('action', None)
 
     elif op_type == 'ADD_COLUMN':
         if 'name' in op and 'column' not in op:
@@ -852,6 +889,21 @@ def _normalize_transform_operation(op: dict) -> dict:
             op['extremum'] = str(op['extremum']).lower()
         if '_missing_slots' not in op:
             op['_missing_slots'] = ['clarify_extreme_intent']
+
+    elif op_type == 'REMOVE_EMPTY_ROWS':
+        # Normalize how field
+        how = str(op.get('how') or op.get('strategy') or 'any').lower()
+        if how not in ('any', 'all'):
+            how = 'any'
+        op['how'] = how
+        # Normalize columns
+        cols = op.get('columns') or op.get('column')
+        if isinstance(cols, str) and cols:
+            op['columns'] = [cols]
+            op.pop('column', None)
+        elif isinstance(cols, list):
+            op['columns'] = cols
+            op.pop('column', None)
 
     from transformation.planner import ALLOWED_OPERATIONS
     try:

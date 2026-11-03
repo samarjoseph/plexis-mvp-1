@@ -105,6 +105,7 @@ ALLOWED_OPERATIONS = frozenset({
     'EXTREME_VALUE_AMBIGUITY',
     'FILL_PATTERN',
     'POPULATE_SEQUENCE',
+    'REMOVE_EMPTY_ROWS',
 })
 
 
@@ -196,6 +197,8 @@ class TransformationPlanner:
             return self._plan_extreme_ambiguity(df, operation, plan_id, dataset_id, fingerprint)
         elif op_type in ('FILL_PATTERN', 'POPULATE_SEQUENCE'):
             return self._plan_fill_pattern(df, operation, plan_id, dataset_id, fingerprint)
+        elif op_type == 'REMOVE_EMPTY_ROWS':
+            return self._plan_remove_empty_rows(df, operation, plan_id, dataset_id, fingerprint)
         else:
             raise ValueError(f"Unhandled operation: {op_type}")
 
@@ -1053,6 +1056,95 @@ class TransformationPlanner:
             affected_rows_count=n_rows, affected_cells_count=n_rows,
             affected_columns=[column], before_sample=sample,
             dataset_fingerprint=fingerprint,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    def _plan_remove_empty_rows(self, df: pd.DataFrame, op: Dict[str, Any], plan_id: str, dataset_id: str, fingerprint: str) -> TransformationPlan:
+        """
+        Plan the removal of rows that contain missing/empty values.
+
+        Supports:
+          - how='any'  → drop row if ANY column in scope is null/empty
+          - how='all'  → drop row only if ALL columns in scope are null/empty
+          - columns=[...]  → limit scope to specific columns (default: all columns)
+        """
+        how = str(op.get('how') or op.get('strategy') or 'any').lower()
+        if how not in ('any', 'all'):
+            how = 'any'
+
+        columns = op.get('columns') or op.get('column')
+        if isinstance(columns, str) and columns:
+            columns = [columns]
+        if not columns:
+            columns = df.columns.tolist()
+        columns = [c for c in columns if c in df.columns]
+        if not columns:
+            columns = df.columns.tolist()
+
+        # Identify affected rows
+        if how == 'any':
+            affected_mask = df[columns].isnull().any(axis=1)
+        else:
+            affected_mask = df[columns].isnull().all(axis=1)
+
+        # Also treat empty strings as missing (consistent with DuckDB engine)
+        for col in columns:
+            if df[col].dtype == object:
+                empty_str_mask = df[col].astype(str).str.strip() == ''
+                if how == 'any':
+                    affected_mask = affected_mask | (df[col].notna() & empty_str_mask)
+                else:
+                    affected_mask = affected_mask | (df[col].notna() & empty_str_mask)
+
+        affected_rows = df[affected_mask]
+        n_rows = len(affected_rows)
+        n_cells = n_rows * len(df.columns)
+
+        sample = []
+        for idx, row in affected_rows.head(20).iterrows():
+            # Identify the first null column in this row for display
+            null_cols = [c for c in columns if pd.isnull(row.get(c)) or str(row.get(c, '')).strip() == '']
+            display_col = null_cols[0] if null_cols else (columns[0] if columns else df.columns[0])
+            sample.append(AffectedCell(
+                row_index=int(idx),
+                source_row_number=int(idx) + 1,
+                column=display_col,
+                before=str(row[display_col]) if display_col in row.index else None,
+                after='[row removed]',
+            ))
+
+        scope_desc = 'any column' if how == 'any' else 'all columns'
+        if len(columns) < len(df.columns):
+            col_names = ', '.join(f"'{c}'" for c in columns[:3])
+            if len(columns) > 3:
+                col_names += f' +{len(columns) - 3} more'
+            label = f"Remove rows with missing values in {col_names} ({how} missing)"
+        else:
+            label = f"Remove rows where {scope_desc} has missing values ({n_rows} rows)"
+
+        code = f"df.dropna(subset={columns!r}, how={how!r})"
+
+        payload = dict(op)
+        payload['how'] = how
+        payload['columns'] = columns
+
+        return TransformationPlan(
+            plan_id=plan_id,
+            dataset_id=dataset_id,
+            operation_type='REMOVE_EMPTY_ROWS',
+            operation_label=label,
+            operation_code=code,
+            operation_payload=payload,
+            affected_rows_count=n_rows,
+            affected_cells_count=n_cells,
+            affected_columns=columns,
+            before_sample=sample[:20],
+            dataset_fingerprint=fingerprint,
+            warnings=[
+                f"Removing {n_rows} row(s) with missing values. A version snapshot is created so you can undo."
+            ] if n_rows > 0 else [
+                "No rows with missing values found in the specified columns."
+            ],
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 

@@ -420,6 +420,36 @@ Schema: gender (string) [nullable], age (int64)
 }}
 ```
 
+### Example 12: Remove rows with missing values
+User: "delete the rows where values are missing"
+Schema: name (string) [nullable], age (int64) [nullable], score (float64) [nullable]
+
+```json
+{{
+  "goal": "Remove rows that contain any missing values",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "FILTER_ROWS",
+      "params": {{"action": "KEEP"}},
+      "expression": {{
+        "type": "AND",
+        "left": {{
+          "type": "NOT",
+          "operand": {{"type": "COMPARE", "operator": "is_null", "left": {{"type": "COLUMN", "name": "name"}}, "right": {{"type": "LITERAL", "value": null}}}}
+        }},
+        "right": {{
+          "type": "NOT",
+          "operand": {{"type": "COMPARE", "operator": "is_null", "left": {{"type": "COLUMN", "name": "age"}}, "right": {{"type": "LITERAL", "value": null}}}}
+        }}
+      }},
+      "depends_on": [],
+      "label": "Keep only rows where no values are missing"
+    }}
+  ]
+}}
+```
+
 ## USER REQUEST
 
 {user_request}
