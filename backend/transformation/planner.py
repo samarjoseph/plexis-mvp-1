@@ -108,6 +108,15 @@ ALLOWED_OPERATIONS = frozenset({
     'REMOVE_EMPTY_ROWS',
     'FILL_SEQUENTIAL',
     'NORMALIZE_TEXT',
+    'UPDATE_CELL',
+    'SPLIT_COLUMN',
+    'CONCAT_COLUMNS',
+    'MAP_VALUES',
+    'CUSTOM_TRANSFORM',
+    'CREATE_COLUMN',
+    'MODIFY_COLUMN',
+    'IR_REQUIRED',
+    'IR_COMPOSITE',
 })
 
 
@@ -205,7 +214,53 @@ class TransformationPlanner:
             return self._plan_fill_sequential(df, operation, plan_id, dataset_id, fingerprint)
         elif op_type == 'NORMALIZE_TEXT':
             return self._plan_normalize_text(df, operation, plan_id, dataset_id, fingerprint)
+        elif op_type in ('UPDATE_CELL', 'SPLIT_COLUMN', 'CONCAT_COLUMNS', 'MAP_VALUES', 'CUSTOM_TRANSFORM', 'CREATE_COLUMN', 'MODIFY_COLUMN'):
+            from transformation.ir import TransformationIR, TransformStep
+            from transformation.compiler import ir_compiler
+            ir = TransformationIR(
+                goal=operation.get('goal') or f"Apply {op_type}",
+                steps=[
+                    TransformStep(
+                        id='step_1',
+                        operation=op_type,
+                        params={k: v for k, v in operation.items() if k not in ('type', 'goal', 'expression')},
+                        expression=operation.get('expression'),
+                        label=operation.get('label') or f"Apply {op_type}",
+                    )
+                ]
+            )
+            sim = ir_compiler.compile_and_simulate(ir, df, dataset_id)
+            if not sim.success:
+                raise ValueError(f"Simulation failed: {'; '.join(sim.errors)}")
+            return ir_compiler.simulation_to_plan(ir, sim, dataset_id, fingerprint)
+        elif op_type in ('IR_REQUIRED', 'IR_COMPOSITE') or operation.get('steps'):
+            from transformation.ir import TransformationIR
+            from transformation.compiler import ir_compiler
+            if operation.get('steps'):
+                ir = TransformationIR.from_dict(operation)
+            elif operation.get('user_prompt'):
+                from transformation.ir_planner import ir_planner
+                dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+                nullable = {col: df[col].isnull().any() for col in df.columns}
+                ir = ir_planner.plan(operation['user_prompt'], list(df.columns), dtypes, nullable)
+            else:
+                raise ValueError(f"Operation {op_type} missing 'steps' or 'user_prompt'")
+            sim = ir_compiler.compile_and_simulate(ir, df, dataset_id)
+            if not sim.success:
+                raise ValueError(f"Simulation failed: {'; '.join(sim.errors)}")
+            return ir_compiler.simulation_to_plan(ir, sim, dataset_id, fingerprint)
         else:
+            user_prompt = operation.get('user_prompt') or operation.get('instruction') or operation.get('message')
+            if user_prompt:
+                from transformation.ir_planner import ir_planner
+                from transformation.compiler import ir_compiler
+                dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+                nullable = {col: df[col].isnull().any() for col in df.columns}
+                ir = ir_planner.plan(user_prompt, list(df.columns), dtypes, nullable)
+                sim = ir_compiler.compile_and_simulate(ir, df, dataset_id)
+                if not sim.success:
+                    raise ValueError(f"Simulation failed: {'; '.join(sim.errors)}")
+                return ir_compiler.simulation_to_plan(ir, sim, dataset_id, fingerprint)
             raise ValueError(f"Unhandled operation: {op_type}")
 
     def _make_sample(self, rows_df: pd.DataFrame, column: str, after_val) -> list:

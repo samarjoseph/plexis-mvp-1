@@ -365,6 +365,25 @@ _register(PrimitiveSpec('NORMALIZE_TEXT', 'Trim whitespace and normalize string 
                         required_params=['columns'],
                         optional_params=['case'],
                         modifies_shape=False))
+_register(PrimitiveSpec('UPDATE_CELL', 'Update a specific cell or rows matching a condition in a column',
+                        required_params=['column', 'value'],
+                        optional_params=['row_index', 'where_column', 'where_value'],
+                        modifies_shape=False))
+_register(PrimitiveSpec('SPLIT_COLUMN', 'Split a text column into multiple new columns using a delimiter',
+                        required_params=['column', 'delimiter', 'output_columns'],
+                        modifies_shape=True))
+_register(PrimitiveSpec('CONCAT_COLUMNS', 'Concatenate multiple columns into a new or existing text column with a delimiter',
+                        required_params=['columns', 'output_column'],
+                        optional_params=['delimiter'],
+                        modifies_shape=True))
+_register(PrimitiveSpec('MAP_VALUES', 'Map values in a column using a dictionary of old->new mappings',
+                        required_params=['column', 'mapping'],
+                        optional_params=['default'],
+                        modifies_shape=False))
+_register(PrimitiveSpec('CUSTOM_TRANSFORM', 'Execute a safe Python/pandas transformation for any complex, custom, or open-ended data transformation',
+                        required_params=['code'],
+                        optional_params=['columns'],
+                        modifies_shape=False))
 
 # ── Deferred capabilities (known but not yet executable) ─────────────────────
 DEFERRED_CAPABILITIES = frozenset({

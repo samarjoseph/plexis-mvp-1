@@ -130,6 +130,12 @@ Return ONLY a JSON object:
 13. When filling or populating a column with alternating, cyclical, or consecutive values (e.g. 'fill values A and B consecutively', 'alternate yes and no'), use FILL_PATTERN with params: {{"column": ..., "pattern": [...], "mode": "alternating"}}.
 14. When filling an EXISTING column with sequential integers or a numeric series (e.g. 'fill sequentially from 1 to end', 'number the rows', 'assign row numbers'), use FILL_SEQUENTIAL with params: {{"column": ..., "start": <int>, "step": <int>}}. NEVER use ADD_COLUMN if the column already exists in the schema.
 15. When cleaning, trimming, or normalising text in columns (e.g. 'lowercase the names', 'trim whitespace', 'clean the emails'), use NORMALIZE_TEXT with params: {{"columns": [...], "case": "lower"|"upper"|"title"}}.
+16. For editing or updating specific individual cells or rows (e.g. 'change row 5 name to John', 'in row where name is Alice set city to Paris'), use UPDATE_CELL with params: {{"column": ..., "value": ..., "row_index": <int>}} or {{"column": ..., "value": ..., "where_column": ..., "where_value": ...}}.
+17. For splitting a delimited text column into multiple new columns (e.g. 'split full_name into first_name and last_name by space'), use SPLIT_COLUMN with params: {{"column": ..., "delimiter": ..., "output_columns": [...]}}.
+18. For concatenating or combining multiple columns into one (e.g. 'combine city and state into location separated by comma'), use CONCAT_COLUMNS with params: {{"columns": [...], "output_column": ..., "delimiter": ...}}.
+19. For mapping distinct values or categories using a dictionary of replacements (e.g. 'map M to Male and F to Female in gender'), use MAP_VALUES with params: {{"column": ..., "mapping": {{...}}, "default": ...}}.
+20. For arbitrary or complex custom transformations that cannot be represented by other primitives, use CUSTOM_TRANSFORM with params: {{"code": "<valid pandas/numpy python code on df>"}}.
+21. For compound requests containing multiple transformations (e.g. 'add a column X, fill it sequentially from 1 to end, and remove missing rows'), emit ALL required steps in the "steps" array in logical execution order, referencing newly created columns in subsequent steps with depends_on.
 
 ## EXAMPLES
 
@@ -511,6 +517,147 @@ Schema: name (string), email (string), age (int64)
       "params": {{"columns": ["name", "email"], "case": "lower"}},
       "depends_on": [],
       "label": "Trim and lowercase 'name' and 'email'"
+    }}
+  ]
+}}
+```
+
+### Example 16: Update cell by row index or condition
+User: "change row 5 name to John and set city to Paris where name is Alice"
+Schema: name (string), city (string), age (int64)
+
+```json
+{{
+  "goal": "Update name in row 5 to John and city to Paris where name is Alice",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "UPDATE_CELL",
+      "params": {{"column": "name", "value": "John", "row_index": 5}},
+      "depends_on": [],
+      "label": "Update row 5 name to John"
+    }},
+    {{
+      "id": "step_2",
+      "operation": "UPDATE_CELL",
+      "params": {{"column": "city", "value": "Paris", "where_column": "name", "where_value": "Alice"}},
+      "depends_on": [],
+      "label": "Set city to Paris where name is Alice"
+    }}
+  ]
+}}
+```
+
+### Example 17: Split column into multiple columns
+User: "split full_name into first_name and last_name by space"
+Schema: full_name (string), email (string)
+
+```json
+{{
+  "goal": "Split full_name into first_name and last_name",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "SPLIT_COLUMN",
+      "params": {{"column": "full_name", "delimiter": " ", "output_columns": ["first_name", "last_name"]}},
+      "depends_on": [],
+      "label": "Split 'full_name' by space into 'first_name' and 'last_name'"
+    }}
+  ]
+}}
+```
+
+### Example 18: Combine columns
+User: "combine city and state into location separated by comma"
+Schema: city (string), state (string), zip (int64)
+
+```json
+{{
+  "goal": "Combine city and state into location",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "CONCAT_COLUMNS",
+      "params": {{"columns": ["city", "state"], "output_column": "location", "delimiter": ", "}},
+      "depends_on": [],
+      "label": "Concatenate 'city' and 'state' into 'location' with comma"
+    }}
+  ]
+}}
+```
+
+### Example 19: Map values
+User: "map status M to Male and F to Female in gender"
+Schema: name (string), gender (string)
+
+```json
+{{
+  "goal": "Map gender codes M and F to Male and Female",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "MAP_VALUES",
+      "params": {{"column": "gender", "mapping": {{"M": "Male", "F": "Female"}}}},
+      "depends_on": [],
+      "label": "Map gender codes M->Male, F->Female"
+    }}
+  ]
+}}
+```
+
+### Example 20: Compound multi-step transformation
+User: "add a column 'birth year' and fill it with 1-end sequentially and remove the rows which contains missing values"
+Schema: id (int64), name (string), email (string), age (int64)
+
+```json
+{{
+  "goal": "Add 'birth year' column, populate it with sequential numbers starting from 1, and remove rows containing any missing values",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "CREATE_COLUMN",
+      "params": {{"column": "birth year"}},
+      "expression": {{"type": "LITERAL", "value": null}},
+      "depends_on": [],
+      "label": "Create 'birth year' column"
+    }},
+    {{
+      "id": "step_2",
+      "operation": "FILL_SEQUENTIAL",
+      "params": {{"column": "birth year", "start": 1, "step": 1}},
+      "depends_on": ["step_1"],
+      "label": "Fill 'birth year' with 1 to end sequentially"
+    }},
+    {{
+      "id": "step_3",
+      "operation": "FILTER_ROWS",
+      "params": {{"action": "KEEP"}},
+      "expression": {{
+        "type": "AND",
+        "left": {{"type": "NOT", "operand": {{"type": "COMPARE", "operator": "is_null", "left": {{"type": "COLUMN", "name": "email"}}, "right": {{"type": "LITERAL", "value": null}}}}}},
+        "right": {{"type": "NOT", "operand": {{"type": "COMPARE", "operator": "is_null", "left": {{"type": "COLUMN", "name": "age"}}, "right": {{"type": "LITERAL", "value": null}}}}}}
+      }},
+      "depends_on": ["step_2"],
+      "label": "Remove rows with missing values"
+    }}
+  ]
+}}
+```
+
+### Example 21: Custom transformation
+User: "shift the sales column down by 1 row to get previous_sales"
+Schema: date (string), sales (float64)
+
+```json
+{{
+  "goal": "Shift sales values down by 1 to create previous_sales column",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "CUSTOM_TRANSFORM",
+      "params": {{"code": "df['previous_sales'] = df['sales'].shift(1)"}},
+      "depends_on": [],
+      "label": "Shift sales column by 1 row"
     }}
   ]
 }}

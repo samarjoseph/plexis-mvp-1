@@ -268,6 +268,12 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     {"type": "REMOVE_EMPTY_ROWS", "how": "any"}
     {"type": "REMOVE_EMPTY_ROWS", "how": "any", "columns": ["col1", "col2"]}
     {"type": "REMOVE_EMPTY_ROWS", "how": "all"}
+    {"type": "UPDATE_CELL", "column": "column_name", "value": "new_val", "row_index": 5}
+    {"type": "UPDATE_CELL", "column": "column_name", "value": "new_val", "where_column": "name", "where_value": "target"}
+    {"type": "SPLIT_COLUMN", "column": "col", "delimiter": " ", "output_columns": ["col_a", "col_b"]}
+    {"type": "CONCAT_COLUMNS", "columns": ["col_a", "col_b"], "output_column": "combined", "delimiter": ", "}
+    {"type": "MAP_VALUES", "column": "col", "mapping": {"M": "Male", "F": "Female"}}
+    {"type": "CUSTOM_TRANSFORM", "code": "df['new_col'] = ..."}
 
   IMPORTANT KEYS:
     - FILL_MISSING uses "value" (not "fill_value"): number, or "mean"/"median"/"mode"/"ffill"/"bfill"
@@ -278,7 +284,9 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     - FILL_PATTERN uses "column", "pattern": [string, ...], "mode": "alternating"
     - FILL_SEQUENTIAL: use when user wants to fill an existing or new column with sequential numbers, serial numbers, row numbers, or numeric ranges (e.g. 'fill sequentially from 1 to end', 'number the rows', 'sequential values starting from 1'). Uses "column", "start" (default 1), "step" (default 1).
     - NORMALIZE_TEXT: use when user wants to clean, trim whitespace, or change text case (lower, upper, title) of text in one or more columns.
-    - IR_REQUIRED: use when the user requests ANY multi-step, formula-based, complex, or open-ended transformation that does not map directly to a simple primitive above.
+    - IR_REQUIRED: use when the user requests ANY multi-step, compound, formula-based, complex, or open-ended transformation that does not map directly to a single simple primitive above.
+    - MULTI-STEP & COMPOUND TRANSFORMATIONS: When a user request contains multiple operations or steps (e.g. adding a column AND filling it, or filtering AND renaming, or multiple connected actions with 'and' / 'then'), ALWAYS classify as TRANSFORM with {"type": "IR_REQUIRED", "user_prompt": "<original request>"}. The IR Planner will decompose and execute all steps in sequence.
+    - ANY EDIT OR TRANSFORMATION: If the user requests editing any values, cells, columns, or rows in any customized way, classify as TRANSFORM with {"type": "IR_REQUIRED", "user_prompt": "<original request>"}.
     - REMOVE_EMPTY_ROWS: use when user wants to DELETE/REMOVE/DROP rows that have missing, null, NaN, empty, or blank values. Use "how": "any" to remove rows with ANY missing value, "how": "all" to remove rows where ALL values are missing. Optionally restrict to specific columns using "columns". NEVER use FILTER_ROWS for this — use REMOVE_EMPTY_ROWS.
     - When user specifies alternating, cycling, or consecutive row values (e.g. 'values A and B consecutively', 'alternate yes and no'): use TRANSFORM with FILL_PATTERN.
     - When user asks to re-trigger, re-create, or show a transformation plan: use TRANSFORM.

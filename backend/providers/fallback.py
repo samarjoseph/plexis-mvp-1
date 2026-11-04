@@ -38,9 +38,9 @@ class FallbackEngine:
         while attempts < max_attempts:
             # Enforce fallback budget while ensuring at least 2 model attempts are tried
             elapsed = _t.time() - start_time_exec
-            if elapsed > 18.0 and attempts >= 2:
+            if elapsed > 45.0 and attempts >= 3:
                 logger.warning(
-                    "[FallbackEngine] Total fallback budget (18s) reached after %d attempts. Aborting further model attempts.",
+                    "[FallbackEngine] Total fallback budget (45s) reached after %d attempts. Aborting further model attempts.",
                     attempts
                 )
                 break

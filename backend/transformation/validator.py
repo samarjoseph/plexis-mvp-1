@@ -224,7 +224,53 @@ class IRValidator:
                 pattern = step.params.get('pattern')
                 if not pattern or not isinstance(pattern, (list, tuple)):
                     errors.append(f"Step {step.id}: FILL_PATTERN requires a non-empty list of values for 'pattern'")
-                        
+
+            elif step.operation == 'FILL_SEQUENTIAL':
+                col_name = step.params.get('column')
+                if col_name and col_name not in current_columns:
+                    current_columns.add(col_name)
+
+            elif step.operation == 'SPLIT_COLUMN':
+                col_name = step.params.get('column')
+                if col_name and col_name not in current_columns:
+                    errors.append(f"Step {step.id}: Source column '{col_name}' does not exist")
+                out_cols = step.params.get('output_columns', [])
+                if isinstance(out_cols, str):
+                    out_cols = [c.strip() for c in out_cols.split(',')]
+                for c in out_cols:
+                    if c:
+                        current_columns.add(c)
+
+            elif step.operation == 'CONCAT_COLUMNS':
+                cols = step.params.get('columns', [])
+                if isinstance(cols, str):
+                    cols = [cols]
+                for c in cols:
+                    if c not in current_columns:
+                        errors.append(f"Step {step.id}: Source column '{c}' does not exist")
+                out_col = step.params.get('output_column')
+                if out_col:
+                    current_columns.add(out_col)
+
+            elif step.operation == 'UPDATE_CELL':
+                col_name = step.params.get('column')
+                if col_name and col_name not in current_columns:
+                    errors.append(f"Step {step.id}: Target column '{col_name}' does not exist")
+
+            elif step.operation == 'MAP_VALUES':
+                col_name = step.params.get('column')
+                if col_name and col_name not in current_columns:
+                    errors.append(f"Step {step.id}: Target column '{col_name}' does not exist")
+
+            elif step.operation == 'CUSTOM_TRANSFORM':
+                code = step.params.get('code', '').strip()
+                if not code:
+                    errors.append(f"Step {step.id}: CUSTOM_TRANSFORM requires 'code' param")
+                else:
+                    for bad in ('__', 'import ', 'eval(', 'exec(', 'open(', 'os.', 'sys.', 'subprocess'):
+                        if bad in code.lower():
+                            errors.append(f"Step {step.id}: Security error: Forbidden term '{bad}' in custom transform code")
+
         if errors:
             return ValidationResult(valid=False, errors=errors, warnings=warnings)
             

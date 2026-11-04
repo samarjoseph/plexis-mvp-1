@@ -546,6 +546,100 @@ class IRCompiler:
                     else:
                         df[c] = s.str.lower()
 
+        elif op == 'UPDATE_CELL':
+            col = p['column']
+            val = p['value']
+            row_idx = p.get('row_index')
+            where_col = p.get('where_column')
+            where_val = p.get('where_value')
+            if col in df.columns:
+                if row_idx is not None:
+                    try:
+                        idx = int(row_idx)
+                        if idx not in df.index and (idx - 1) in df.index:
+                            idx = idx - 1
+                        df.loc[idx, col] = val
+                    except (ValueError, TypeError, KeyError):
+                        pass
+                elif where_col and where_col in df.columns:
+                    mask = (df[where_col].astype(str) == str(where_val))
+                    df.loc[mask, col] = val
+                elif step.expression:
+                    cond = self.evaluator.evaluate(step.expression, df)
+                    df.loc[cond, col] = val
+
+        elif op == 'SPLIT_COLUMN':
+            col = p['column']
+            delim = p.get('delimiter', ' ')
+            out_cols = p.get('output_columns', [])
+            if isinstance(out_cols, str):
+                out_cols = [c.strip() for c in out_cols.split(',')]
+            if col in df.columns and out_cols:
+                n_splits = len(out_cols) - 1
+                splits = df[col].astype(str).str.split(delim, n=n_splits, expand=True)
+                for i, out_c in enumerate(out_cols):
+                    if i < splits.shape[1]:
+                        df[out_c] = splits[i]
+                    else:
+                        df[out_c] = None
+
+        elif op == 'CONCAT_COLUMNS':
+            cols = p.get('columns', [])
+            if isinstance(cols, str):
+                cols = [cols]
+            out_col = p.get('output_column')
+            delim = p.get('delimiter', ' ')
+            valid_cols = [c for c in cols if c in df.columns]
+            if valid_cols and out_col:
+                series = df[valid_cols[0]].fillna('').astype(str)
+                for c in valid_cols[1:]:
+                    series = series + delim + df[c].fillna('').astype(str)
+                df[out_col] = series
+
+        elif op == 'MAP_VALUES':
+            col = p['column']
+            mapping = p.get('mapping', {})
+            default_val = p.get('default')
+            if col in df.columns and isinstance(mapping, dict):
+                mapped = df[col].map(mapping)
+                if default_val is not None:
+                    df[col] = mapped.fillna(default_val)
+                else:
+                    df[col] = mapped.fillna(df[col])
+
+        elif op == 'CUSTOM_TRANSFORM':
+            code = p.get('code', '').strip()
+            if code:
+                blocked_tokens = [
+                    '__', 'import ', 'eval(', 'exec(', 'open(', 'os.', 'sys.',
+                    'subprocess', 'shutil', 'globals()', 'locals()', 'getattr', 'setattr'
+                ]
+                code_lower = code.lower()
+                for token in blocked_tokens:
+                    if token in code_lower:
+                        raise ValueError(f"Unsafe operation in custom transform: '{token}' is blocked for security.")
+                safe_builtins = {
+                    'range': range, 'len': len, 'min': min, 'max': max,
+                    'sum': sum, 'round': round, 'int': int, 'float': float,
+                    'str': str, 'bool': bool, 'list': list, 'dict': dict,
+                    'set': set, 'abs': abs,
+                }
+                safe_globals = {
+                    '__builtins__': safe_builtins,
+                    'pd': pd,
+                    'np': np,
+                }
+                safe_locals = {'df': df}
+                exec(code, safe_globals, safe_locals)
+                if 'df' in safe_locals and isinstance(safe_locals['df'], pd.DataFrame):
+                    res_df = safe_locals['df']
+                    # Keep df reference alive and update contents
+                    drop_cols = [c for c in df.columns if c not in res_df.columns]
+                    if drop_cols:
+                        df.drop(columns=drop_cols, inplace=True)
+                    for c in res_df.columns:
+                        df[c] = res_df[c]
+
     def simulation_to_plan(self, ir: TransformationIR, sim: SimulationResult, dataset_id: str, fingerprint: str) -> TransformationPlan:
         """Convert a SimulationResult into the existing TransformationPlan contract."""
         

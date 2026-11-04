@@ -200,6 +200,22 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None, e
                                  {c.lower() for c in (existing_columns or [])} | \
                                  {c.lower().replace(' ', '_') for c in (existing_columns or [])}
 
+    # ── Compound & Multi-Step Request Check ────────────────────────────────────
+    # If the user request contains multiple operations or compound clauses
+    # (e.g. "add a column ... and fill it ... and remove ...", ", then ..."),
+    # NEVER truncate or hijack it with a single-primitive regex fast path.
+    # Return None so the entire request flows directly to the intelligent LLM planner.
+    compound_action_rx = re.search(
+        r'\b(?:and|then|also|afterwards|next)\s+(?:also\s+)?(?:fill|remove|delete|drop|add|create|filter|sort|replace|change|cast|convert|rename|clean|normalize|update|calculate|compute|populate|make|set)\b',
+        msg, re.IGNORECASE
+    )
+    comma_action_rx = re.search(
+        r',\s*(?:also\s+)?(?:fill|remove|delete|drop|add|create|filter|sort|replace|change|cast|convert|rename|clean|normalize|update|calculate|compute|populate|make|set)\b',
+        msg, re.IGNORECASE
+    )
+    if compound_action_rx or comma_action_rx:
+        return None
+
     from datasets.semantics.typed_literal import parse_literal, parse_with_explicit_type
 
     def _parse_fill_value(fill_raw: str) -> object:
@@ -441,6 +457,9 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None, e
         orig, re.IGNORECASE,
     )
     if m_add_quoted:
+        trailing = orig[m_add_quoted.end():].strip().lstrip('.! ')
+        if trailing:
+            return None
         col_name = m_add_quoted.group(2).strip()
         val = None
         if m_add_quoted.group(3):
@@ -456,6 +475,9 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None, e
         orig, re.IGNORECASE,
     )
     if m_add_bare:
+        trailing = orig[m_add_bare.end():].strip().lstrip('.! ')
+        if trailing:
+            return None
         col_name = m_add_bare.group(1).strip()
         if col_name.lower() not in ('that', 'the', 'a', 'new', 'column', 'col', 'if', 'when', 'where'):
             val = None

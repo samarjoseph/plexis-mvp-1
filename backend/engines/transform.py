@@ -206,14 +206,20 @@ class TransformEngine(BaseEngine):
                         user_msg,
                         re.IGNORECASE
                     ))
+                    is_compound = bool(re.search(
+                        r'\b(?:and|then|also|afterwards|next)\s+(?:also\s+)?(?:fill|remove|delete|drop|add|create|filter|sort|replace|change|cast|convert|rename|clean|normalize|update|calculate|compute|populate|make|set)\b',
+                        user_msg,
+                        re.IGNORECASE
+                    ))
 
-                    # Fast path 3: If user explicitly asks to create a NEW column that does not exist yet without formula/value/pattern,
+                    # Fast path 3: If user explicitly asks to create a NEW column that does not exist yet without formula/value/pattern/compound actions,
                     # trigger clarification immediately without calling LLM (avoids 504 timeouts & stalls)
                     if (
                         is_explicit_create
                         and target_col
                         and (target_col not in df.columns)
                         and not has_explicit_formula
+                        and not is_compound
                         and operation.get('value') is None
                         and not operation.get('pattern')
                     ):
@@ -289,7 +295,11 @@ class TransformEngine(BaseEngine):
                 # Direct planner with resilient IR Planner fallback
                 try:
                     plan = transformation_planner.plan(df, operation, dataset_id)
+                except (TransformationClarificationRequired, ValueTypeMismatchConfirmationRequired):
+                    raise
                 except Exception as planner_err:
+                    if type(planner_err).__name__ == 'ValueAmbiguityClarificationRequired':
+                        raise
                     user_msg = getattr(context, 'message', '') or operation.get('user_prompt') or ''
                     if user_msg:
                         logger.info(

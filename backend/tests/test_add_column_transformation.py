@@ -180,3 +180,77 @@ def test_transform_engine_resilient_ir_fallback_on_direct_planner_failure():
         plan = result.metadata["transform_plan"]
         assert plan['affected_cells_count'] == 2
         mock_ir_plan.assert_called_once()
+
+
+def test_compound_multi_task_bypasses_fast_path():
+    """Verify compound/multi-task instructions return None from fast-path so they flow to LLM planner."""
+    compound_msgs = [
+        'add a column "birth year" and fill it with 1-end sequentially and remove the rows which contains missing values',
+        'add column age and fill missing with 0',
+        'drop column id, then rename name to full_name',
+        'fill missing with 0 and remove duplicates',
+        'replace 0 with unknown and drop column temp',
+    ]
+    for msg in compound_msgs:
+        res = _parse_transform_from_message(msg)
+        assert res is None, f"Expected None for compound message '{msg}', but got {res}"
+
+
+def test_new_primitives_planner_execution():
+    """Verify new open capabilities can be planned and simulated via TransformationPlanner."""
+    planner = TransformationPlanner()
+    df = pd.DataFrame({
+        "full_name": ["John Doe", "Jane Smith"],
+        "city": ["New York", "Chicago"],
+        "state": ["NY", "IL"],
+        "gender": ["M", "F"],
+        "score": [85, 90]
+    })
+
+    # 1. SPLIT_COLUMN
+    plan = planner.plan(df, {
+        "type": "SPLIT_COLUMN",
+        "column": "full_name",
+        "delimiter": " ",
+        "output_columns": ["first_name", "last_name"]
+    }, "ds_test")
+    assert plan.affected_cells_count > 0
+    assert "first_name" in plan.affected_columns
+    assert "last_name" in plan.affected_columns
+
+    # 2. CONCAT_COLUMNS
+    plan = planner.plan(df, {
+        "type": "CONCAT_COLUMNS",
+        "columns": ["city", "state"],
+        "output_column": "location",
+        "delimiter": ", "
+    }, "ds_test")
+    assert plan.affected_cells_count > 0
+    assert "location" in plan.affected_columns
+
+    # 3. MAP_VALUES
+    plan = planner.plan(df, {
+        "type": "MAP_VALUES",
+        "column": "gender",
+        "mapping": {"M": "Male", "F": "Female"}
+    }, "ds_test")
+    assert plan.affected_cells_count == 2
+    assert plan.affected_columns == ["gender"]
+
+    # 4. UPDATE_CELL by row_index
+    plan = planner.plan(df, {
+        "type": "UPDATE_CELL",
+        "column": "score",
+        "value": 100,
+        "row_index": 0
+    }, "ds_test")
+    assert plan.affected_cells_count == 1
+    assert plan.affected_columns == ["score"]
+
+    # 5. CUSTOM_TRANSFORM
+    plan = planner.plan(df, {
+        "type": "CUSTOM_TRANSFORM",
+        "code": "df['score_pct'] = df['score'] / 100.0"
+    }, "ds_test")
+    assert plan.affected_cells_count == 2
+    assert "score_pct" in plan.affected_columns
