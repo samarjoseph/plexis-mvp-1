@@ -357,6 +357,14 @@ _register(PrimitiveSpec('DATE_DIFF', 'Compute difference between two date column
 _register(PrimitiveSpec('FILL_PATTERN', 'Fill column with an alternating pattern or sequence of values',
                         required_params=['column', 'pattern'],
                         optional_params=['mode'], modifies_shape=False))
+_register(PrimitiveSpec('FILL_SEQUENTIAL', 'Fill a column with a sequential integer or numeric series (row numbers, ranges, arithmetic progressions)',
+                        required_params=['column'],
+                        optional_params=['start', 'step'],
+                        modifies_shape=False))
+_register(PrimitiveSpec('NORMALIZE_TEXT', 'Trim whitespace and normalize string case in text columns',
+                        required_params=['columns'],
+                        optional_params=['case'],
+                        modifies_shape=False))
 
 # ── Deferred capabilities (known but not yet executable) ─────────────────────
 DEFERRED_CAPABILITIES = frozenset({

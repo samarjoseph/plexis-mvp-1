@@ -410,6 +410,58 @@ class TransformationExecutor:
                     return df
             return df
 
+        elif op == 'FILL_SEQUENTIAL':
+            col = payload.get('column', '')
+            start = payload.get('start', 1)
+            step = payload.get('step', 1)
+            try:
+                start = float(start) if '.' in str(start) else int(start)
+                step = float(step) if '.' in str(step) else int(step)
+            except (TypeError, ValueError):
+                start, step = 1, 1
+            if col in df.columns:
+                n_rows = len(df)
+                df[col] = [start + i * step for i in range(n_rows)]
+            return df
+
+        elif op == 'REMOVE_EMPTY_ROWS':
+            how = str(payload.get('how', 'any')).lower()
+            if how not in ('any', 'all'):
+                how = 'any'
+            columns = payload.get('columns') or df.columns.tolist()
+            if isinstance(columns, str):
+                columns = [columns]
+            columns = [c for c in columns if c in df.columns]
+            if not columns:
+                return df
+            # Treat both NaN and empty strings as missing
+            null_mask = df[columns].isnull()
+            for col in columns:
+                if df[col].dtype == object:
+                    empty_mask = df[col].astype(str).str.strip() == ''
+                    null_mask[col] = null_mask[col] | empty_mask
+            if how == 'any':
+                rows_to_drop = null_mask.any(axis=1)
+            else:
+                rows_to_drop = null_mask.all(axis=1)
+            return df[~rows_to_drop].reset_index(drop=True)
+
+        elif op == 'NORMALIZE_TEXT':
+            cols = payload.get('columns', [])
+            if isinstance(cols, str):
+                cols = [cols]
+            case = str(payload.get('case', 'lower')).lower()
+            for c in cols:
+                if c in df.columns:
+                    s = df[c].astype(str).str.strip()
+                    if case == 'upper':
+                        df[c] = s.str.upper()
+                    elif case == 'title':
+                        df[c] = s.str.title()
+                    else:
+                        df[c] = s.str.lower()
+            return df
+
         raise ValueError(f"Unknown operation type: {op}")
 
     def _verify_postconditions(self, old_df: pd.DataFrame, new_df: pd.DataFrame, plan: TransformationPlan) -> None:

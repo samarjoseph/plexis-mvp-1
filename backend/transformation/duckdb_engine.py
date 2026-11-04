@@ -48,7 +48,7 @@ class DuckDBTransformationEngine:
         "DROP_DUPLICATES", "FILL_MISSING", "RENAME_COLUMN", "DROP_COLUMN",
         "ADD_COLUMN", "FILTER_ROWS", "SORT_ROWS", "CLIP", "UPDATE_EXTREMUM",
         "REPLACE_VALUES", "CAST_DTYPE", "REMOVE_EMPTY_ROWS", "NORMALIZE_TEXT",
-        "FILL_PATTERN", "POPULATE_SEQUENCE",
+        "FILL_PATTERN", "POPULATE_SEQUENCE", "FILL_SEQUENTIAL",
     })
 
     _ALLOWED_OPERATORS = frozenset({"==", "=", "!=", ">", "<", ">=", "<="})
@@ -439,6 +439,34 @@ class DuckDBTransformationEngine:
                 metrics["pattern"] = pattern
                 metrics["mode"] = "alternating"
                 metrics["rows_updated"] = len(res_df)
+                return res_df, metrics
+
+            elif op == "FILL_SEQUENTIAL":
+                col = payload.get("column", "")
+                start = payload.get("start", 1)
+                step = payload.get("step", 1)
+                try:
+                    start = float(start) if "." in str(start) else int(start)
+                    step = float(step) if "." in str(step) else int(step)
+                except (TypeError, ValueError):
+                    start, step = 1, 1
+                q_col = self.quote_ident(col)
+                # Build all columns, replacing target col with sequential expression
+                select_exprs = []
+                params_list = []
+                for c in df.columns:
+                    qc = self.quote_ident(c)
+                    if c == col:
+                        # (ROW_NUMBER() OVER () - 1) * step + start
+                        select_exprs.append(f"(ROW_NUMBER() OVER () - 1) * ? + ? AS {q_col}")
+                        params_list.extend([step, start])
+                    else:
+                        select_exprs.append(qc)
+                query = f"SELECT {', '.join(select_exprs)} FROM df_working"
+                res_df = con.execute(query, params_list).df()
+                metrics["column"] = col
+                metrics["start"] = start
+                metrics["step"] = step
                 return res_df, metrics
 
             elif op == "REMOVE_EMPTY_ROWS":

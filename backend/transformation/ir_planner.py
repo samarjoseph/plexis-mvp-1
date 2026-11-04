@@ -128,6 +128,8 @@ Return ONLY a JSON object:
 11. Ensure step IDs are unique.
 12. When creating or adding a new column with a constant or default value (e.g. 0, null, or empty string), use CREATE_COLUMN with a LITERAL expression: {{"type": "LITERAL", "value": 0}}.
 13. When filling or populating a column with alternating, cyclical, or consecutive values (e.g. 'fill values A and B consecutively', 'alternate yes and no'), use FILL_PATTERN with params: {{"column": ..., "pattern": [...], "mode": "alternating"}}.
+14. When filling an EXISTING column with sequential integers or a numeric series (e.g. 'fill sequentially from 1 to end', 'number the rows', 'assign row numbers'), use FILL_SEQUENTIAL with params: {{"column": ..., "start": <int>, "step": <int>}}. NEVER use ADD_COLUMN if the column already exists in the schema.
+15. When cleaning, trimming, or normalising text in columns (e.g. 'lowercase the names', 'trim whitespace', 'clean the emails'), use NORMALIZE_TEXT with params: {{"columns": [...], "case": "lower"|"upper"|"title"}}.
 
 ## EXAMPLES
 
@@ -445,6 +447,70 @@ Schema: name (string) [nullable], age (int64) [nullable], score (float64) [nulla
       }},
       "depends_on": [],
       "label": "Keep only rows where no values are missing"
+    }}
+  ]
+}}
+```
+
+### Example 13: Fill existing column sequentially
+User: "in column birth year fill the values sequentially from 1 to end"
+Schema: id (int64), name (string), birth year (int64)
+
+```json
+{{
+  "goal": "Fill 'birth year' column with sequential integers starting at 1",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "FILL_SEQUENTIAL",
+      "params": {{"column": "birth year", "start": 1, "step": 1}},
+      "depends_on": [],
+      "label": "Fill 'birth year' with sequential numbers 1, 2, 3…"
+    }}
+  ]
+}}
+```
+
+### Example 14: Create new column then fill sequentially
+User: "add a rank column and number the rows from 1"
+Schema: name (string), score (float64)
+
+```json
+{{
+  "goal": "Create 'rank' column and populate with sequential row numbers",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "ADD_COLUMN",
+      "params": {{"column": "rank", "value": null}},
+      "depends_on": [],
+      "label": "Add empty 'rank' column"
+    }},
+    {{
+      "id": "step_2",
+      "operation": "FILL_SEQUENTIAL",
+      "params": {{"column": "rank", "start": 1, "step": 1}},
+      "depends_on": ["step_1"],
+      "label": "Fill 'rank' with sequential numbers 1, 2, 3…"
+    }}
+  ]
+}}
+```
+
+### Example 15: Normalize / clean text in columns
+User: "clean the name and email columns, trim spaces and lowercase them"
+Schema: name (string), email (string), age (int64)
+
+```json
+{{
+  "goal": "Normalize text in 'name' and 'email' columns — trim whitespace and lowercase",
+  "steps": [
+    {{
+      "id": "step_1",
+      "operation": "NORMALIZE_TEXT",
+      "params": {{"columns": ["name", "email"], "case": "lower"}},
+      "depends_on": [],
+      "label": "Trim and lowercase 'name' and 'email'"
     }}
   ]
 }}

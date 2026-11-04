@@ -180,7 +180,7 @@ _TRANSFORM_RX = re.compile(
 
 
     
-def _parse_transform_from_message(message: str, context: Optional[Any] = None) -> dict | None:
+def _parse_transform_from_message(message: str, context: Optional[Any] = None, existing_columns: Optional[List[str]] = None) -> dict | None:
     """
     Extract a structured transform operation from a natural language message.
 
@@ -194,6 +194,11 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None) -
     """
     msg = message.strip().lower()   # For keyword/column matching only
     orig = message.strip()          # For value extraction (case-preserving)
+
+    # Build a normalized set of existing column names for schema-aware routing decisions
+    _existing_cols_lower: set = {c.lower().replace(' ', '_').replace(' ', '') for c in (existing_columns or [])} | \
+                                 {c.lower() for c in (existing_columns or [])} | \
+                                 {c.lower().replace(' ', '_') for c in (existing_columns or [])}
 
     from datasets.semantics.typed_literal import parse_literal, parse_with_explicit_type
 
@@ -425,6 +430,9 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None) -
                         inferred_col = cand
                         break
         if inferred_col:
+            if existing_columns and inferred_col.lower() in _existing_cols_lower:
+                # Column already exists — LLM should decide what to do with it
+                return {"type": "IR_REQUIRED"}
             return {"type": "ADD_COLUMN", "column": inferred_col, "value": None}
 
     # Quoted column name: add a column "departure_percent" / add column 'foo'
@@ -438,6 +446,8 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None) -
         if m_add_quoted.group(3):
             val_raw = m_add_quoted.group(3).strip().rstrip('.')
             val = parse_with_explicit_type(val_raw).python_value
+        if existing_columns and col_name.lower() in _existing_cols_lower:
+            return {"type": "IR_REQUIRED"}
         return {"type": "ADD_COLUMN", "column": col_name, "value": val}
 
     # Bare column name: add column departure_percent / create column departure_percent
@@ -452,6 +462,8 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None) -
             if m_add_bare.group(2):
                 val_raw = m_add_bare.group(2).strip().rstrip('.')
                 val = parse_with_explicit_type(val_raw).python_value
+            if existing_columns and col_name.lower() in _existing_cols_lower:
+                return {"type": "IR_REQUIRED"}
             return {"type": "ADD_COLUMN", "column": col_name, "value": val}
 
     # ── DROP_COLUMN ───────────────────────────────────────────────────────────
@@ -1745,7 +1757,16 @@ class MasterRouter:
         # Only fire when dataset is loaded and request is NOT a hypothetical simulation
         if dataset_id and not _is_hypothetical(message):
             raw_msg = getattr(context, 'message', None) or message
-            operation = _parse_transform_from_message(raw_msg, context=context)
+            # Pass existing column list so fast-path is schema-aware
+            _existing_cols_for_fastpath: List[str] = []
+            try:
+                from datasets.registry import dataset_registry
+                _fp_entry = dataset_registry.get(dataset_id)
+                if _fp_entry is not None and _fp_entry.dataframe is not None:
+                    _existing_cols_for_fastpath = list(_fp_entry.dataframe.columns)
+            except Exception:
+                pass
+            operation = _parse_transform_from_message(raw_msg, context=context, existing_columns=_existing_cols_for_fastpath)
             if operation:
                 logger.info(
                     "[Router] fast-path: TRANSFORM operation=%s",

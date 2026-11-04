@@ -106,6 +106,8 @@ ALLOWED_OPERATIONS = frozenset({
     'FILL_PATTERN',
     'POPULATE_SEQUENCE',
     'REMOVE_EMPTY_ROWS',
+    'FILL_SEQUENTIAL',
+    'NORMALIZE_TEXT',
 })
 
 
@@ -199,6 +201,10 @@ class TransformationPlanner:
             return self._plan_fill_pattern(df, operation, plan_id, dataset_id, fingerprint)
         elif op_type == 'REMOVE_EMPTY_ROWS':
             return self._plan_remove_empty_rows(df, operation, plan_id, dataset_id, fingerprint)
+        elif op_type == 'FILL_SEQUENTIAL':
+            return self._plan_fill_sequential(df, operation, plan_id, dataset_id, fingerprint)
+        elif op_type == 'NORMALIZE_TEXT':
+            return self._plan_normalize_text(df, operation, plan_id, dataset_id, fingerprint)
         else:
             raise ValueError(f"Unhandled operation: {op_type}")
 
@@ -1081,6 +1087,122 @@ class TransformationPlanner:
             affected_rows_count=n_rows, affected_cells_count=n_rows,
             affected_columns=[column], before_sample=sample,
             dataset_fingerprint=fingerprint,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    def _plan_fill_sequential(self, df: pd.DataFrame, op: Dict[str, Any], plan_id: str, dataset_id: str, fingerprint: str) -> TransformationPlan:
+        """
+        Plan filling an existing column with a sequential numeric series.
+        
+        Payload keys:
+          column: str  — target column (must already exist)
+          start: int|float — first value (default 1)
+          step: int|float  — increment per row (default 1)
+        """
+        column = op.get('column', '')
+        if not column:
+            raise ValueError("FILL_SEQUENTIAL requires a 'column' name.")
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found in dataset. FILL_SEQUENTIAL modifies an existing column.")
+
+        start = op.get('start', 1)
+        step = op.get('step', 1)
+        try:
+            start = float(start) if '.' in str(start) else int(start)
+            step = float(step) if '.' in str(step) else int(step)
+        except (TypeError, ValueError):
+            start, step = 1, 1
+
+        n_rows = len(df)
+
+        # Build a preview sample showing before→after for first 20 rows
+        sample = []
+        for i, idx in enumerate(df.index[:20]):
+            before_val = df.loc[idx, column]
+            after_val = start + i * step
+            sample.append(AffectedCell(
+                row_index=int(idx),
+                source_row_number=int(idx) + 1,
+                column=column,
+                before=str(before_val) if before_val is not None and not (isinstance(before_val, float) and pd.isna(before_val)) else None,
+                after=str(after_val),
+            ))
+
+        end_val = start + (n_rows - 1) * step
+        label = f"Fill '{column}' sequentially from {start} to {end_val}"
+        if step != 1:
+            label += f" (step {step})"
+        code = f"df['{column}'] = range({start}, {start + n_rows * step}, {step})"
+
+        if 'impact' not in op:
+            op['impact'] = {'type': 'cell', 'columns_changed': 1, 'cells_changed': n_rows}
+
+        return TransformationPlan(
+            plan_id=plan_id, dataset_id=dataset_id,
+            operation_type='FILL_SEQUENTIAL', operation_label=label,
+            operation_code=code, operation_payload=op,
+            affected_rows_count=n_rows, affected_cells_count=n_rows,
+            affected_columns=[column], before_sample=sample,
+            dataset_fingerprint=fingerprint,
+            warnings=[],
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    def _plan_normalize_text(self, df: pd.DataFrame, op: Dict[str, Any], plan_id: str, dataset_id: str, fingerprint: str) -> TransformationPlan:
+        """
+        Plan normalizing text columns (trim + case transform).
+        """
+        columns = op.get('columns') or op.get('column')
+        if isinstance(columns, str):
+            columns = [columns]
+        if not columns:
+            columns = [c for c in df.columns if df[c].dtype == object]
+        columns = [c for c in columns if c in df.columns]
+        if not columns:
+            raise ValueError("No valid string columns found for NORMALIZE_TEXT.")
+
+        case = str(op.get('case', 'lower')).lower()
+        n_rows = len(df)
+        affected_cells = n_rows * len(columns)
+
+        sample = []
+        for col in columns[:3]:
+            for idx in df.index[:min(7, n_rows)]:
+                raw = df.loc[idx, col]
+                before_str = str(raw) if raw is not None and not (isinstance(raw, float) and pd.isna(raw)) else None
+                if before_str is not None:
+                    stripped = before_str.strip()
+                    if case == 'upper':
+                        after_str = stripped.upper()
+                    elif case == 'title':
+                        after_str = stripped.title()
+                    else:
+                        after_str = stripped.lower()
+                    if before_str != after_str:
+                        sample.append(AffectedCell(
+                            row_index=int(idx), source_row_number=int(idx) + 1,
+                            column=col, before=before_str, after=after_str,
+                        ))
+            if len(sample) >= 20:
+                break
+
+        col_list = ', '.join(f"'{c}'" for c in columns[:3])
+        if len(columns) > 3:
+            col_list += f' +{len(columns)-3} more'
+        label = f"Normalize text in {col_list} ({case})"
+        code = f"df[[{', '.join(repr(c) for c in columns)}]] = df[[{', '.join(repr(c) for c in columns)}]].apply(lambda s: s.str.strip().str.{case}())"
+
+        if 'impact' not in op:
+            op['impact'] = {'type': 'cell', 'columns_changed': len(columns), 'cells_changed': affected_cells}
+
+        return TransformationPlan(
+            plan_id=plan_id, dataset_id=dataset_id,
+            operation_type='NORMALIZE_TEXT', operation_label=label,
+            operation_code=code, operation_payload=op,
+            affected_rows_count=n_rows, affected_cells_count=affected_cells,
+            affected_columns=columns, before_sample=sample[:20],
+            dataset_fingerprint=fingerprint,
+            warnings=[],
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 

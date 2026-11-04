@@ -519,6 +519,33 @@ class IRCompiler:
             n_rows = len(df)
             df[col] = [pattern[i % n_pat] for i in range(n_rows)]
 
+        elif op == 'FILL_SEQUENTIAL':
+            col = p['column']
+            start = p.get('start', 1)
+            step = p.get('step', 1)
+            try:
+                start = float(start) if '.' in str(start) else int(start)
+                step = float(step) if '.' in str(step) else int(step)
+            except (TypeError, ValueError):
+                start, step = 1, 1
+            n_rows = len(df)
+            df[col] = [start + i * step for i in range(n_rows)]
+
+        elif op == 'NORMALIZE_TEXT':
+            cols = p.get('columns', [])
+            if isinstance(cols, str):
+                cols = [cols]
+            case = str(p.get('case', 'lower')).lower()
+            for c in cols:
+                if c in df.columns:
+                    s = df[c].astype(str).str.strip()
+                    if case == 'upper':
+                        df[c] = s.str.upper()
+                    elif case == 'title':
+                        df[c] = s.str.title()
+                    else:
+                        df[c] = s.str.lower()
+
     def simulation_to_plan(self, ir: TransformationIR, sim: SimulationResult, dataset_id: str, fingerprint: str) -> TransformationPlan:
         """Convert a SimulationResult into the existing TransformationPlan contract."""
         
