@@ -262,6 +262,9 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     {"type": "UPDATE_EXTREMUM", "column": "column_name", "extremum": "min", "new_value": 10}
     {"type": "EXTREME_VALUE_AMBIGUITY", "column": "column_name", "extremum": "max", "target_value": 60}
     {"type": "FILL_PATTERN", "column": "column_name", "pattern": ["value_a", "value_b"], "mode": "alternating"}
+    {"type": "FILL_SEQUENTIAL", "column": "column_name", "start": 1, "step": 1}
+    {"type": "NORMALIZE_TEXT", "columns": ["col1", "col2"], "case": "lower"}
+    {"type": "IR_REQUIRED", "user_prompt": "natural language description of transformation"}
     {"type": "REMOVE_EMPTY_ROWS", "how": "any"}
     {"type": "REMOVE_EMPTY_ROWS", "how": "any", "columns": ["col1", "col2"]}
     {"type": "REMOVE_EMPTY_ROWS", "how": "all"}
@@ -273,6 +276,9 @@ OPERATION SCHEMA (use when intent=DATA_OPERATION or intent=TRANSFORM):
     - FILTER_ROWS uses "action": "KEEP" or "REMOVE"
     - DROP_COLUMN uses "column" (singular string, not "columns")
     - FILL_PATTERN uses "column", "pattern": [string, ...], "mode": "alternating"
+    - FILL_SEQUENTIAL: use when user wants to fill an existing or new column with sequential numbers, serial numbers, row numbers, or numeric ranges (e.g. 'fill sequentially from 1 to end', 'number the rows', 'sequential values starting from 1'). Uses "column", "start" (default 1), "step" (default 1).
+    - NORMALIZE_TEXT: use when user wants to clean, trim whitespace, or change text case (lower, upper, title) of text in one or more columns.
+    - IR_REQUIRED: use when the user requests ANY multi-step, formula-based, complex, or open-ended transformation that does not map directly to a simple primitive above.
     - REMOVE_EMPTY_ROWS: use when user wants to DELETE/REMOVE/DROP rows that have missing, null, NaN, empty, or blank values. Use "how": "any" to remove rows with ANY missing value, "how": "all" to remove rows where ALL values are missing. Optionally restrict to specific columns using "columns". NEVER use FILTER_ROWS for this — use REMOVE_EMPTY_ROWS.
     - When user specifies alternating, cycling, or consecutive row values (e.g. 'values A and B consecutively', 'alternate yes and no'): use TRANSFORM with FILL_PATTERN.
     - When user asks to re-trigger, re-create, or show a transformation plan: use TRANSFORM.

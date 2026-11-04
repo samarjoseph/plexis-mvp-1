@@ -97,3 +97,86 @@ def test_semantic_cache_dataset_loaded_no_unbound_error():
 
     res = router._llm_interpret(ctx, semantic_ctx)
     assert res is not None
+
+
+
+def test_fill_sequential_existing_column_via_planner():
+    """Verify FILL_SEQUENTIAL on an existing column succeeds and computes correct cell diff."""
+    planner = TransformationPlanner()
+    df = pd.DataFrame({
+        "id": [1, 2, 3, 4],
+        "birth year": [1990, 1991, 1992, 1993]
+    })
+    op = {
+        "type": "FILL_SEQUENTIAL",
+        "column": "birth year",
+        "start": 1,
+        "step": 1
+    }
+    plan = planner.plan(df, op, "dataset_test")
+    assert plan.operation_type == "FILL_SEQUENTIAL"
+    assert plan.affected_cells_count == 4
+    assert plan.affected_columns == ["birth year"]
+    assert len(plan.before_sample) == 4
+    assert plan.before_sample[0].after == "1"
+    assert plan.before_sample[3].after == "4"
+
+
+def test_fill_sequential_new_column_via_planner():
+    """Verify FILL_SEQUENTIAL on a new column succeeds without error."""
+    planner = TransformationPlanner()
+    df = pd.DataFrame({"name": ["Alice", "Bob", "Charlie"]})
+    op = {
+        "type": "FILL_SEQUENTIAL",
+        "column": "rank",
+        "start": 1,
+        "step": 1
+    }
+    plan = planner.plan(df, op, "dataset_test")
+    assert plan.operation_type == "FILL_SEQUENTIAL"
+    assert plan.affected_cells_count == 3
+    assert plan.affected_columns == ["rank"]
+    assert plan.before_sample[0].before is None
+    assert plan.before_sample[0].after == "1"
+
+
+def test_transform_engine_resilient_ir_fallback_on_direct_planner_failure():
+    """Verify TransformEngine falls back to IR Planner when direct planner encounters a column error."""
+    from unittest.mock import patch, MagicMock
+    from engines.transform import TransformEngine
+    from datasets.registry import dataset_registry, DatasetEntry
+    from transformation.ir import TransformationIR, TransformStep
+
+    engine = TransformEngine()
+    df = pd.DataFrame({"id": [1, 2], "birth year": [2000, 2001]})
+    entry = MagicMock()
+    entry.dataframe = df
+    dataset_registry.register(entry)
+    dataset_registry._datasets["test_ds_fallback"] = entry
+
+    # Context simulating user asking to fill birth year sequentially, but operation wrongly marked ADD_COLUMN
+    ctx = ExecutionContext(
+        message="in column birth year fill the values sequentially from 1 to end",
+        dataset_id="test_ds_fallback"
+    )
+    ctx.llm_operation = {"type": "ADD_COLUMN", "column": "birth year"}
+
+    # Mock ir_planner to verify fallback is triggered
+    with patch("transformation.ir_planner.ir_planner.plan") as mock_ir_plan:
+        mock_ir_plan.return_value = TransformationIR(
+            goal="Fill 'birth year' with sequential integers starting at 1",
+            steps=[
+                TransformStep(
+                    id="step_1",
+                    operation="FILL_SEQUENTIAL",
+                    params={"column": "birth year", "start": 1, "step": 1},
+                    label="Fill 'birth year' with sequential numbers"
+                )
+            ]
+        )
+        result = engine.handle(ctx)
+        assert result.success is True, f"Expected success but got error: {result.error}"
+        assert result.metadata.get("transform_plan") is not None
+        plan = result.metadata["transform_plan"]
+        assert plan['affected_cells_count'] == 2
+        mock_ir_plan.assert_called_once()

@@ -286,8 +286,43 @@ class TransformEngine(BaseEngine):
                 plan = ir_compiler.simulation_to_plan(ir, sim, dataset_id, fingerprint)
                 
             else:
-                # Existing fast-path planner
-                plan = transformation_planner.plan(df, operation, dataset_id)
+                # Direct planner with resilient IR Planner fallback
+                try:
+                    plan = transformation_planner.plan(df, operation, dataset_id)
+                except Exception as planner_err:
+                    user_msg = getattr(context, 'message', '') or operation.get('user_prompt') or ''
+                    if user_msg:
+                        logger.info(
+                            "[TransformEngine] Direct planner failed (%s). Delegating to intelligent IR Planner for: %s",
+                            planner_err, user_msg
+                        )
+                        from transformation.ir_planner import ir_planner
+                        from transformation.validator import ir_validator
+                        from transformation.compiler import ir_compiler
+
+                        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+                        nullable = {col: df[col].isnull().any() for col in df.columns}
+                        ir = ir_planner.plan(user_msg, list(df.columns), dtypes, nullable)
+                        validation = ir_validator.validate(ir, df)
+                        if not validation.valid:
+                            err_msg = "Validation failed: " + "; ".join(validation.errors)
+                            return EngineResult(
+                                answer=f"Cannot create transformation plan: {err_msg}",
+                                source='transform', provider='system', success=False,
+                                error=err_msg, should_compose=False,
+                            )
+                        sim = ir_compiler.compile_and_simulate(ir, df, dataset_id)
+                        if not sim.success:
+                            err_msg = "Simulation failed: " + "; ".join(sim.errors)
+                            return EngineResult(
+                                answer=f"Cannot create transformation plan: {err_msg}",
+                                source='transform', provider='system', success=False,
+                                error=err_msg, should_compose=False,
+                            )
+                        fingerprint = _compute_fingerprint(df)
+                        plan = ir_compiler.simulation_to_plan(ir, sim, dataset_id, fingerprint)
+                    else:
+                        raise planner_err
                 
         except TransformationClarificationRequired as e:
             extra_meta = {}

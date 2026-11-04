@@ -1102,8 +1102,7 @@ class TransformationPlanner:
         column = op.get('column', '')
         if not column:
             raise ValueError("FILL_SEQUENTIAL requires a 'column' name.")
-        if column not in df.columns:
-            raise ValueError(f"Column '{column}' not found in dataset. FILL_SEQUENTIAL modifies an existing column.")
+        is_existing = column in df.columns
 
         start = op.get('start', 1)
         step = op.get('step', 1)
@@ -1118,7 +1117,7 @@ class TransformationPlanner:
         # Build a preview sample showing before→after for first 20 rows
         sample = []
         for i, idx in enumerate(df.index[:20]):
-            before_val = df.loc[idx, column]
+            before_val = df.loc[idx, column] if is_existing else None
             after_val = start + i * step
             sample.append(AffectedCell(
                 row_index=int(idx),

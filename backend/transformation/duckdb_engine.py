@@ -451,17 +451,23 @@ class DuckDBTransformationEngine:
                 except (TypeError, ValueError):
                     start, step = 1, 1
                 q_col = self.quote_ident(col)
-                # Build all columns, replacing target col with sequential expression
+                # Build all columns, replacing or adding target col with sequential expression
                 select_exprs = []
                 params_list = []
-                for c in df.columns:
-                    qc = self.quote_ident(c)
-                    if c == col:
-                        # (ROW_NUMBER() OVER () - 1) * step + start
-                        select_exprs.append(f"(ROW_NUMBER() OVER () - 1) * ? + ? AS {q_col}")
-                        params_list.extend([step, start])
-                    else:
-                        select_exprs.append(qc)
+                if col in df.columns:
+                    for c in df.columns:
+                        qc = self.quote_ident(c)
+                        if c == col:
+                            # (ROW_NUMBER() OVER () - 1) * step + start
+                            select_exprs.append(f"(ROW_NUMBER() OVER () - 1) * ? + ? AS {q_col}")
+                            params_list.extend([step, start])
+                        else:
+                            select_exprs.append(qc)
+                else:
+                    for c in df.columns:
+                        select_exprs.append(self.quote_ident(c))
+                    select_exprs.append(f"(ROW_NUMBER() OVER () - 1) * ? + ? AS {q_col}")
+                    params_list.extend([step, start])
                 query = f"SELECT {', '.join(select_exprs)} FROM df_working"
                 res_df = con.execute(query, params_list).df()
                 metrics["column"] = col
