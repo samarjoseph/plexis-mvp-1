@@ -786,7 +786,7 @@ class TransformationPlanner:
             elif len(matching_cols) == 0:
                 from transformation.mismatch import find_mismatch_candidate
                 candidate_old_lit = find_mismatch_candidate(df, old_lit, list(df.columns))
-                if candidate_old_lit:
+                if candidate_old_lit and op.get('_require_type_confirmation', False):
                     matching_mismatch_cols = [c for c in df.columns if build_mask(df[c], candidate_old_lit).any()]
                     raise ValueTypeMismatchConfirmationRequired(
                         f"I couldn't find any {old_lit.value_type} values matching your request.",
@@ -825,7 +825,7 @@ class TransformationPlanner:
 
         from transformation.mismatch import find_mismatch_candidate
         candidate_new_lit = find_mismatch_candidate(df, new_lit, matching_cols)
-        if candidate_new_lit:
+        if candidate_new_lit and op.get('_require_type_confirmation', False):
             # We found that the user's intended replacement value has a strong textual match in the target columns,
             # but they used a different type. Suggest the mismatch.
             raise ValueTypeMismatchConfirmationRequired(

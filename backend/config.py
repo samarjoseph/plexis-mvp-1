@@ -69,13 +69,15 @@ class Config:
 
     ANALYSIS_OPENROUTER_MODEL: str = os.environ.get("ANALYSIS_OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
     ANALYSIS_OPENROUTER_FALLBACK_MODEL: str = os.environ.get(
-        "ANALYSIS_OPENROUTER_FALLBACK_MODEL", "nvidia/nemotron-3.5-lightning:free"
+        "ANALYSIS_OPENROUTER_FALLBACK_MODEL",
+        "google/gemma-2-27b-it:free" if os.environ.get("ANALYSIS_OPENROUTER_MODEL") != "google/gemma-2-27b-it:free" else "nvidia/nemotron-3.5-lightning:free"
     ).strip()
     ANALYSIS_GEMINI_MODEL: str = os.environ.get("ANALYSIS_GEMINI_MODEL", "gemini-3.5-flash").strip()
 
     CONVERSATION_OPENROUTER_MODEL: str = os.environ.get("CONVERSATION_OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
     CONVERSATION_OPENROUTER_FALLBACK_MODEL: str = os.environ.get(
-        "CONVERSATION_OPENROUTER_FALLBACK_MODEL", "nvidia/nemotron-3.5-lightning:free"
+        "CONVERSATION_OPENROUTER_FALLBACK_MODEL",
+        "google/gemma-2-27b-it:free" if os.environ.get("CONVERSATION_OPENROUTER_MODEL") != "google/gemma-2-27b-it:free" else "nvidia/nemotron-3.5-lightning:free"
     ).strip()
     CONVERSATION_GEMINI_MODEL: str = os.environ.get("CONVERSATION_GEMINI_MODEL", "gemini-3.5-flash").strip()
 

@@ -61,8 +61,11 @@ class DuckDBTransformationEngine:
         escaped = str(ident).replace('"', '""')
         return f'"{escaped}"'
 
-    def can_handle(self, operation_type: str) -> bool:
+    def can_handle(self, operation_type: str, payload: Optional[Dict[str, Any]] = None) -> bool:
         """Check if this operation is natively supported by the DuckDB engine."""
+        if payload and payload.get('_old_typed'):
+            # Fall back to pandas semantic typed literal matcher to preserve exact scalar Python types
+            return False
         return (operation_type or "").upper() in self.SUPPORTED_OPERATIONS
 
     def execute(

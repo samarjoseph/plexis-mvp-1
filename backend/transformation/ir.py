@@ -32,10 +32,16 @@ ALLOWED_EXPR_TYPES = frozenset({
     'NOT',
     'AND',
     'OR',
+    'IS_NULL',
+    'IS_NOT_NULL',
 })
 
 # Allowlisted comparison operators
-ALLOWED_COMPARE_OPS = frozenset({'==', '!=', '<', '>', '<=', '>='})
+ALLOWED_COMPARE_OPS = frozenset({
+    '==', '!=', '<', '>', '<=', '>=',
+    'is_null', 'is_not_null', 'isnull', 'notnull', 'is null', 'is not null',
+    'in', 'not_in', 'not in',
+})
 
 # Allowlisted arithmetic operators
 ALLOWED_ARITHMETIC_OPS = frozenset({'add', 'subtract', 'multiply', 'divide', 'modulo', 'abs'})
@@ -92,9 +98,18 @@ def validate_expr_node(node: dict, depth: int = 0) -> List[str]:
         for side in ('left', 'right'):
             child = node.get(side)
             if child is None:
+                if side == 'right' and op in ('is_null', 'is_not_null', 'isnull', 'notnull', 'is null', 'is not null'):
+                    continue
                 errors.append(f"COMPARE requires '{side}' operand")
             elif isinstance(child, dict):
                 errors.extend(validate_expr_node(child, depth + 1))
+
+    elif node_type in ('IS_NULL', 'IS_NOT_NULL'):
+        operand = node.get('operand') or node.get('left')
+        if operand is None:
+            errors.append(f"{node_type} requires 'operand' or 'left'")
+        elif isinstance(operand, dict):
+            errors.extend(validate_expr_node(operand, depth + 1))
 
     elif node_type == 'ARITHMETIC':
         op = node.get('operator', '')
@@ -317,6 +332,10 @@ _register(PrimitiveSpec('FILTER_ROWS', 'Keep or remove rows matching a condition
                         required_params=['action'],
                         optional_params=['column', 'operator', 'value'],
                         requires_expression=False,  # can use expr OR params
+                        modifies_shape=True))
+_register(PrimitiveSpec('REMOVE_EMPTY_ROWS', 'Remove rows containing missing, null, NaN, or empty values',
+                        required_params=[],
+                        optional_params=['how', 'columns'],
                         modifies_shape=True))
 _register(PrimitiveSpec('CAST', 'Convert column data type',
                         required_params=['column', 'dtype']))

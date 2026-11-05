@@ -16,6 +16,34 @@ class UnsafeExpressionError(Exception):
 class ExpressionError(Exception):
     pass
 
+def _safe_eq(l, r):
+    if isinstance(l, pd.Series):
+        if r is None or (np.isscalar(r) and pd.isna(r)):
+            return l.isna()
+        return l == r
+    elif isinstance(r, pd.Series):
+        if l is None or (np.isscalar(l) and pd.isna(l)):
+            return r.isna()
+        return l == r
+    else:
+        if (l is None or (np.isscalar(l) and pd.isna(l))) and (r is None or (np.isscalar(r) and pd.isna(r))):
+            return True
+        return l == r
+
+def _safe_ne(l, r):
+    if isinstance(l, pd.Series):
+        if r is None or (np.isscalar(r) and pd.isna(r)):
+            return ~l.isna()
+        return l != r
+    elif isinstance(r, pd.Series):
+        if l is None or (np.isscalar(l) and pd.isna(l)):
+            return ~r.isna()
+        return l != r
+    else:
+        if (l is None or (np.isscalar(l) and pd.isna(l))) and (r is None or (np.isscalar(r) and pd.isna(r))):
+            return False
+        return l != r
+
 class ExpressionEvaluator:
     def evaluate(self, expr: dict, df: pd.DataFrame) -> pd.Series:
         """Evaluate an expression AST into a pandas Series. SAFE: no eval/exec."""
@@ -45,11 +73,33 @@ class ExpressionEvaluator:
                 
             elif node_type == 'COMPARE':
                 left = self.evaluate(expr.get('left', {}), df)
-                right = self.evaluate(expr.get('right', {}), df)
-                op = expr.get('operator')
+                right_expr = expr.get('right')
+                right = self.evaluate(right_expr, df) if right_expr is not None else None
+                op = str(expr.get('operator', '')).lower()
+
+                if op in ('is_null', 'isnull', 'is null'):
+                    if isinstance(left, pd.Series):
+                        return left.isna() | (left.astype(str).str.strip().isin(['', 'None', 'nan', 'NaN', 'null', 'NULL']))
+                    return pd.Series([left is None or str(left).strip() in ('', 'None', 'nan', 'NaN', 'null', 'NULL')] * len(df), index=df.index)
+
+                if op in ('is_not_null', 'notnull', 'not_null', 'is not null'):
+                    if isinstance(left, pd.Series):
+                        return ~left.isna() & (~left.astype(str).str.strip().isin(['', 'None', 'nan', 'NaN', 'null', 'NULL']))
+                    return pd.Series([left is not None and str(left).strip() not in ('', 'None', 'nan', 'NaN', 'null', 'NULL')] * len(df), index=df.index)
+
+                if op in ('in',):
+                    if isinstance(right, (list, tuple, set)):
+                        return left.isin(right)
+                    return left.isin([right])
+
+                if op in ('not_in', 'not in'):
+                    if isinstance(right, (list, tuple, set)):
+                        return ~left.isin(right)
+                    return ~left.isin([right])
+
                 ops = {
-                    '==': lambda l, r: l == r,
-                    '!=': lambda l, r: l != r,
+                    '==': _safe_eq,
+                    '!=': _safe_ne,
                     '<': lambda l, r: l < r,
                     '>': lambda l, r: l > r,
                     '<=': lambda l, r: l <= r,
@@ -61,12 +111,11 @@ class ExpressionEvaluator:
                     # Typed literal comparisons use the same semantic rules as
                     # fast-path replacement planning and execution.
                     left_expr = expr.get('left', {})
-                    right_expr = expr.get('right', {})
                     literal_expr = None
                     values = None
-                    if left_expr.get('type') == 'LITERAL' and right_expr.get('type') == 'COLUMN':
+                    if left_expr.get('type') == 'LITERAL' and right_expr and right_expr.get('type') == 'COLUMN':
                         literal_expr, values = left_expr, right
-                    elif right_expr.get('type') == 'LITERAL' and left_expr.get('type') == 'COLUMN':
+                    elif right_expr and right_expr.get('type') == 'LITERAL' and left_expr.get('type') == 'COLUMN':
                         literal_expr, values = right_expr, left
                     if literal_expr is not None:
                         typed = literal_expr.get('typed_literal')
@@ -75,6 +124,18 @@ class ExpressionEvaluator:
                             mask = build_mask(values, TypedLiteral.from_dict(typed))
                             return mask if op == '==' else ~mask
                 return ops[op](left, right)
+
+            elif node_type in ('IS_NULL', 'IS_NOT_NULL'):
+                operand_expr = expr.get('operand') or expr.get('left', {})
+                operand = self.evaluate(operand_expr, df)
+                if node_type == 'IS_NULL':
+                    if isinstance(operand, pd.Series):
+                        return operand.isna() | (operand.astype(str).str.strip().isin(['', 'None', 'nan', 'NaN', 'null', 'NULL']))
+                    return pd.Series([operand is None or str(operand).strip() in ('', 'None', 'nan', 'NaN', 'null', 'NULL')] * len(df), index=df.index)
+                else:
+                    if isinstance(operand, pd.Series):
+                        return ~operand.isna() & (~operand.astype(str).str.strip().isin(['', 'None', 'nan', 'NaN', 'null', 'NULL']))
+                    return pd.Series([operand is not None and str(operand).strip() not in ('', 'None', 'nan', 'NaN', 'null', 'NULL')] * len(df), index=df.index)
                 
             elif node_type == 'ARITHMETIC':
                 op = expr.get('operator')
@@ -394,12 +455,37 @@ class IRCompiler:
                 elif operator == '<': mask = col_series < val
                 elif operator == '>=': mask = col_series >= val
                 elif operator == '<=': mask = col_series <= val
+                elif operator in ('is_null', 'isnull', 'is null'):
+                    mask = col_series.isna() | (col_series.astype(str).str.strip().isin(['', 'None', 'nan', 'NaN', 'null', 'NULL']))
+                elif operator in ('is_not_null', 'notnull', 'not_null', 'is not null'):
+                    mask = ~col_series.isna() & (~col_series.astype(str).str.strip().isin(['', 'None', 'nan', 'NaN', 'null', 'NULL']))
+                elif operator in ('in',):
+                    mask = col_series.isin(val if isinstance(val, (list, tuple, set)) else [val])
+                elif operator in ('not_in', 'not in'):
+                    mask = ~col_series.isin(val if isinstance(val, (list, tuple, set)) else [val])
                 else: raise ValueError(f"Unknown operator {operator}")
                 
             if action == 'KEEP':
                 df.drop(df.index[~mask], inplace=True)
             else:
                 df.drop(df.index[mask], inplace=True)
+
+        elif op == 'REMOVE_EMPTY_ROWS':
+            how = str(p.get('how', 'any')).lower()
+            cols = p.get('columns') or list(df.columns)
+            if isinstance(cols, str): cols = [cols]
+            valid_cols = [c for c in cols if c in df.columns]
+            if valid_cols:
+                null_mask = df[valid_cols].isnull()
+                for c in valid_cols:
+                    if df[c].dtype == object or pd.api.types.is_string_dtype(df[c].dtype):
+                        empty_mask = df[c].astype(str).str.strip().isin(['', 'None', 'nan', 'NaN', 'null', 'NULL'])
+                        null_mask[c] = null_mask[c] | empty_mask
+                if how == 'all':
+                    rows_to_drop = null_mask.all(axis=1)
+                else:
+                    rows_to_drop = null_mask.any(axis=1)
+                df.drop(df.index[rows_to_drop], inplace=True)
                 
         elif op == 'CAST':
             col = p['column']

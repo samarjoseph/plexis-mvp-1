@@ -195,7 +195,7 @@ class TransformationExecutor:
 
         # ── Primary: DuckDB Transformation Engine (SQL-first) ─────────────
         from transformation.duckdb_engine import duckdb_transformation_engine
-        if duckdb_transformation_engine.can_handle(op):
+        if duckdb_transformation_engine.can_handle(op, payload):
             try:
                 transformed_df, metrics = duckdb_transformation_engine.execute(
                     df, op, payload, plan.dataset_id

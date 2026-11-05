@@ -217,6 +217,15 @@ class IRValidator:
                 if out_col:
                     current_columns.add(out_col)
 
+            elif step.operation == 'REMOVE_EMPTY_ROWS':
+                cols = step.params.get('columns')
+                if cols:
+                    if isinstance(cols, str):
+                        cols = [cols]
+                    for c in cols:
+                        if c not in current_columns:
+                            errors.append(f"Step {step.id}: Column '{c}' does not exist")
+
             elif step.operation == 'FILL_PATTERN':
                 col_name = step.params.get('column')
                 if col_name and col_name not in current_columns:
