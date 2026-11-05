@@ -194,7 +194,7 @@ def build_interpreter_prompt(
         "  INVESTIGATE:\n"
         "    'analyze the dataset', 'run an investigation', 'investigate this data',\n"
         "    'give me a full analysis', 'what insights does this data have' â†’ INVESTIGATE.\n"
-        "  If the user asks for a column that does NOT exist in the DATASET SCHEMA (e.g. salary), YOU MUST return CONVERSATION intent. Do NOT substitute it.\n"
+        "  If the user asks an analytical (read-only) question for a column that does NOT exist in the DATASET SCHEMA (e.g. salary), YOU MUST return CONVERSATION intent. Do NOT substitute it. HOWEVER, if the user asks to ADD, CREATE, GENERATE, or FILL a NEW column (e.g. 'add a column birth year'), this is TRANSFORM (mutation), because the new column will be added to the dataset!\n"
     ) if dataset_loaded else (
         "\nROUTING RULES (NO DATASET):\n"
         "  - No dataset is loaded. Do not invent data results.\n"

@@ -38,7 +38,7 @@ class Config:
         os.environ.get("NVIDIA_API_KEY_3", ""),
     ])
     ROUTER_MISTRAL_MODEL: str = os.environ.get("ROUTER_MISTRAL_MODEL", "mistral-small-latest").strip()
-    ROUTER_NVIDIA_MODEL: str = os.environ.get("ROUTER_NVIDIA_MODEL", "google/diffusiongemma-26b-a4b-it").strip()
+    ROUTER_NVIDIA_MODEL: str = os.environ.get("ROUTER_NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b").strip()
 
     # ── Role: Transformation (Primary: Gemini Pool) ───────────────────────────
     GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "").strip()

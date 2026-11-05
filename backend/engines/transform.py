@@ -126,38 +126,20 @@ class TransformEngine(BaseEngine):
         # Generate plan (no mutation)
         try:
             op_type = operation.get('type')
-            
-            if op_type == 'IR_REQUIRED':
+            operations = getattr(context, 'llm_operations', None) or ([operation] if operation else [])
+            is_compound = len(operations) > 1 or op_type in ('IR_REQUIRED', 'IR_COMPOSITE') or bool(operation.get('steps'))
+
+            if is_compound or op_type == 'IR_REQUIRED':
                 from transformation.ir_planner import ir_planner
                 from transformation.validator import ir_validator
                 from transformation.compiler import ir_compiler
                 from transformation.ir import TransformationIR, TransformStep, PRIMITIVE_REGISTRY
-                
-                target_col = operation.get('column')
-                user_msg = operation.get('user_prompt') or getattr(context, 'message', '')
-                if not target_col:
-                    col_match = re.search(r'(?:column|col)\s+["\']?([^"\'\s]+)["\']?', user_msg, re.IGNORECASE)
-                    if col_match and col_match.group(1).lower() not in ('called', 'named', 'that', 'the', 'a', 'new', 'column', 'col'):
-                        target_col = col_match.group(1)
 
-                # Fast path 0: Pattern or sequence fill
-                if operation.get('pattern') and (operation.get('column') or target_col):
-                    col = operation.get('column') or target_col
-                    pattern = operation['pattern']
-                    ir = TransformationIR(
-                        goal=f"Fill alternating pattern in '{col}'",
-                        steps=[
-                            TransformStep(
-                                id='step_1',
-                                operation='FILL_PATTERN',
-                                params={'column': col, 'pattern': pattern, 'mode': operation.get('mode', 'alternating')},
-                                label=f"Fill alternating pattern in '{col}'",
-                            )
-                        ]
-                    )
-                # Fast path 1: If expression and column are already resolved (e.g. follow-up or choice click)
-                elif operation.get('expression') and (operation.get('column') or target_col):
-                    col = operation.get('column') or target_col
+                user_msg = operation.get('user_prompt') or getattr(context, 'message', '')
+
+                # If from a structured clarification choice with an already resolved expression
+                if operation.get('_from_clarification') and operation.get('expression') and operation.get('column'):
+                    col = operation['column']
                     is_existing = col in df.columns
                     action = operation.get('_action') or ('MODIFY_COLUMN' if is_existing else 'CREATE_COLUMN')
                     expr = operation['expression']
@@ -173,81 +155,36 @@ class TransformEngine(BaseEngine):
                             )
                         ]
                     )
-                # Fast path 2: Literal value provided without expression (e.g. add column status with 'active' / 0)
-                elif (operation.get('column') or target_col) and operation.get('value') is not None:
-                    col = operation.get('column') or target_col
-                    is_existing = col in df.columns
-                    action = operation.get('_action') or ('MODIFY_COLUMN' if is_existing else 'CREATE_COLUMN')
-                    val = operation['value']
-                    operation['expression'] = {
-                        'type': 'LITERAL',
-                        'value': val,
-                    }
-                    ir = TransformationIR(
-                        goal=f"{'Update' if is_existing else 'Create'} column '{col}'",
-                        steps=[
-                            TransformStep(
-                                id='step_1',
-                                operation=action,
-                                params={'column': col},
-                                expression=operation['expression'],
-                                label=f"{'Update' if is_existing else 'Create'} column '{col}'",
-                            )
-                        ]
-                    )
                 else:
-                    # Check whether user is explicitly asking to add/create a NEW column without any formula, value, or pattern
-                    is_explicit_create = bool(
-                        operation.get('_action') in ('CREATE_COLUMN', 'ADD_COLUMN')
-                        or re.search(r'\b(?:add|create)\s+(?:a\s+)?(?:new\s+)?(?:column|col)\b', user_msg, re.IGNORECASE)
-                    )
-                    has_explicit_formula = bool(re.search(
-                        r'(?:[=+*/%]|(?:\s-\s)|\b(?:with|equal\s+to|set\s+to|calculate|calculated|compute|computed|as|from|where|when|divided\s+by|multiplied\s+by|plus|minus)\b)',
-                        user_msg,
-                        re.IGNORECASE
-                    ))
-                    is_compound = bool(re.search(
-                        r'\b(?:and|then|also|afterwards|next)\s+(?:also\s+)?(?:fill|remove|delete|drop|add|create|filter|sort|replace|change|cast|convert|rename|clean|normalize|update|calculate|compute|populate|make|set)\b',
-                        user_msg,
-                        re.IGNORECASE
-                    ))
-
-                    # Fast path 3: If user explicitly asks to create a NEW column that does not exist yet without formula/value/pattern/compound actions,
-                    # trigger clarification immediately without calling LLM (avoids 504 timeouts & stalls)
-                    if (
-                        is_explicit_create
-                        and target_col
-                        and (target_col not in df.columns)
-                        and not has_explicit_formula
-                        and not is_compound
-                        and operation.get('value') is None
-                        and not operation.get('pattern')
-                    ):
-                        self._raise_column_clarification(df, target_col, user_msg, is_existing=False)
-
-                    # We need column types for schema
                     dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
                     nullable = {col: df[col].isnull().any() for col in df.columns}
-                    
-                    # Call IR planner with resilient fallback on LLM failure
+
                     try:
                         ir = ir_planner.plan(user_msg, list(df.columns), dtypes, nullable)
                     except Exception as llm_err:
-                        if target_col:
-                            logger.warning(
-                                '[TransformEngine] IR planning LLM failed (%s); falling back to column clarification for %r',
-                                llm_err, target_col
-                            )
-                            self._raise_column_clarification(df, target_col, user_msg, is_existing=(target_col in df.columns))
-                        raise
-                
+                        logger.warning(
+                            '[TransformEngine] IR planning LLM failed (%s); attempting operation synthesis fallback',
+                            llm_err
+                        )
+                        ir = self._synthesize_ir_from_operations(operations, df, user_msg)
+                        if not ir or not ir.steps:
+                            raise
+
                 # Check if any step requires an expression but has None
                 missing_expr_step = None
-                for s in ir.steps:
+                for idx, s in enumerate(ir.steps):
                     spec = PRIMITIVE_REGISTRY.get(s.operation)
-                    if (spec and spec.requires_expression and not s.expression) or (s.operation in ('CREATE_COLUMN', 'MODIFY_COLUMN') and not s.expression):
-                        missing_expr_step = s
-                        break
+                    needs_expr = (spec and spec.requires_expression and not s.expression) or (s.operation in ('CREATE_COLUMN', 'MODIFY_COLUMN') and not s.expression)
+                    if needs_expr:
+                        col_name = s.params.get('column')
+                        subsequent_fill = any(
+                            sub.operation in ('FILL_SEQUENTIAL', 'FILL_PATTERN', 'FILL', 'POPULATE_SEQUENCE', 'MAP_VALUES')
+                            and sub.params.get('column') == col_name
+                            for sub in ir.steps[idx + 1:]
+                        )
+                        if not subsequent_fill:
+                            missing_expr_step = s
+                            break
 
                 # Validate IR
                 validation = ir_validator.validate(ir, df)
@@ -399,7 +336,19 @@ class TransformEngine(BaseEngine):
             or bool(plan.affected_columns and plan.operation_type in ('DROP_COLUMN', 'RENAME_COLUMN'))
         )
 
-        if is_schema_op:
+        if plan.operation_type == 'IR_COMPOSITE':
+            step_labels = (plan.operation_payload or {}).get('step_labels', [])
+            steps_text = "\n".join(f"{i+1}. {label}" for i, label in enumerate(step_labels)) if step_labels else ""
+            answer = f"{plan.operation_label}.\n\n"
+            if steps_text:
+                answer += f"**Planned Steps:**\n{steps_text}\n\n"
+            answer += (
+                f"{cells} {'cell' if cells == 1 else 'cells'} will change across {len(plan.affected_columns)} column(s). "
+                f"Review the plan below and click **Apply Changes**."
+            )
+            if plan.warnings:
+                answer += '\n\n⚠️ ' + ' '.join(plan.warnings)
+        elif is_schema_op:
             cols_count = len(plan.affected_columns) or 1
             if plan.operation_type == 'DROP_COLUMN':
                 col_name = plan.affected_columns[0] if plan.affected_columns else ''
@@ -730,6 +679,148 @@ class TransformEngine(BaseEngine):
                 },
             },
             should_compose=False,
+        )
+
+    def _synthesize_ir_from_operations(self, operations: list, df: pd.DataFrame, user_msg: str):
+        from transformation.ir import TransformationIR, TransformStep
+        steps = []
+        created_cols = set(df.columns)
+        step_idx = 1
+        for op in operations:
+            if not isinstance(op, dict):
+                continue
+            op_t = str(op.get('type', '')).upper()
+            if op_t in ('ADD_COLUMN', 'CREATE_COLUMN'):
+                col = op.get('column') or op.get('name')
+                if col:
+                    created_cols.add(col)
+                    expr = op.get('expression') or {'type': 'LITERAL', 'value': op.get('value')}
+                    steps.append(TransformStep(
+                        id=f'step_{step_idx}',
+                        operation='CREATE_COLUMN',
+                        params={'column': col},
+                        expression=expr,
+                        label=f"Create column '{col}'"
+                    ))
+                    step_idx += 1
+            elif op_t == 'FILL_SEQUENTIAL':
+                col = op.get('column')
+                if col and col not in created_cols:
+                    created_cols.add(col)
+                    steps.append(TransformStep(
+                        id=f'step_{step_idx}',
+                        operation='CREATE_COLUMN',
+                        params={'column': col},
+                        expression={'type': 'LITERAL', 'value': None},
+                        label=f"Create column '{col}'"
+                    ))
+                    step_idx += 1
+                if col:
+                    steps.append(TransformStep(
+                        id=f'step_{step_idx}',
+                        operation='FILL_SEQUENTIAL',
+                        params={'column': col, 'start': op.get('start', 1), 'step': op.get('step', 1)},
+                        label=f"Fill '{col}' sequentially from {op.get('start', 1)}"
+                    ))
+                    step_idx += 1
+            elif op_t == 'REMOVE_EMPTY_ROWS':
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='REMOVE_EMPTY_ROWS',
+                    params={'how': op.get('how', 'any'), 'columns': op.get('columns')},
+                    label="Remove rows containing missing values"
+                ))
+                step_idx += 1
+            elif op_t == 'FILL_MISSING':
+                cols = op.get('columns') or ([op['column']] if op.get('column') else [])
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='FILL',
+                    params={'columns': cols, 'value': op.get('value', 0)},
+                    label=f"Fill missing values in {cols}"
+                ))
+                step_idx += 1
+            elif op_t == 'DROP_COLUMN':
+                col = op.get('column')
+                if col:
+                    steps.append(TransformStep(
+                        id=f'step_{step_idx}',
+                        operation='DROP_COLUMN',
+                        params={'column': col},
+                        label=f"Drop column '{col}'"
+                    ))
+                    step_idx += 1
+            elif op_t == 'RENAME_COLUMN':
+                old = op.get('column') or op.get('old_name')
+                new = op.get('new_name')
+                if old and new:
+                    steps.append(TransformStep(
+                        id=f'step_{step_idx}',
+                        operation='RENAME_COLUMN',
+                        params={'old_name': old, 'new_name': new},
+                        label=f"Rename '{old}' to '{new}'"
+                    ))
+                    step_idx += 1
+            elif op_t == 'DROP_DUPLICATES':
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='DROP_DUPLICATES',
+                    params={'columns': op.get('columns', [])},
+                    label="Remove duplicate rows"
+                ))
+                step_idx += 1
+            elif op_t == 'SORT_ROWS':
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='SORT_ROWS',
+                    params={'column': op.get('column'), 'ascending': op.get('ascending', True)},
+                    label=f"Sort by '{op.get('column')}'"
+                ))
+                step_idx += 1
+            elif op_t == 'FILTER_ROWS':
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='FILTER_ROWS',
+                    params=op,
+                    expression=op.get('expression'),
+                    label=f"Filter rows on '{op.get('column')}'"
+                ))
+                step_idx += 1
+            elif op_t == 'CUSTOM_TRANSFORM':
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='CUSTOM_TRANSFORM',
+                    params={'code': op.get('code', '')},
+                    label="Custom transformation"
+                ))
+                step_idx += 1
+            elif op_t == 'REPLACE_VALUES':
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='REPLACE',
+                    params={'column': op.get('column'), 'old_value': op.get('old_value'), 'new_value': op.get('new_value'), '_old_typed': op.get('_old_typed'), '_new_typed': op.get('_new_typed')},
+                    label=f"Replace '{op.get('old_value')}' with '{op.get('new_value')}' in '{op.get('column')}'"
+                ))
+                step_idx += 1
+            elif op_t == 'NORMALIZE_TEXT':
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='NORMALIZE_TEXT',
+                    params=op,
+                    label=f"Normalize text in {op.get('columns')}"
+                ))
+                step_idx += 1
+            elif op_t == 'UPDATE_CELL':
+                steps.append(TransformStep(
+                    id=f'step_{step_idx}',
+                    operation='UPDATE_CELL',
+                    params=op,
+                    label=f"Update cell in '{op.get('column')}'"
+                ))
+                step_idx += 1
+        return TransformationIR(
+            goal=user_msg or "Execute multi-step transformation",
+            steps=steps
         )
 
     def _persist_plan(self, context, plan, entry):

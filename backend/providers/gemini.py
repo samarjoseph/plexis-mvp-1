@@ -33,8 +33,8 @@ def _get_genai_client(api_key: str):
         ) from e
 
     try:
-        retry_opts = _types.HttpRetryOptions(attempts=1) if hasattr(_types, 'HttpRetryOptions') else None
-        http_opts = _types.HttpOptions(timeout=15000, retry_options=retry_opts) if hasattr(_types, 'HttpOptions') else None
+        retry_opts = _types.HttpRetryOptions(attempts=3) if hasattr(_types, 'HttpRetryOptions') else None
+        http_opts = _types.HttpOptions(timeout=45000, retry_options=retry_opts) if hasattr(_types, 'HttpOptions') else None
         client = _genai.Client(api_key=api_key, http_options=http_opts)
         return client, _genai
     except Exception as e:
@@ -140,11 +140,8 @@ class GeminiProvider(IProviderAdapter):
                 logger.warning('[GeminiProvider] model_registry lookup failed: %s', exc)
             if not model_name:
                 from config import Config
-                model_name = Config.TRANSFORMATION_GEMINI_MODEL
+                model_name = Config.TRANSFORMATION_GEMINI_MODEL or "gemini-2.5-flash"
 
-        # Gracefully alias obsolete 2.5-flash to 3.5-flash
-        if model_name in ("gemini-2.5-flash", "models/gemini-2.5-flash"):
-            model_name = "gemini-3.5-flash"
         return model_name
 
     def generate(self, request: AIRequest, api_key: Optional[str] = None) -> ProviderResponse:
@@ -179,9 +176,11 @@ class GeminiProvider(IProviderAdapter):
                     config=config
                 )
             except Exception as call_err:
-                if ("404" in str(call_err) or "NOT_FOUND" in str(call_err)) and model_name != "gemini-3.5-flash":
-                    logger.warning(f"[GeminiProvider] Model {model_name} failed with 404/NOT_FOUND, retrying with gemini-3.5-flash")
-                    model_name = "gemini-3.5-flash"
+                err_str = str(call_err).lower()
+                is_transient = any(k in err_str for k in ("404", "not_found", "503", "unavailable", "504", "deadline", "timed out", "timeout"))
+                if is_transient and model_name != "gemini-2.5-flash":
+                    logger.warning(f"[GeminiProvider] Model {model_name} failed with transient error ({call_err}), retrying with gemini-2.5-flash")
+                    model_name = "gemini-2.5-flash"
                     response = client.models.generate_content(
                         model=model_name,
                         contents=prompt,

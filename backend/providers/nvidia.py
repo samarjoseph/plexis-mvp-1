@@ -60,7 +60,7 @@ class NvidiaProvider(IProviderAdapter):
         except Exception as exc:
             logger.warning('[NvidiaProvider] model_registry lookup failed: %s', exc)
 
-        return Config.ROUTER_NVIDIA_MODEL or "google/diffusiongemma-26b-a4b-it"
+        return Config.ROUTER_NVIDIA_MODEL or "nvidia/nemotron-3.5-lightning-30b-a3b"
 
     def generate(self, request: AIRequest, api_key: Optional[str] = None) -> ProviderResponse:
         effective_key = api_key or self._api_key
@@ -92,7 +92,7 @@ class NvidiaProvider(IProviderAdapter):
                 body['response_format'] = {'type': 'json_object'}
 
             start_time = time.time()
-            response = requests.post(self.endpoint, headers=headers, json=body, timeout=(3.0, 5.0))
+            response = requests.post(self.endpoint, headers=headers, json=body, timeout=(3.0, 6.0))
             
             if response.status_code == 429:
                 from providers.quarantine import parse_retry_after
@@ -113,7 +113,10 @@ class NvidiaProvider(IProviderAdapter):
             latency_ms = (time.time() - start_time) * 1000
             
             data = response.json()
-            raw_content = data.get('choices', [{}])[0].get('message', {}).get('content')
+            message_obj = data.get('choices', [{}])[0].get('message', {})
+            raw_content = message_obj.get('content')
+            if not raw_content and message_obj.get('reasoning_content'):
+                raw_content = message_obj['reasoning_content']
             text = (raw_content or '').strip()
             usage = data.get('usage', {})
             input_tokens = usage.get('prompt_tokens', 0)

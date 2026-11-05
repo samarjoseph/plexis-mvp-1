@@ -990,7 +990,7 @@ def _has_mutation_intent(message: str) -> bool:
         return True
     mutation_verbs = [
         r'\b(?:fill|fillna|impute)\b',
-        r'\b(?:drop|delete|remove)\s+(?:the\s+)?(?:\w+\s+)?(?:column|col|rows?|duplicate|dup)\b',
+        r'\b(?:drop|delete|remove)\s+(?:the\s+)?(?:\w+\s+)?(?:column|col|rows?|duplicate|dup|empty|null|missing|nan|blank)\b',
         r'\brename\s+(?:the\s+)?(?:\w+\s+)?(?:column|col)?\b',
         r'\b(?:replace|swap|change|update|set)\s+.*\s+(?:with|to|by|=)\b',
         r'\b(?:cast|convert)\s+\w+\s+(?:to|as|into)\b',
@@ -999,6 +999,7 @@ def _has_mutation_intent(message: str) -> bool:
         r'\bsort\s+(?:the\s+)?(?:data(?:set)?\s+)?by\b',
         r'\b(?:deduplicate|dedup)\b',
         r'\bfilter\s+(?:the\s+)?rows?\s+(?:where|when|if|to\s+keep|to\s+remove)\b',
+        r'\b(?:sequentially|sequential|number\s+the\s+rows|serial\s+number)\b',
     ]
     return any(re.search(pat, msg) for pat in mutation_verbs)
 
@@ -4938,6 +4939,15 @@ class MasterRouter:
                     f"[Router/LLM] provider failed: {response.error if response else 'no response'}. "
                     f"Falling back to {'analysis' if dataset_loaded else 'conversation'}."
                 )
+                if dataset_loaded and _has_mutation_intent(query):
+                    return {
+                        "intent": "TRANSFORM",
+                        "operations": [{"type": "IR_REQUIRED", "user_prompt": query}],
+                        "operation": {"type": "IR_REQUIRED", "user_prompt": query},
+                        "confidence": 0.85,
+                        "reason": f"Mutation intent detected in query; delegated to transform engine on LLM fallback ({response.error if response else 'timeout'})",
+                        "error": getattr(response, 'error', 'No provider response'),
+                    }
                 if dataset_loaded:
                     return {
                         "intent": "DATA_OPERATION",

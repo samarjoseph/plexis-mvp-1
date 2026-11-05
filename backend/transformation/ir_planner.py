@@ -780,7 +780,8 @@ class IRPlanner:
                         "You are a transformation planner. You output ONLY valid JSON. "
                         "No markdown. No code fences. No explanation."
                     ),
-                    max_tokens=2048,
+                    max_tokens=8192,
+                    json_mode=True,
                 )
             )
             if not response or not response.success or not (response.text or "").strip():

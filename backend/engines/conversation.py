@@ -351,7 +351,7 @@ class ConversationEngine(BaseEngine):
                 messages=[{"role": "user", "content": context_block}],
                 system_prompt=system_prompt,
                 temperature=0.75,
-                max_tokens=600,
+                max_tokens=2048,
             )
         )
 
