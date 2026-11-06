@@ -216,11 +216,26 @@ function DashboardInner() {
   const [userPlan, setUserPlan] = useState(() => getPlexisUserPlan());
 
   useEffect(() => {
-    PlexisAPI.getUserPlan()
-      .then((data) => {
-        if (data?.plan) setUserPlan(data.plan);
-      })
-      .catch(() => {});
+    const fetchPlan = () => {
+      PlexisAPI.getUserPlan()
+        .then((data) => {
+          if (data?.plan) setUserPlan(data.plan);
+        })
+        .catch(() => {});
+    };
+
+    fetchPlan();
+
+    const unsub = EventBus.on(Events.PLAN_UPDATED, (payload) => {
+      if (payload?.plan) setUserPlan(payload.plan);
+    });
+
+    window.addEventListener('focus', fetchPlan);
+
+    return () => {
+      unsub();
+      window.removeEventListener('focus', fetchPlan);
+    };
   }, []);
   // Spreadsheet panel state
   const [workspacePct, setWorkspacePct]     = useState(48);  // % of split area

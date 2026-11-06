@@ -71,9 +71,16 @@ export default function Billing() {
         .then((res) => {
           if (res?.verified) {
             setCurrentPlan('plus');
-            setPlanData((prev) => (prev ? { ...prev, plan: 'plus' } : prev));
+            setPlanData((prev) => (prev ? { ...prev, plan: 'plus' } : { plan: 'plus' }));
+            try { localStorage.setItem('plexis_user_plan', 'plus'); } catch (_) {}
             setToastMessage('🌟 Payment successful! You are now subscribed to Plexis Plus ($30/mo).');
             window.history.replaceState({}, document.title, window.location.pathname);
+            PlexisAPI.getUserPlan().then((fresh) => {
+              if (fresh?.plan) {
+                setCurrentPlan(fresh.plan);
+                setPlanData(fresh);
+              }
+            });
           } else {
             setToastMessage('Payment could not be verified. Please contact support.');
           }

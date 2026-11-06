@@ -207,4 +207,6 @@ export const Events = Object.freeze({
   // ── Plan & Subscription limits ───────────────────────────────────────────
   /** Fired when user hits or encounters a free plan limitation. Payload: { message, linkText, duration } */
   PLAN_LIMIT_NOTICE: 'plan:limit_notice',
+  /** Fired when user subscription plan is updated. Payload: { plan } */
+  PLAN_UPDATED: 'plan:updated',
 });

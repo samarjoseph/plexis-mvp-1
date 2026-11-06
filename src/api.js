@@ -6,6 +6,9 @@
  * v2.1: Chat API + X-User-Email identity header for DB persistence.
  */
 
+import { EventBus } from './events/EventBus.js';
+import { Events } from './events/Events.js';
+
 // Dynamic backend URL configuration for Cloudflare Pages and local development
 const RAW_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const BASE_URL = RAW_BASE_URL
@@ -41,7 +44,6 @@ function defaultHeaders(extra = {}) {
   return {
     'Content-Type': 'application/json',
     'X-User-Email': getPlexisUserEmail(),
-    'X-User-Plan': getPlexisUserPlan(),
     ...extra,
   };
 }
@@ -56,6 +58,7 @@ export const PlexisAPI = {
     const data = await res.json();
     if (data?.plan) {
       try { localStorage.setItem('plexis_user_plan', data.plan); } catch (_) {}
+      try { EventBus.emit(Events.PLAN_UPDATED, { plan: data.plan }); } catch (_) {}
     }
     return data;
   },
@@ -86,6 +89,7 @@ export const PlexisAPI = {
     const data = await res.json();
     if (data?.plan) {
       try { localStorage.setItem('plexis_user_plan', data.plan); } catch (_) {}
+      try { EventBus.emit(Events.PLAN_UPDATED, { plan: data.plan }); } catch (_) {}
     }
     return data;
   },
@@ -114,6 +118,7 @@ export const PlexisAPI = {
     const data = await res.json();
     if (data?.plan) {
       try { localStorage.setItem('plexis_user_plan', data.plan); } catch (_) {}
+      try { EventBus.emit(Events.PLAN_UPDATED, { plan: data.plan }); } catch (_) {}
     }
     return data;
   },

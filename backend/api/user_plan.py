@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request
 
 from db.session import get_db
 from db.identity import identity_resolver, IdentityError
+from config import Config
 from core.plans import (
     PLAN_FREE,
     PLAN_PLUS,
@@ -49,7 +50,47 @@ def get_user_plan():
 
     db = get_db()
     user_id = current_user.user_id
-    plan = normalize_plan(getattr(current_user, "plan", PLAN_FREE))
+
+    db_user = None
+    if db is not None:
+        db_user = user_repository.get_by_id(db, user_id)
+
+    plan = normalize_plan(getattr(db_user, "plan", getattr(current_user, "plan", PLAN_FREE)))
+
+    # Self-healing: if plan is free but user has an active Stripe subscription, restore Plus
+    if plan != PLAN_PLUS and Config.STRIPE_SECRET_KEY:
+        try:
+            import stripe
+            stripe.api_key = Config.STRIPE_SECRET_KEY
+            cust_id = getattr(db_user, "stripe_customer_id", None) if db_user else None
+            subs = []
+            if cust_id:
+                subs = stripe.Subscription.list(customer=cust_id, status="active", limit=1).data
+            if not subs:
+                customers = stripe.Customer.list(email=current_user.email, limit=3).data
+                for c in customers:
+                    s_list = stripe.Subscription.list(customer=c.id, status="active", limit=1).data
+                    if s_list:
+                        subs = s_list
+                        cust_id = c.id
+                        break
+            if subs:
+                active_sub = subs[0]
+                plan = PLAN_PLUS
+                if db_user and db is not None:
+                    db_user.plan = PLAN_PLUS
+                    db_user.stripe_customer_id = cust_id
+                    db_user.stripe_subscription_id = active_sub.id
+                    db.commit()
+                logger.info(
+                    "[USER_PLAN] Restored Plus plan for user %s (%s) from active Stripe subscription %s",
+                    user_id,
+                    current_user.email,
+                    active_sub.id,
+                )
+        except Exception as sub_err:
+            logger.warning("[USER_PLAN] Stripe active subscription verification error: %s", sub_err)
+
     limits = get_plan_limits(plan)
 
     # Calculate real-time usage stats

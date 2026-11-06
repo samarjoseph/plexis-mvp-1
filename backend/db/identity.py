@@ -122,12 +122,8 @@ class HeaderIdentityResolver(IdentityResolver):
                 else:
                     raise query_err
 
-            # Sync plan if client explicitly specified in dev header, otherwise use DB
-            if header_plan in ("free", "plus") and getattr(user, "plan", None) != header_plan:
-                user.plan = header_plan
-                db.flush()
+            # User plan is authoritative in DB; client headers must never overwrite it
             user_plan = getattr(user, "plan", "free") or "free"
-            db.commit()
             return CurrentUser(user_id=user.id, email=user.email_normalized, plan=user_plan)
         except Exception as e:
             if db is not None:
