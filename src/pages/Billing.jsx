@@ -57,16 +57,21 @@ export default function Billing() {
     const isCanceled = params.get('canceled');
 
     if (sessionId && isSuccess === 'true') {
+      setToastMessage('Verifying Stripe payment...');
       PlexisAPI.verifyBillingSession(sessionId)
         .then((res) => {
           if (res?.verified) {
             setCurrentPlan('plus');
+            setPlanData((prev) => (prev ? { ...prev, plan: 'plus' } : prev));
             setToastMessage('🌟 Payment successful! You are now subscribed to Plexis Plus ($30/mo).');
             window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            setToastMessage('Payment could not be verified. Please contact support.');
           }
         })
         .catch((e) => {
           console.error('[Billing] Session verification error:', e);
+          setToastMessage(`Payment verification error: ${e.message}`);
         });
     } else if (isCanceled === 'true') {
       setToastMessage('Checkout canceled. You can subscribe whenever you are ready.');
@@ -77,28 +82,18 @@ export default function Billing() {
   const handleUpgradeToPlus = async () => {
     if (updating) return;
     setUpdating(true);
+    setToastMessage('Redirecting to Stripe Checkout...');
     try {
       const res = await PlexisAPI.createCheckoutSession();
       if (res?.checkout_url) {
         window.location.href = res.checkout_url;
       } else {
-        throw new Error('No checkout URL received');
+        throw new Error(res?.error || 'No checkout URL received from Stripe');
       }
     } catch (err) {
-      console.warn('[Billing] Stripe checkout initiation failed, applying direct upgrade:', err);
-      try {
-        const fallback = await PlexisAPI.updateUserPlan('plus');
-        setCurrentPlan('plus');
-        if (fallback?.plan) {
-          setPlanData((p) => (p ? { ...p, plan: fallback.plan } : p));
-        }
-        setToastMessage('🌟 Upgraded to Plexis Plus ($30/mo)! Unlimited persistence activated.');
-        setTimeout(() => setToastMessage(null), 5000);
-      } catch (fallbackErr) {
-        setToastMessage('Failed to initiate checkout. Please try again.');
-        setTimeout(() => setToastMessage(null), 4000);
-      }
-    } finally {
+      console.error('[Billing] Stripe checkout initiation failed:', err);
+      setToastMessage(err.message || 'Failed to initiate Stripe Checkout. Please try again.');
+      setTimeout(() => setToastMessage(null), 6000);
       setUpdating(false);
     }
   };
@@ -423,9 +418,10 @@ export default function Billing() {
                   fontSize: '13px',
                 }}
                 disabled={updating}
-                onClick={handleManagePortal}
+                onClick={handleUpgradeToPlus}
+                title="Open Stripe payment interface to test card checkout"
               >
-                Manage Invoices & Cards
+                <Sparkles size={14} /> Open Stripe Checkout Page
               </button>
             </div>
           ) : (

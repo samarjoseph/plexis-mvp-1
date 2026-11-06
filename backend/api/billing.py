@@ -96,12 +96,20 @@ def create_checkout_session():
             "cancel_url": cancel_url,
         }
 
-        if customer_id:
-            session_kwargs["customer"] = customer_id
-        else:
-            session_kwargs["customer_email"] = current_user.email
-
-        session = stripe.checkout.Session.create(**session_kwargs)
+        try:
+            if customer_id:
+                session_kwargs["customer"] = customer_id
+            else:
+                session_kwargs["customer_email"] = current_user.email
+            session = stripe.checkout.Session.create(**session_kwargs)
+        except stripe.InvalidRequestError as inv_err:
+            if "No such customer" in str(inv_err) and customer_id:
+                logger.warning("[BILLING] Customer ID %s not found in Stripe, retrying with email", customer_id)
+                session_kwargs.pop("customer", None)
+                session_kwargs["customer_email"] = current_user.email
+                session = stripe.checkout.Session.create(**session_kwargs)
+            else:
+                raise inv_err
 
         logger.info(
             "[BILLING] Created Stripe Checkout Session %s for user %s (%s)",
