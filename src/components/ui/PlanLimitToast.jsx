@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, X, ArrowUpRight } from 'lucide-react';
+import { X } from 'lucide-react';
 import { EventBus } from '../../events/EventBus.js';
 import { Events } from '../../events/Events.js';
 import { getPlexisUserPlan } from '../../api.js';
@@ -12,21 +12,18 @@ export default function PlanLimitToast({ userPlan = 'free' }) {
 
   useEffect(() => {
     const unsub = EventBus.on(Events.PLAN_LIMIT_NOTICE, (payload) => {
-      // Only display for free plan users
+      // Only display for free tier users
       const currentPlan = getPlexisUserPlan() || userPlan;
       if (currentPlan === 'plus') return;
 
       const id = Date.now();
       const message = payload?.message || 'Want to meet more data? Upgrade to';
-      const linkText = payload?.linkText || 'Plus';
-      const duration = payload?.duration || 5500; // 5.5 seconds (within 5-6s specification)
+      const duration = payload?.duration || 5500;
 
-      setToast({ id, message, linkText, duration });
+      setToast({ id, message, duration });
     });
 
-    return () => {
-      unsub();
-    };
+    return () => unsub();
   }, [userPlan]);
 
   useEffect(() => {
@@ -46,40 +43,34 @@ export default function PlanLimitToast({ userPlan = 'free' }) {
         <motion.div
           key={toast.id}
           className="v2-plan-limit-toast"
-          initial={{ opacity: 0, y: 24, scale: 0.94 }}
+          initial={{ opacity: 0, y: 16, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 16, scale: 0.94 }}
-          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+          exit={{ opacity: 0, y: 12, scale: 0.96 }}
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
           role="alert"
         >
-          <div className="v2-plan-toast-icon">
-            <Sparkles size={16} />
-          </div>
-
-          <div className="v2-plan-toast-body">
-            <span className="v2-plan-toast-text">{toast.message}</span>
+          <span className="v2-plan-toast-text">
+            {toast.message}{' '}
             <button
               type="button"
-              className="v2-plan-toast-link"
+              className="v2-plan-toast-plus-btn"
               onClick={() => {
                 setToast(null);
                 navigate('/billing');
               }}
-              title="View Plexis Plus plan"
+              title="View Plus plan"
             >
-              <span>{toast.linkText}</span>
-              <ArrowUpRight size={13} />
+              Plus
             </button>
-          </div>
+          </span>
 
           <button
             type="button"
             className="v2-plan-toast-close"
             onClick={() => setToast(null)}
-            aria-label="Close notification"
-            title="Dismiss notification"
+            aria-label="Dismiss notification"
           >
-            <X size={15} />
+            <X size={13} />
           </button>
         </motion.div>
       )}

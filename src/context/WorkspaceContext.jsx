@@ -176,16 +176,6 @@ export function WorkspaceProvider({ children }) {
   const openWorkspace = useCallback((datasetId, sessionId) => {
     dispatch({ type: WorkspaceActions.OPEN, datasetId, sessionId });
     EventBus.emit(Events.WORKSPACE_OPENED, { datasetId, sessionId });
-    try {
-      const plan = localStorage.getItem('plexis_user_plan') || 'free';
-      if (plan !== 'plus') {
-        EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
-          message: 'Want to meet more data? Upgrade to',
-          linkText: 'Plus',
-          duration: 5500,
-        });
-      }
-    } catch (_) {}
   }, []);
 
   const closeWorkspace = useCallback(() => {

@@ -69,18 +69,16 @@ def _verify_db_migration(app: Flask) -> None:
         else:
             app.logger.info("[DB] Schema up to date at revision: %s", current_rev)
 
-        # Ensure 'plan' column exists on 'users' table
+        # Ensure 'plan', 'stripe_customer_id', and 'stripe_subscription_id' exist on 'users' table
         try:
             from sqlalchemy import text
-            with engine.connect() as conn:
-                try:
-                    conn.execute(text("SELECT plan FROM users LIMIT 1"))
-                except Exception:
-                    app.logger.info("[DB] Auto-migrating missing plan column on users table...")
-                    conn.execute(text("ALTER TABLE users ADD COLUMN plan VARCHAR(50) DEFAULT 'free'"))
-                    conn.commit()
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(50) DEFAULT 'free' NOT NULL;"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255);"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255);"))
+            app.logger.info("[DB] Verified users table schema (plan, stripe_customer_id, stripe_subscription_id)")
         except Exception as col_err:
-            app.logger.debug("[DB] Column check for users.plan: %s", col_err)
+            app.logger.error("[DB] Failed to ensure users table columns: %s", col_err)
 
     except SystemExit:
         raise

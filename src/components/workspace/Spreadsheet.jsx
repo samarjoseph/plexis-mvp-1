@@ -164,6 +164,28 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
   }, [ctxLoading, totalRows, datasetId, renderTick, ctxFilename, filename]);
 
   // ── AI / Operation state ──────────────────────────────────────────────────
+  // Announce plan limitation toast ONLY after visual loading completes and data is rendered
+  const hasAnnouncedPlanNoticeRef = useRef(false);
+
+  useEffect(() => {
+    hasAnnouncedPlanNoticeRef.current = false;
+  }, [datasetId]);
+
+  useEffect(() => {
+    if (!isVisualLoading && datasetId && totalRows > 0 && !hasAnnouncedPlanNoticeRef.current) {
+      hasAnnouncedPlanNoticeRef.current = true;
+      try {
+        const plan = localStorage.getItem('plexis_user_plan') || 'free';
+        if (plan !== 'plus') {
+          EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
+            message: 'Want to meet more data? Upgrade to',
+            duration: 5500,
+          });
+        }
+      } catch (_) {}
+    }
+  }, [isVisualLoading, datasetId, totalRows]);
+
   const [aiModeEnabled,     setAiModeEnabled]     = useState(false);
   const [isAiLoading,       setIsAiLoading]       = useState(false);
   const [operationHistory,  setOperationHistory]  = useState([]); // [{ id, type, params, result, explanation }]

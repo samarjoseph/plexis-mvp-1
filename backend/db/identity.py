@@ -105,7 +105,23 @@ class HeaderIdentityResolver(IdentityResolver):
                 dev_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, email)
                 plan = header_plan if header_plan in ("free", "plus") else "free"
                 return CurrentUser(user_id=dev_uuid, email=email, plan=plan)
-            user = user_repository.get_or_create_by_email(db, email)
+            try:
+                user = user_repository.get_or_create_by_email(db, email)
+            except Exception as query_err:
+                db.rollback()
+                err_str = str(query_err).lower()
+                if "column" in err_str and "plan" in err_str:
+                    logger.warning("[IDENTITY] Missing plan column detected in users table. Auto-migrating on the fly...")
+                    from sqlalchemy import text
+                    from db.engine import engine
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(50) DEFAULT 'free' NOT NULL;"))
+                        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255);"))
+                        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255);"))
+                    user = user_repository.get_or_create_by_email(db, email)
+                else:
+                    raise query_err
+
             # Sync plan if client explicitly specified in dev header, otherwise use DB
             if header_plan in ("free", "plus") and getattr(user, "plan", None) != header_plan:
                 user.plan = header_plan
@@ -114,6 +130,11 @@ class HeaderIdentityResolver(IdentityResolver):
             db.commit()
             return CurrentUser(user_id=user.id, email=user.email_normalized, plan=user_plan)
         except Exception as e:
+            if db is not None:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
             logger.error("[IDENTITY] Failed to resolve user for email=%s: %s", email, e)
             raise IdentityError(f"Could not resolve user identity: {e}") from e
 
