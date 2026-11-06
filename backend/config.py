@@ -166,6 +166,12 @@ class Config:
     )
     DB_POOL_SIZE: int = int(os.environ.get("DB_POOL_SIZE", "25"))
 
+    # ── Stripe Subscriptions & Billing ────────────────────────────────────────
+    STRIPE_SECRET_KEY: str = os.environ.get("STRIPE_SECRET_KEY", "").strip()
+    STRIPE_WEBHOOK_SECRET: str = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+    FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "https://plexisai.vercel.app").strip().rstrip("/")
+    PLUS_PRICE_CENTS: int = int(os.environ.get("PLUS_PRICE_CENTS", "3000"))  # $30.00 / month
+
     @classmethod
     def validate(cls) -> None:
         """Validate configuration settings per role."""

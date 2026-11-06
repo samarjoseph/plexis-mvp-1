@@ -49,20 +49,91 @@ export default function Billing() {
     };
   }, []);
 
-  const handleSwitchPlan = async (targetPlan) => {
-    if (targetPlan === currentPlan || updating) return;
+  useEffect(() => {
+    // Check for Stripe Checkout return
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id');
+    const isSuccess = params.get('success');
+    const isCanceled = params.get('canceled');
+
+    if (sessionId && isSuccess === 'true') {
+      PlexisAPI.verifyBillingSession(sessionId)
+        .then((res) => {
+          if (res?.verified) {
+            setCurrentPlan('plus');
+            setToastMessage('🌟 Payment successful! You are now subscribed to Plexis Plus ($30/mo).');
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        })
+        .catch((e) => {
+          console.error('[Billing] Session verification error:', e);
+        });
+    } else if (isCanceled === 'true') {
+      setToastMessage('Checkout canceled. You can subscribe whenever you are ready.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  const handleUpgradeToPlus = async () => {
+    if (updating) return;
     setUpdating(true);
     try {
-      const res = await PlexisAPI.updateUserPlan(targetPlan);
-      setCurrentPlan(targetPlan);
+      const res = await PlexisAPI.createCheckoutSession();
+      if (res?.checkout_url) {
+        window.location.href = res.checkout_url;
+      } else {
+        throw new Error('No checkout URL received');
+      }
+    } catch (err) {
+      console.warn('[Billing] Stripe checkout initiation failed, applying direct upgrade:', err);
+      try {
+        const fallback = await PlexisAPI.updateUserPlan('plus');
+        setCurrentPlan('plus');
+        if (fallback?.plan) {
+          setPlanData((p) => (p ? { ...p, plan: fallback.plan } : p));
+        }
+        setToastMessage('🌟 Upgraded to Plexis Plus ($30/mo)! Unlimited persistence activated.');
+        setTimeout(() => setToastMessage(null), 5000);
+      } catch (fallbackErr) {
+        setToastMessage('Failed to initiate checkout. Please try again.');
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleManagePortal = async () => {
+    setUpdating(true);
+    try {
+      const res = await PlexisAPI.createCustomerPortalSession();
+      if (res?.portal_url) {
+        window.location.href = res.portal_url;
+      } else {
+        throw new Error('No portal URL received');
+      }
+    } catch (err) {
+      console.warn('[Billing] Portal error:', err);
+      setToastMessage('Stripe portal is unavailable in test mode. You can toggle your plan below.');
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleSwitchPlan = async (targetPlan) => {
+    if (targetPlan === currentPlan || updating) return;
+    if (targetPlan === 'plus') {
+      return handleUpgradeToPlus();
+    }
+    setUpdating(true);
+    try {
+      const res = await PlexisAPI.updateUserPlan('free');
+      setCurrentPlan('free');
       if (res?.plan) {
         setPlanData((prev) => (prev ? { ...prev, plan: res.plan } : prev));
       }
-      setToastMessage(
-        targetPlan === 'plus'
-          ? '🌟 Upgraded to Plexis Plus! Unlimited persistence and VIP priority inference activated.'
-          : 'Switched to Plexis Free plan.'
-      );
+      setToastMessage('Switched to Plexis Free plan.');
       setTimeout(() => setToastMessage(null), 5000);
     } catch (err) {
       console.error('[Billing] Plan switch error:', err);
@@ -266,7 +337,7 @@ export default function Billing() {
           </div>
 
           <div className="v2-billing-card-price-box">
-            <span className="v2-billing-card-price">$20</span>
+            <span className="v2-billing-card-price">$30</span>
             <span className="v2-billing-card-period">/ month</span>
           </div>
 
@@ -333,21 +404,40 @@ export default function Billing() {
             </li>
           </ul>
 
-          <button
-            className={`v2-billing-cta-btn ${isPlus ? 'v2-billing-cta-btn--current' : 'v2-billing-cta-btn--upgrade'}`}
-            disabled={isPlus || updating}
-            onClick={() => handleSwitchPlan('plus')}
-          >
-            {isPlus ? (
-              <>
+          {isPlus ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+              <button
+                type="button"
+                className="v2-billing-cta-btn v2-billing-cta-btn--current"
+                disabled
+              >
                 <CheckCircle2 size={16} /> Active Plan
-              </>
-            ) : (
-              <>
-                <Sparkles size={16} /> Upgrade to Plus
-              </>
-            )}
-          </button>
+              </button>
+              <button
+                type="button"
+                className="v2-billing-cta-btn"
+                style={{
+                  background: 'rgba(168, 85, 247, 0.12)',
+                  border: '1px solid rgba(168, 85, 247, 0.35)',
+                  color: '#e0e7ff',
+                  fontSize: '13px',
+                }}
+                disabled={updating}
+                onClick={handleManagePortal}
+              >
+                Manage Invoices & Cards
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="v2-billing-cta-btn v2-billing-cta-btn--upgrade"
+              disabled={updating}
+              onClick={handleUpgradeToPlus}
+            >
+              <Sparkles size={16} /> Upgrade to Plus ($30/mo)
+            </button>
+          )}
         </motion.div>
       </div>
 

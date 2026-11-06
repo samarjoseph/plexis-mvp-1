@@ -20,6 +20,7 @@ import AnalyticsPanelV2 from '../components/dashboard/AnalyticsPanelV2';
 import SettingsPanelV2 from '../components/dashboard/SettingsPanelV2';
 import DatasetWorkspace from '../components/workspace/DatasetWorkspace.jsx';
 import LocateResultSelector from '../components/dashboard/LocateResultSelector.jsx';
+import PlanLimitToast from '../components/ui/PlanLimitToast.jsx';
 import '../styles/dashboard.css';
 import '../styles/workspace.css';
 
@@ -831,6 +832,13 @@ function DashboardInner() {
 
   // ── Helpers ────────────────────────────────────────────────
   const handleNewChat = () => {
+    if (userPlan !== 'plus' && conversations.length >= 10) {
+      EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
+        message: 'Free plan limit reached: maximum 10 chats. Upgrade to',
+        linkText: 'Plus',
+      });
+      return;
+    }
     if (chatRouteLoadingTimerRef.current) {
       clearTimeout(chatRouteLoadingTimerRef.current);
       chatRouteLoadingTimerRef.current = null;
@@ -1466,6 +1474,10 @@ function DashboardInner() {
   };
 
   const handleFileSizeError = useCallback((file, limitMb = 35) => {
+    EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
+      message: `File exceeds Free plan limit of ${limitMb} MB. Upgrade to`,
+      linkText: 'Plus',
+    });
     const errMsg = {
       id: `err-file-size-${Date.now()}`,
       sender: 'system_error',
@@ -1493,6 +1505,12 @@ function DashboardInner() {
       const result = await PlexisAPI.applyTransformation(planId, resolvedDatasetId);
       const ts = Date.now();
       if (result.error) {
+        if (result.daily_limit_reached || String(result.error).toLowerCase().includes('quota') || String(result.error).toLowerCase().includes('limit')) {
+          EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
+            message: 'Daily transformation limit reached (4/day on Free). Upgrade to',
+            linkText: 'Plus',
+          });
+        }
         const errText = result.conflict
           ? '⚠️ The dataset changed after this plan was created. Please ask again to regenerate the plan.'
           : `Transformation failed: ${result.error}`;
@@ -1607,6 +1625,7 @@ function DashboardInner() {
         onClick={() => setSidebarMobileOpen(false)}
       />
 
+      <PlanLimitToast userPlan={userPlan} />
       <SidebarV2
         userPlan={userPlan}
         collapsed={sidebarCollapsed}

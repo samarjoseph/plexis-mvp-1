@@ -47,7 +47,7 @@ PLAN_LIMITS: Dict[str, Dict[str, Any]] = {
     PLAN_PLUS: {
         "name": "Plus",
         "description": "Uncapped computing power, unlimited persistence, and priority intelligence",
-        "price_usd": 20,
+        "price_usd": 30,
         "max_chats": None,  # Unlimited
         "max_messages_per_chat": None,  # Unlimited
         "max_tokens_per_chat": None,  # Unlimited

@@ -203,4 +203,8 @@ export const Events = Object.freeze({
    * Payload: { datasetId, result }
    */
   TRANSFORM_UNDONE: 'transform:undone',
+
+  // ── Plan & Subscription limits ───────────────────────────────────────────
+  /** Fired when user hits or encounters a free plan limitation. Payload: { message, linkText, duration } */
+  PLAN_LIMIT_NOTICE: 'plan:limit_notice',
 });

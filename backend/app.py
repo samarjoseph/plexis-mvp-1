@@ -139,6 +139,13 @@ def create_app() -> Flask:
     except ImportError as e:
         logger.warning('[app] user_plan_bp not loaded: %s', e)
 
+    # Register billing & Stripe blueprint
+    try:
+        from api.billing import billing_bp
+        app.register_blueprint(billing_bp)
+    except ImportError as e:
+        logger.warning('[app] billing_bp not loaded: %s', e)
+
     @app.route('/health', methods=['GET'])
     def root_health():
         return jsonify({

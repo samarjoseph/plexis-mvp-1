@@ -60,6 +60,49 @@ export const PlexisAPI = {
     return data;
   },
 
+  /** Create Stripe Checkout Session for Plus Plan ($30/mo) */
+  async createCheckoutSession() {
+    const res = await fetch(`${BASE_URL}/api/billing/create-checkout-session`, {
+      method: 'POST',
+      headers: defaultHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Checkout failed: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** Verify completed Stripe Checkout Session upon return to /billing */
+  async verifyBillingSession(sessionId) {
+    const res = await fetch(`${BASE_URL}/api/billing/verify-session/${sessionId}`, {
+      method: 'GET',
+      headers: defaultHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Verification failed: ${res.status}`);
+    }
+    const data = await res.json();
+    if (data?.plan) {
+      try { localStorage.setItem('plexis_user_plan', data.plan); } catch (_) {}
+    }
+    return data;
+  },
+
+  /** Create Stripe Customer Portal Session for managing cards/invoices */
+  async createCustomerPortalSession() {
+    const res = await fetch(`${BASE_URL}/api/billing/create-portal-session`, {
+      method: 'POST',
+      headers: defaultHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Portal failed: ${res.status}`);
+    }
+    return res.json();
+  },
+
   /** Switch or upgrade subscription plan ('free' or 'plus') */
   async updateUserPlan(plan) {
     const res = await fetch(`${BASE_URL}/api/user/plan`, {
