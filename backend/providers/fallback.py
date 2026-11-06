@@ -218,7 +218,9 @@ class FallbackEngine:
             )
             if is_model_failure:
                 if status_code in (404, 422) or "not found" in err_str:
-                    model_registry.mark_permanently_failed(model_id)
+                    slots = credential_scheduler.get_slots(provider_name)
+                    if len(slots) <= 1:
+                        model_registry.mark_permanently_failed(model_id)
                 failed_model_ids.append(model_id)
             else:
                 # Only 429 quota exhaustion is slot-specific — retry other available slots if eligible

@@ -140,7 +140,7 @@ class GeminiProvider(IProviderAdapter):
                 logger.warning('[GeminiProvider] model_registry lookup failed: %s', exc)
             if not model_name:
                 from config import Config
-                model_name = Config.TRANSFORMATION_GEMINI_MODEL or "gemini-2.5-flash"
+                model_name = Config.TRANSFORMATION_GEMINI_MODEL or "gemini-3.5-flash"
 
         return model_name
 
@@ -177,15 +177,25 @@ class GeminiProvider(IProviderAdapter):
                 )
             except Exception as call_err:
                 err_str = str(call_err).lower()
-                is_transient = any(k in err_str for k in ("404", "not_found", "503", "unavailable", "504", "deadline", "timed out", "timeout"))
-                if is_transient and model_name != "gemini-2.5-flash":
-                    logger.warning(f"[GeminiProvider] Model {model_name} failed with transient error ({call_err}), retrying with gemini-2.5-flash")
-                    model_name = "gemini-2.5-flash"
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=config
-                    )
+                is_transient = any(k in err_str for k in ("404", "not_found", "503", "unavailable", "504", "deadline", "timed out", "timeout", "no longer available"))
+                if is_transient:
+                    fallback_models = [m for m in ("gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash") if m != model_name]
+                    succeeded = False
+                    for fb_model in fallback_models:
+                        try:
+                            logger.warning(f"[GeminiProvider] Model {model_name} failed ({call_err}), retrying with {fb_model}")
+                            response = client.models.generate_content(
+                                model=fb_model,
+                                contents=prompt,
+                                config=config
+                            )
+                            model_name = fb_model
+                            succeeded = True
+                            break
+                        except Exception:
+                            continue
+                    if not succeeded:
+                        raise call_err
                 else:
                     raise call_err
             latency_ms = (time.time() - start_time) * 1000
@@ -257,14 +267,26 @@ class GeminiProvider(IProviderAdapter):
                     config=config
                 )
             except Exception as call_err:
-                if ("404" in str(call_err) or "NOT_FOUND" in str(call_err)) and model_name != "gemini-3.5-flash":
-                    logger.warning(f"[GeminiProvider] Model {model_name} failed with 404/NOT_FOUND in stream, retrying with gemini-3.5-flash")
-                    model_name = "gemini-3.5-flash"
-                    response_stream = client.models.generate_content_stream(
-                        model=model_name,
-                        contents=prompt,
-                        config=config
-                    )
+                err_str = str(call_err).lower()
+                is_transient = any(k in err_str for k in ("404", "not_found", "503", "unavailable", "504", "deadline", "timed out", "timeout", "no longer available"))
+                if is_transient:
+                    fallback_models = [m for m in ("gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash") if m != model_name]
+                    succeeded = False
+                    for fb_model in fallback_models:
+                        try:
+                            logger.warning(f"[GeminiProvider] Model {model_name} failed in stream ({call_err}), retrying with {fb_model}")
+                            response_stream = client.models.generate_content_stream(
+                                model=fb_model,
+                                contents=prompt,
+                                config=config
+                            )
+                            model_name = fb_model
+                            succeeded = True
+                            break
+                        except Exception:
+                            continue
+                    if not succeeded:
+                        raise call_err
                 else:
                     raise call_err
             for chunk in response_stream:

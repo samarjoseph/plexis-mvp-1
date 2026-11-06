@@ -206,11 +206,11 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None, e
     # NEVER truncate or hijack it with a single-primitive regex fast path.
     # Return None so the entire request flows directly to the intelligent LLM planner.
     compound_action_rx = re.search(
-        r'\b(?:and|then|also|afterwards|next)\s+(?:also\s+)?(?:fill|remove|delete|drop|add|create|filter|sort|replace|change|cast|convert|rename|clean|normalize|update|calculate|compute|populate|make|set)\b',
+        r'\b(?:and|then|also|afterwards|next)\s+(?:also\s+)?(?:fill|remove|delete|drop|add|create|filter|sort|replace|change|cast|convert|rename|clean|normalize|update|calculate|compute|populate|make|set|close|open|show|hide|collapse|toggle)\b',
         msg, re.IGNORECASE
     )
     comma_action_rx = re.search(
-        r',\s*(?:also\s+)?(?:fill|remove|delete|drop|add|create|filter|sort|replace|change|cast|convert|rename|clean|normalize|update|calculate|compute|populate|make|set)\b',
+        r',\s*(?:also\s+)?(?:fill|remove|delete|drop|add|create|filter|sort|replace|change|cast|convert|rename|clean|normalize|update|calculate|compute|populate|make|set|close|open|show|hide|collapse|toggle)\b',
         msg, re.IGNORECASE
     )
     if compound_action_rx or comma_action_rx:
@@ -489,19 +489,50 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None, e
             return {"type": "ADD_COLUMN", "column": col_name, "value": val}
 
     # ── DROP_COLUMN ───────────────────────────────────────────────────────────
-    m = re.search(
-        r'(?:drop|delete|remove)\s+(?:the\s+)?(?:column|col)\s+(\w+)',
-        msg, re.IGNORECASE,
+    # Quoted column: remove column 'birth year' / drop "birth year"
+    m_drop_quoted = re.search(
+        r'(?:drop|delete|remove)\s+(?:the\s+)?(?:column|col)?\s*(["\'])(.*?)\1',
+        orig, re.IGNORECASE
     )
-    if m:
-        return {"type": "DROP_COLUMN", "column": m.group(1)}
+    if m_drop_quoted:
+        col_cand = m_drop_quoted.group(2).strip()
+        trailing = orig[m_drop_quoted.end():].strip().lstrip('.! ')
+        if trailing and any(w in trailing.lower() for w in ('and', 'then', 'also', 'close', 'open', 'sidebar', 'panel', 'fill', 'add')):
+            return {"type": "IR_REQUIRED"}
+        return {"type": "DROP_COLUMN", "column": col_cand}
+
+    # "drop the phone column" / "remove age col"
+    m_col_before = re.search(
+        r'(?:drop|delete|remove)\s+(?:the\s+)?([a-zA-Z0-9_\-]+)\s+col(?:umn)?\b',
+        orig, re.IGNORECASE
+    )
+    if m_col_before:
+        col_cand = m_col_before.group(1).strip()
+        trailing = orig[m_col_before.end():].strip().lstrip('.! ')
+        if trailing and any(w in trailing.lower() for w in ('and', 'then', 'also', 'close', 'open', 'sidebar', 'panel', 'fill', 'add')):
+            return {"type": "IR_REQUIRED"}
+        return {"type": "DROP_COLUMN", "column": col_cand}
+
+    # Match against existing columns (longest first so multi-word columns match before single words)
+    if existing_columns:
+        for c in sorted(existing_columns, key=len, reverse=True):
+            pat = r'(?:drop|delete|remove)\s+(?:the\s+)?(?:column|col\s+)?' + re.escape(c) + r'(?:\s+column|\s+col)?\b'
+            m_col = re.search(pat, orig, re.IGNORECASE)
+            if m_col:
+                trailing = orig[m_col.end():].strip().lstrip('.! ')
+                if trailing and any(w in trailing.lower() for w in ('and', 'then', 'also', 'close', 'open', 'sidebar', 'panel', 'fill', 'add')):
+                    return {"type": "IR_REQUIRED"}
+                return {"type": "DROP_COLUMN", "column": c}
 
     m = re.search(
-        r'(?:drop|delete|remove)\s+(?:the\s+)?(\w+)\s+column',
-        msg, re.IGNORECASE,
+        r'(?:drop|delete|remove)\s+(?:the\s+)?(?:column|col)\s+([a-zA-Z0-9_\-\s]+?)(?:\s+(?:and|then|also|close|open)\b|[.!?]|$)',
+        orig, re.IGNORECASE,
     )
     if m:
-        return {"type": "DROP_COLUMN", "column": m.group(1)}
+        col_cand = m.group(1).strip()
+        if not existing_columns or col_cand.lower() in _existing_cols_lower:
+            return {"type": "DROP_COLUMN", "column": col_cand}
+        return {"type": "IR_REQUIRED"}
 
     # ── RENAME_COLUMN ─────────────────────────────────────────────────────────
     if re.search(r'^rename\s+(?:the\s+)?columns?\s*[.!?]*$', orig, re.IGNORECASE):
@@ -1110,25 +1141,30 @@ class MasterRouter:
         # Check for natural language UI commands (open/close spreadsheet, analytics, sidebar)
         ui_cmds = conversation_memorizer.detect_ui_command(getattr(context, 'message', '') or '')
         if ui_cmds:
-            first_act = ui_cmds[0]["action"]
-            label_map = {
-                "open_spreadsheet": "I've opened the live spreadsheet workspace for you.",
-                "close_spreadsheet": "I've closed the spreadsheet workspace.",
-                "open_analytics": "I've opened the analytics and charts panel.",
-                "close_analytics": "I've closed the analytics panel.",
-                "open_sidebar": "I've opened the sidebar.",
-                "close_sidebar": "I've collapsed the sidebar.",
-            }
-            ans = label_map.get(first_act, "Workspace view updated.")
-            context.complete_stage(stage)
-            return EngineResult(
-                answer=ans,
-                source="system",
-                provider="system",
-                success=True,
-                metadata={"ui_commands": ui_cmds},
-                should_compose=False,
-            )
+            raw_msg = getattr(context, 'message', '') or ''
+            has_data_intent = _has_mutation_intent(raw_msg) or bool(_TRANSFORM_RX.search(raw_msg))
+            if not has_data_intent:
+                first_act = ui_cmds[0]["action"]
+                label_map = {
+                    "open_spreadsheet": "I've opened the live spreadsheet workspace for you.",
+                    "close_spreadsheet": "I've closed the spreadsheet workspace.",
+                    "open_analytics": "I've opened the analytics and charts panel.",
+                    "close_analytics": "I've closed the analytics panel.",
+                    "open_sidebar": "I've opened the sidebar.",
+                    "close_sidebar": "I've collapsed the sidebar.",
+                }
+                ans = label_map.get(first_act, "Workspace view updated.")
+                context.complete_stage(stage)
+                return EngineResult(
+                    answer=ans,
+                    source="system",
+                    provider="system",
+                    success=True,
+                    metadata={"ui_commands": ui_cmds},
+                    should_compose=False,
+                )
+            else:
+                context.pending_ui_commands = ui_cmds
 
         # Check for conversational transformation re-trigger or pattern filling (e.g. alternating male/female)
         mem_analysis = conversation_memorizer.analyze_flow(
@@ -1342,6 +1378,10 @@ class MasterRouter:
         stage = context.start_stage(f'engine_{engine.engine_name}')
         try:
             result = engine.handle(context)
+            if getattr(context, 'pending_ui_commands', None):
+                if result.metadata is None:
+                    result.metadata = {}
+                result.metadata['ui_commands'] = context.pending_ui_commands
             context.complete_stage(stage, success=result.success)
             event_bus.publish(EngineCompletedEvent(
                 request_id=context.request_id,

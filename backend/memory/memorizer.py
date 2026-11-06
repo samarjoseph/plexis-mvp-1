@@ -223,10 +223,10 @@ class ConversationMemorizer:
         if re.search(r'\b(?:close|hide|collapse)\s+(?:the\s+)?(?:analytics|charts?|insights?)\s*(?:panel)?\b', clean_lower):
             return [{"action": "close_analytics"}]
 
-        # Sidebar commands
-        if re.search(r'\b(?:open|show)\s+(?:the\s+)?sidebar\b', clean_lower):
+        # Sidebar commands (sidebar, side panel, sidepanel)
+        if re.search(r'\b(?:open|show)\s+(?:the\s+)?(?:sidebar|side\s*panel|sidepanel)\b', clean_lower):
             return [{"action": "open_sidebar"}]
-        if re.search(r'\b(?:close|hide|collapse)\s+(?:the\s+)?sidebar\b', clean_lower):
+        if re.search(r'\b(?:close|hide|collapse)\s+(?:the\s+)?(?:sidebar|side\s*panel|sidepanel)\b', clean_lower):
             return [{"action": "close_sidebar"}]
 
         # Column locator commands
