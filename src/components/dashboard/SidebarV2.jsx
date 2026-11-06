@@ -493,14 +493,7 @@ export default function SidebarV2({
               >
                 Plexis
               </motion.span>
-              <span
-                className={`v2-plan-badge v2-plan-badge--${userPlan || 'free'}`}
-                onClick={() => navigate('/billing')}
-                style={{ cursor: 'pointer', marginLeft: '6px' }}
-                title="View subscription plan"
-              >
-                {userPlan === 'plus' ? 'Plus' : 'Free'}
-              </span>
+
             </div>
             {!isDesktop && (
               <button
@@ -526,42 +519,6 @@ export default function SidebarV2({
             </motion.button>
           </Tooltip>
 
-          <Tooltip label="Subscription Plan & Limits" side="right" fullWidth={true}>
-            <motion.button
-              className="v2-sidebar-plan-btn"
-              onClick={() => navigate('/billing')}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                padding: '8px 12px',
-                marginTop: '6px',
-                marginBottom: '6px',
-                borderRadius: '8px',
-                background: userPlan === 'plus'
-                  ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.16), rgba(99, 102, 241, 0.12))'
-                  : 'rgba(255, 255, 255, 0.03)',
-                border: userPlan === 'plus'
-                  ? '1px solid rgba(168, 85, 247, 0.35)'
-                  : '1px solid rgba(255, 255, 255, 0.06)',
-                color: '#e2e8f0',
-                fontSize: '13px',
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Sparkles size={14} color={userPlan === 'plus' ? '#a855f7' : '#94a3b8'} />
-                <span>Plan</span>
-              </div>
-              <span className={`v2-plan-badge v2-plan-badge--${userPlan || 'free'}`}>
-                {userPlan === 'plus' ? 'Plus' : 'Free'}
-              </span>
-            </motion.button>
-          </Tooltip>
 
           <Tooltip label="Search Chats" shortcut="Ctrl+K" side="right" fullWidth={true}>
             <div className="v2-sidebar-search">

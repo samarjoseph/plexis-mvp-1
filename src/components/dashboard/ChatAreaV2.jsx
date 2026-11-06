@@ -357,19 +357,23 @@ export default function ChatAreaV2({
           <LogoToggle collapsed={true} onToggle={onToggleSidebar} />
         )}
 
-        <div className={`v2-chat-header-brand ${!isDesktop ? 'v2-chat-header-brand--mobile' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className={`v2-chat-header-brand ${!isDesktop ? 'v2-chat-header-brand--mobile' : ''}`}>
           <span>Plexis</span>
-          <span
-            className={`v2-plan-badge v2-plan-badge--${userPlan || 'free'}`}
-            onClick={() => navigate('/billing')}
-            style={{ cursor: 'pointer' }}
-            title="View subscription plan"
-          >
-            {userPlan === 'plus' ? 'Plus' : 'Free'}
-          </span>
         </div>
 
         <div className="v2-chat-header-actions" style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="v2-header-plan-btn"
+            onClick={() => navigate('/billing')}
+            title="Subscription plan & limits"
+            aria-label="Subscription plan"
+          >
+            <span className="v2-header-plan-text">Plan</span>
+            <span className={`v2-plan-badge v2-plan-badge--${userPlan || 'free'}`}>
+              {userPlan === 'plus' ? 'Plus' : 'Free'}
+            </span>
+          </button>
           {activeDatasetId && (
             <Tooltip label="Open data table" side="left">
               <WorkspaceToggleButton

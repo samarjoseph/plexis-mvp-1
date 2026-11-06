@@ -6154,3 +6154,71 @@ body.is-dragging * {
     font-size: 0.75rem !important;
   }
 }
+
+
+/* Dashboard Header Plan Button & Badges */
+.v2-header-plan-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--dash-muted, #8b95a5);
+  cursor: pointer;
+  outline: none;
+  font-family: var(--dash-font, inherit);
+  transition: background 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.12s ease;
+  user-select: none;
+}
+
+.v2-header-plan-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: var(--dash-text, #f0f2f5);
+}
+
+.v2-header-plan-btn:active {
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(0.97);
+}
+
+.v2-header-plan-text {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: inherit;
+}
+
+.v2-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1.5px 7px;
+  border-radius: 9999px;
+  line-height: 1.4;
+  transition: all 0.2s ease;
+}
+
+.v2-plan-badge--free {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+}
+
+.v2-plan-badge--plus {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.22), rgba(99, 102, 241, 0.28));
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  color: #e0e7ff;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.25);
+}
