@@ -6219,13 +6219,14 @@ body.is-dragging * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10.5px;
+  gap: 4px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 2px 7.5px;
-  border-radius: 9999px;
-  line-height: 1.4;
+  letter-spacing: 0.05em;
+  padding: 2.5px 7px;
+  border-radius: 5px;
+  line-height: 1.35;
   transition: all 0.2s ease;
 }
 
@@ -6236,25 +6237,36 @@ body.is-dragging * {
 }
 
 .v2-plan-badge--plus {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.22), rgba(99, 102, 241, 0.28));
-  border: 1px solid rgba(168, 85, 247, 0.45);
-  color: #e0e7ff;
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.25);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(59, 130, 246, 0.35));
+  border: 1px solid rgba(59, 130, 246, 0.55);
+  color: #eff6ff;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
 }
 
-/* Plan Limitation Toast Notification - Message Bubble with Tail */
+.v2-plan-badge--popular {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  color: #ffffff;
+  border-radius: 5px;
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.35);
+}
+
+/* Plan Limitation Toast Notification - Cursor-Anchored Message Bubble */
 .v2-plan-limit-toast {
   position: fixed;
-  bottom: 28px;
-  right: 28px;
   z-index: 9999;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 15px;
-  background: rgba(14, 15, 18, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 12px;
+  gap: 9px;
+  padding: 8px 14px;
+  background: rgba(14, 15, 18, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
@@ -6262,22 +6274,55 @@ body.is-dragging * {
   font-size: 12.5px;
   line-height: 1.4;
   user-select: none;
+  max-width: 360px;
 }
 
-/* Message Bubble Tail */
-.v2-plan-limit-toast::after {
-  content: '';
+/* Toast Logo Box - Vibrant Blue */
+.v2-plan-toast-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.32);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+}
+
+/* Dynamic Message Bubble Tail */
+.v2-plan-toast-tail {
   position: absolute;
-  bottom: -4px;
-  right: 18px;
-  width: 12px;
-  height: 12px;
-  background: rgba(14, 15, 18, 0.94);
-  border-right: 1px solid rgba(255, 255, 255, 0.13);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+  width: 10px;
+  height: 10px;
+  background: rgba(14, 15, 18, 0.95);
   transform: rotate(45deg);
-  border-bottom-right-radius: 2px;
   z-index: 1;
+  pointer-events: none;
+}
+
+.v2-plan-toast-tail--bottom {
+  bottom: -5px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom-right-radius: 2px;
+}
+
+.v2-plan-toast-tail--top {
+  top: -5px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  border-top-left-radius: 2px;
+}
+
+.v2-plan-toast-tail--fallback {
+  bottom: -5px;
+  right: 20px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom-right-radius: 2px;
 }
 
 .v2-plan-toast-text {
@@ -6291,24 +6336,22 @@ body.is-dragging * {
 
 .v2-plan-toast-plus-btn {
   font-weight: 700;
-  color: #ffffff;
+  color: #60a5fa;
   background: transparent;
   border: none;
   padding: 0 2px;
-  margin-left: 3px;
+  margin-left: 4px;
   cursor: pointer;
   font-size: inherit;
   font-family: inherit;
-  text-decoration: underline dotted rgba(255, 255, 255, 0.65);
-  text-underline-offset: 3.5px;
-  text-decoration-thickness: 1.5px;
-  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s ease;
   outline: none;
 }
 
 .v2-plan-toast-plus-btn:hover {
-  color: #ffffff;
-  text-decoration-color: #ffffff;
+  color: #93c5fd;
 }
 
 .v2-plan-toast-close {

@@ -616,7 +616,7 @@ export default function SidebarV2({
                       navigate('/billing');
                     }}
                   >
-                    <Sparkles size={14} color="#a855f7" /> Plan ({userPlan === 'plus' ? 'Plus' : 'Free'})
+                    <Sparkles size={14} color="#3b82f6" /> Plan ({userPlan === 'plus' ? 'Plus' : 'Free'})
                   </button>
                   <button
                     onClick={() => {

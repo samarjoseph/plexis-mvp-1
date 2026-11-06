@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -28,6 +28,29 @@ export default function Billing() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+  const mousePosRef = useRef({ x: null, y: null });
+
+  // Track live mouse position for cursor-anchored notification bubbles
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  const showToast = (val) => {
+    if (!val) {
+      setToastMessage(null);
+      return;
+    }
+    const text = typeof val === 'string' ? val : val?.text || '';
+    const cursor =
+      mousePosRef.current.x != null && mousePosRef.current.y != null
+        ? { ...mousePosRef.current }
+        : null;
+    setToastMessage({ text, cursor, id: Date.now() });
+  };
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -66,14 +89,14 @@ export default function Billing() {
     const isCanceled = params.get('canceled');
 
     if (sessionId && isSuccess === 'true') {
-      setToastMessage('Verifying Stripe payment...');
+      showToast('Verifying Stripe payment...');
       PlexisAPI.verifyBillingSession(sessionId)
         .then((res) => {
           if (res?.verified) {
             setCurrentPlan('plus');
             setPlanData((prev) => (prev ? { ...prev, plan: 'plus' } : { plan: 'plus' }));
             try { localStorage.setItem('plexis_user_plan', 'plus'); } catch (_) {}
-            setToastMessage('🌟 Payment successful! You are now subscribed to Plexis Plus ($30/mo).');
+            showToast('Payment successful! You are now subscribed to Plexis Plus ($30/mo).');
             window.history.replaceState({}, document.title, window.location.pathname);
             PlexisAPI.getUserPlan().then((fresh) => {
               if (fresh?.plan) {
@@ -82,15 +105,15 @@ export default function Billing() {
               }
             });
           } else {
-            setToastMessage('Payment could not be verified. Please contact support.');
+            showToast('Payment could not be verified. Please contact support.');
           }
         })
         .catch((e) => {
           console.error('[Billing] Session verification error:', e);
-          setToastMessage(`Payment verification error: ${e.message}`);
+          showToast(`Payment verification error: ${e.message}`);
         });
     } else if (isCanceled === 'true') {
-      setToastMessage('Checkout canceled. You can subscribe whenever you are ready.');
+      showToast('Checkout canceled. You can subscribe whenever you are ready.');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
@@ -98,7 +121,7 @@ export default function Billing() {
   const handleUpgradeToPlus = async () => {
     if (updating) return;
     setUpdating(true);
-    setToastMessage('Redirecting to Stripe Checkout...');
+    showToast('Redirecting to Stripe Checkout...');
     try {
       const res = await PlexisAPI.createCheckoutSession();
       if (res?.checkout_url) {
@@ -108,7 +131,7 @@ export default function Billing() {
       }
     } catch (err) {
       console.error('[Billing] Stripe checkout initiation failed:', err);
-      setToastMessage(err.message || 'Failed to initiate Stripe Checkout. Please try again.');
+      showToast(err.message || 'Failed to initiate Stripe Checkout. Please try again.');
       setUpdating(false);
     }
   };
@@ -124,7 +147,7 @@ export default function Billing() {
       }
     } catch (err) {
       console.warn('[Billing] Portal error:', err);
-      setToastMessage('Stripe portal is unavailable in test mode. You can toggle your plan below.');
+      showToast('Stripe portal is unavailable in test mode. You can toggle your plan below.');
     } finally {
       setUpdating(false);
     }
@@ -142,10 +165,10 @@ export default function Billing() {
       if (res?.plan) {
         setPlanData((prev) => (prev ? { ...prev, plan: res.plan } : prev));
       }
-      setToastMessage('Switched to Plexis Free plan.');
+      showToast('Switched to Plexis Free plan.');
     } catch (err) {
       console.error('[Billing] Plan switch error:', err);
-      setToastMessage('Failed to update plan. Please try again.');
+      showToast('Failed to update plan. Please try again.');
     } finally {
       setUpdating(false);
     }
@@ -180,7 +203,7 @@ export default function Billing() {
           <span className={`v2-plan-badge v2-plan-badge--${currentPlan}`}>
             {currentPlan === 'plus' ? (
               <>
-                <Sparkles size={11} /> Plus
+                <Sparkles size={11} color="#60a5fa" /> Plus
               </>
             ) : (
               'Free'
@@ -334,13 +357,16 @@ export default function Billing() {
 
           <div className="v2-billing-card-header">
             <span className="v2-billing-card-name">
-              <Sparkles size={20} color="#a855f7" />
+              <Sparkles size={20} color="#3b82f6" />
               Plus Plan
               {isPlus && (
                 <span className="v2-plan-badge v2-plan-badge--plus">Active</span>
               )}
             </span>
-            <span className="v2-plan-badge v2-plan-badge--plus">PLUS</span>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <span className="v2-plan-badge v2-plan-badge--popular">Popular</span>
+              <span className="v2-plan-badge v2-plan-badge--plus">PLUS</span>
+            </div>
           </div>
 
           <div className="v2-billing-card-price-box">
@@ -424,16 +450,16 @@ export default function Billing() {
                 type="button"
                 className="v2-billing-cta-btn"
                 style={{
-                  background: 'rgba(168, 85, 247, 0.12)',
-                  border: '1px solid rgba(168, 85, 247, 0.35)',
-                  color: '#e0e7ff',
+                  background: 'rgba(37, 99, 235, 0.14)',
+                  border: '1px solid rgba(59, 130, 246, 0.38)',
+                  color: '#eff6ff',
                   fontSize: '13px',
                 }}
                 disabled={updating}
                 onClick={handleUpgradeToPlus}
                 title="Open Stripe payment interface to test card checkout"
               >
-                <Sparkles size={14} /> Open Stripe Checkout Page
+                <Sparkles size={14} color="#60a5fa" /> Open Stripe Checkout Page
               </button>
             </div>
           ) : (
@@ -511,29 +537,85 @@ export default function Billing() {
         </table>
       </section>
 
-      {/* Toast Notification */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            className="v2-billing-toast"
-            initial={{ opacity: 0, y: 14, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.96 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            role="alert"
-          >
-            <span className="v2-billing-toast-text">{toastMessage}</span>
-            <button
-              type="button"
-              className="v2-billing-toast-close"
-              onClick={() => setToastMessage(null)}
-              aria-label="Dismiss notification"
-            >
-              <X size={13} />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Cursor-Anchored Toast Notification */}
+      {(() => {
+        let toastPosStyle = {};
+        let placeAbove = true;
+        let tailLeft = 20;
+
+        if (toastMessage?.cursor) {
+          const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+          const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+          const bubbleWidth = 330;
+
+          if (toastMessage.cursor.y >= 65) {
+            placeAbove = true;
+            toastPosStyle = {
+              top: `${Math.max(10, toastMessage.cursor.y - 52)}px`,
+            };
+          } else {
+            placeAbove = false;
+            toastPosStyle = {
+              top: `${Math.min(vh - 60, toastMessage.cursor.y + 22)}px`,
+            };
+          }
+
+          const idealLeft = toastMessage.cursor.x - 140;
+          const left = Math.max(16, Math.min(idealLeft, vw - bubbleWidth - 16));
+          toastPosStyle.left = `${left}px`;
+          toastPosStyle.bottom = 'auto';
+          toastPosStyle.right = 'auto';
+
+          tailLeft = Math.max(16, Math.min(toastMessage.cursor.x - left, bubbleWidth - 28));
+        } else {
+          toastPosStyle = {
+            bottom: '28px',
+            right: '28px',
+            top: 'auto',
+            left: 'auto',
+          };
+        }
+
+        return (
+          <AnimatePresence>
+            {toastMessage && (
+              <motion.div
+                key={toastMessage.id || 'billing-toast'}
+                className="v2-billing-toast"
+                style={toastPosStyle}
+                initial={{ opacity: 0, y: placeAbove ? 6 : -6, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: placeAbove ? 4 : -4, scale: 0.95 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                role="alert"
+              >
+                <div className="v2-plan-toast-logo" aria-hidden="true">
+                  <Sparkles size={13} color="#3b82f6" />
+                </div>
+                <span className="v2-billing-toast-text">{toastMessage.text || toastMessage}</span>
+                <button
+                  type="button"
+                  className="v2-billing-toast-close"
+                  onClick={() => setToastMessage(null)}
+                  aria-label="Dismiss notification"
+                >
+                  <X size={13} />
+                </button>
+                <span
+                  className={`v2-billing-toast-tail ${
+                    toastMessage.cursor
+                      ? placeAbove
+                        ? 'v2-billing-toast-tail--bottom'
+                        : 'v2-billing-toast-tail--top'
+                      : 'v2-billing-toast-tail--fallback'
+                  }`}
+                  style={toastMessage.cursor ? { left: `${tailLeft}px` } : undefined}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        );
+      })()}
     </motion.div>
   );
 }
