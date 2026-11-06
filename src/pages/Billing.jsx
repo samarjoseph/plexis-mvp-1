@@ -15,6 +15,7 @@ import {
   HardDrive,
   CheckCircle2,
   AlertCircle,
+  X,
 } from 'lucide-react';
 import { PlexisAPI, getPlexisUserPlan } from '../api.js';
 import PlexisLogo from '../components/brand/PlexisLogo.jsx';
@@ -27,6 +28,14 @@ export default function Billing() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage(null);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
 
   useEffect(() => {
     let mounted = true;
@@ -93,7 +102,6 @@ export default function Billing() {
     } catch (err) {
       console.error('[Billing] Stripe checkout initiation failed:', err);
       setToastMessage(err.message || 'Failed to initiate Stripe Checkout. Please try again.');
-      setTimeout(() => setToastMessage(null), 6000);
       setUpdating(false);
     }
   };
@@ -110,7 +118,6 @@ export default function Billing() {
     } catch (err) {
       console.warn('[Billing] Portal error:', err);
       setToastMessage('Stripe portal is unavailable in test mode. You can toggle your plan below.');
-      setTimeout(() => setToastMessage(null), 4000);
     } finally {
       setUpdating(false);
     }
@@ -129,11 +136,9 @@ export default function Billing() {
         setPlanData((prev) => (prev ? { ...prev, plan: res.plan } : prev));
       }
       setToastMessage('Switched to Plexis Free plan.');
-      setTimeout(() => setToastMessage(null), 5000);
     } catch (err) {
       console.error('[Billing] Plan switch error:', err);
       setToastMessage('Failed to update plan. Please try again.');
-      setTimeout(() => setToastMessage(null), 4000);
     } finally {
       setUpdating(false);
     }
@@ -504,13 +509,21 @@ export default function Billing() {
         {toastMessage && (
           <motion.div
             className="v2-billing-toast"
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            initial={{ opacity: 0, y: 14, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
+            exit={{ opacity: 0, y: 10, scale: 0.96 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            role="alert"
           >
-            <Sparkles size={16} color="#a855f7" />
-            <span>{toastMessage}</span>
+            <span className="v2-billing-toast-text">{toastMessage}</span>
+            <button
+              type="button"
+              className="v2-billing-toast-close"
+              onClick={() => setToastMessage(null)}
+              aria-label="Dismiss notification"
+            >
+              <X size={13} />
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

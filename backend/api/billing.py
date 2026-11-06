@@ -45,6 +45,17 @@ def _init_stripe() -> bool:
     return True
 
 
+def _stripe_to_dict(obj):
+    """Safely convert a StripeObject or dict to a standard Python dict."""
+    if obj is None:
+        return {}
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    if isinstance(obj, dict):
+        return obj
+    return {}
+
+
 @billing_bp.route("/create-checkout-session", methods=["POST"])
 def create_checkout_session():
     """Create a Stripe Checkout Session for upgrading to Plus ($30/month)."""
@@ -72,6 +83,7 @@ def create_checkout_session():
         session_kwargs = {
             "mode": "subscription",
             "client_reference_id": str(current_user.user_id),
+            "adaptive_pricing": {"enabled": True},
             "line_items": [
                 {
                     "price_data": {
@@ -147,32 +159,40 @@ def verify_session(session_id: str):
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)
+        session_dict = _stripe_to_dict(session)
+        metadata_dict = _stripe_to_dict(getattr(session, "metadata", None))
+
+        payment_status = getattr(session, "payment_status", session_dict.get("payment_status"))
+        status = getattr(session, "status", session_dict.get("status"))
+
         is_paid = (
-            session.payment_status in ("paid", "no_payment_required")
-            or getattr(session, "status", None) == "complete"
+            payment_status in ("paid", "no_payment_required")
+            or status == "complete"
         )
 
         if not is_paid:
             return jsonify({
                 "success": False,
                 "verified": False,
-                "status": session.payment_status,
+                "status": payment_status,
                 "message": "Payment has not completed yet.",
             }), 400
 
-        # Verify user matches
-        session_user_id = session.metadata.get("user_id") or session.client_reference_id
-        session_email = session.customer_email or session.metadata.get("email")
+        # Retrieve user attributes safely
+        session_user_id = metadata_dict.get("user_id") or getattr(session, "client_reference_id", None)
+        session_email = getattr(session, "customer_email", None) or metadata_dict.get("email")
+        customer_id = getattr(session, "customer", None)
+        subscription_id = getattr(session, "subscription", None)
 
         # Upgrade user in DB
         db = get_db()
         if db is not None:
             updated_user = user_repository.update_plan(db, current_user.user_id, "plus")
             if updated_user:
-                if hasattr(updated_user, "stripe_customer_id") and session.customer:
-                    updated_user.stripe_customer_id = session.customer
-                if hasattr(updated_user, "stripe_subscription_id") and session.subscription:
-                    updated_user.stripe_subscription_id = session.subscription
+                if hasattr(updated_user, "stripe_customer_id") and customer_id:
+                    updated_user.stripe_customer_id = customer_id
+                if hasattr(updated_user, "stripe_subscription_id") and subscription_id:
+                    updated_user.stripe_subscription_id = subscription_id
                 db.commit()
 
         logger.info(
@@ -185,9 +205,9 @@ def verify_session(session_id: str):
             "success": True,
             "verified": True,
             "plan": "plus",
-            "session_id": session.id,
-            "customer_id": session.customer,
-            "subscription_id": session.subscription,
+            "session_id": getattr(session, "id", session_id),
+            "customer_id": customer_id,
+            "subscription_id": subscription_id,
             "message": "Payment verified! Your account is now upgraded to Plexis Plus.",
         }), 200
 
@@ -276,10 +296,11 @@ def stripe_webhook():
             logger.error("[BILLING_WEBHOOK] Event parse error: %s", e)
             return jsonify({"error": "Could not parse event"}), 400
 
-    event_type = event.get("type", "")
-    event_data = event.get("data", {}).get("object", {})
+    event_dict = _stripe_to_dict(event)
+    event_type = event_dict.get("type", "")
+    event_data = _stripe_to_dict(event_dict.get("data", {}).get("object", {}))
 
-    logger.info("[BILLING_WEBHOOK] Received event: %s (id=%s)", event_type, event.get("id"))
+    logger.info("[BILLING_WEBHOOK] Received event: %s (id=%s)", event_type, event_dict.get("id"))
 
     db = get_db()
     if db is None:
@@ -288,7 +309,7 @@ def stripe_webhook():
     if event_type in ("checkout.session.completed", "invoice.payment_succeeded"):
         # Payment succeeded - activate Plus
         client_ref = event_data.get("client_reference_id")
-        metadata = event_data.get("metadata", {}) or {}
+        metadata = _stripe_to_dict(event_data.get("metadata", {}))
         user_id_str = metadata.get("user_id") or client_ref
         customer_email = event_data.get("customer_email") or metadata.get("email")
 
