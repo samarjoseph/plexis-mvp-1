@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PlexisAPI } from '../api';
+import { PlexisAPI, getPlexisUserPlan } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import {
@@ -212,6 +212,15 @@ function DashboardInner() {
   // their Locate/Undo/Redo buttons work via the same SPREADSHEET_CARD_ACTION pipeline.
   const lastSpreadsheetCardRef = useRef(null);
   const uploadStream = usePlexisStream();
+  const [userPlan, setUserPlan] = useState(() => getPlexisUserPlan());
+
+  useEffect(() => {
+    PlexisAPI.getUserPlan()
+      .then((data) => {
+        if (data?.plan) setUserPlan(data.plan);
+      })
+      .catch(() => {});
+  }, []);
   // Spreadsheet panel state
   const [workspacePct, setWorkspacePct]     = useState(48);  // % of split area
   const [viewMode,     setViewMode]         = useState('side_by_side'); // 'side_by_side' | 'popup'
@@ -1599,6 +1608,7 @@ function DashboardInner() {
       />
 
       <SidebarV2
+        userPlan={userPlan}
         collapsed={sidebarCollapsed}
         mobileOpen={sidebarMobileOpen}
         onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
@@ -1661,6 +1671,7 @@ function DashboardInner() {
       {/* Chat + Workspace split pane */}
       <div className="v2-chat-workspace-split">
         <ChatAreaV2
+          userPlan={userPlan}
           messages={activeConversation?.messages || []}
           inputText={inputText}
           onInputChange={setInputText}

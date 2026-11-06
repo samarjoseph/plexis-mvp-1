@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileSpreadsheet, Search, LineChart, MessageSquare, Menu, BarChart3,
@@ -259,7 +260,9 @@ export default function ChatAreaV2({
   onUndoTransform,
   onExportDataset,
   isApplyingTransform,
+  userPlan = 'free',
 }) {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isDesktop = useIsDesktop();
   const scrollRef = useRef(null);
@@ -354,8 +357,16 @@ export default function ChatAreaV2({
           <LogoToggle collapsed={true} onToggle={onToggleSidebar} />
         )}
 
-        <div className={`v2-chat-header-brand ${!isDesktop ? 'v2-chat-header-brand--mobile' : ''}`}>
-          Plexis
+        <div className={`v2-chat-header-brand ${!isDesktop ? 'v2-chat-header-brand--mobile' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>Plexis</span>
+          <span
+            className={`v2-plan-badge v2-plan-badge--${userPlan || 'free'}`}
+            onClick={() => navigate('/billing')}
+            style={{ cursor: 'pointer' }}
+            title="View subscription plan"
+          >
+            {userPlan === 'plus' ? 'Plus' : 'Free'}
+          </span>
         </div>
 
         <div className="v2-chat-header-actions" style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>

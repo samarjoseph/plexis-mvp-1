@@ -29,6 +29,29 @@ class FallbackEngine:
 
     def execute(self, request: AIRequest) -> ProviderResponse:
         """Execute request with model-level fallbacks, multi-slot rotation, and global quarantine."""
+        # Auto-detect subscriber plan from Flask request context if available
+        if not getattr(request, "user_plan", None) or request.user_plan == "free":
+            try:
+                from flask import has_request_context, request as flask_req
+                if has_request_context():
+                    from db.identity import identity_resolver
+                    curr = identity_resolver.resolve(flask_req)
+                    if curr and getattr(curr, "plan", None):
+                        request.user_plan = curr.plan
+                        if str(curr.plan).strip().lower() == "plus":
+                            request.priority = "HIGH"
+            except Exception:
+                pass
+
+        from providers.priority_scheduler import priority_request_scheduler
+        priority_request_scheduler.acquire(request)
+        try:
+            return self._execute_core(request)
+        finally:
+            priority_request_scheduler.release()
+
+    def _execute_core(self, request: AIRequest) -> ProviderResponse:
+        """Core execution logic with model fallback loop."""
         import time as _t
         start_time_exec = _t.time()
         failed_model_ids: List[str] = []

@@ -503,7 +503,7 @@ def _parse_transform_from_message(message: str, context: Optional[Any] = None, e
 
     # "drop the phone column" / "remove age col"
     m_col_before = re.search(
-        r'(?:drop|delete|remove)\s+(?:the\s+)?([a-zA-Z0-9_\-]+)\s+col(?:umn)?\b',
+        r'(?:drop|delete|remove)\s+(?:the\s+)?(?!col\b|column\b|the\b)([a-zA-Z0-9_\-]+)\s+col(?:umn)?\b',
         orig, re.IGNORECASE
     )
     if m_col_before:

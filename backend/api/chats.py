@@ -85,6 +85,20 @@ def create_chat():
         return err
 
     db = get_db()
+
+    # ── Chat Quota Check (Free plan max 10 chats) ──
+    user_plan = getattr(current_user, "plan", "free")
+    from core.plans import check_chat_creation_quota
+    allowed, current_count, limit = check_chat_creation_quota(db, current_user.user_id, user_plan)
+    if not allowed:
+        return jsonify({
+            "error": "PLAN_CHAT_LIMIT_EXCEEDED",
+            "message": f"Free plan is limited to {limit} chats (you have {current_count}). Please delete an existing chat or upgrade to Plus for unlimited chats.",
+            "current_chats": current_count,
+            "limit": limit,
+            "plan": user_plan,
+        }), 403
+
     body = request.get_json(silent=True) or {}
     title = (body.get("title") or "New Chat").strip()
     dataset_id_raw = body.get("dataset_id")

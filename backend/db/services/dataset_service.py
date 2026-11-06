@@ -50,12 +50,22 @@ class DatasetService:
         file_hash = hashlib.sha256(file_bytes).hexdigest()
         logger.debug("[DATASET_SVC] Hash computed: %s for %s (%d bytes)", file_hash[:12] + "...", filename, file_size)
 
-        # ── Check per-upload limit (MAX_UPLOAD_SIZE_MB) ──
+        # ── Check per-upload limit based on user subscription plan ──
         from config import Config
-        max_upload_bytes = getattr(Config, "MAX_UPLOAD_SIZE_MB", 100) * 1024 * 1024
+        user_plan = "free"
+        if user_id:
+            try:
+                from db.repositories.user_repository import user_repository
+                u = user_repository.get_by_id(db, user_id)
+                if u and getattr(u, "plan", None):
+                    user_plan = str(u.plan).strip().lower()
+            except Exception:
+                pass
+        max_upload_mb = 50 if user_plan == "plus" else getattr(Config, "MAX_UPLOAD_SIZE_MB", 35)
+        max_upload_bytes = max_upload_mb * 1024 * 1024
         if file_size > max_upload_bytes:
             raise ValueError(
-                f"File size exceeds maximum allowed upload limit of {Config.MAX_UPLOAD_SIZE_MB} MB."
+                f"File size exceeds maximum allowed upload limit of {max_upload_mb} MB for {user_plan.capitalize()} plan."
             )
 
         # ── User-scoped deduplication check (reuse existing if identical file hash) ──
@@ -147,20 +157,46 @@ class DatasetService:
             logger.warning("[DATASET_SVC] Dataset %s not found for user %s", dataset_id, user_id)
             return None, None
 
-        # 1. Try spreadsheet history manager first if revisions / snapshots exist
-        try:
-            from spreadsheet.persistence import spreadsheet_history_manager
-            restored_ds, restored_df = spreadsheet_history_manager.restore_dataset_state(db, dataset_id, user_id)
-            if restored_df is not None:
-                return restored_ds or dataset, restored_df
-        except Exception as e:
-            logger.debug("[DATASET_SVC] spreadsheet_history_manager restore skipped: %s", e)
+        # Resolve user plan (Free vs Plus)
+        effective_user_id = user_id or getattr(dataset, "user_id", None)
+        user_plan = "free"
+        if effective_user_id:
+            try:
+                from db.repositories.user_repository import user_repository
+                u = user_repository.get_by_id(db, effective_user_id)
+                if u and getattr(u, "plan", None):
+                    user_plan = str(u.plan).strip().lower()
+            except Exception as e:
+                logger.debug("[DATASET_SVC] User plan lookup skipped: %s", e)
 
-        # 2. Check latest version from transformation_repository
-        from db.repositories.transformation_repository import transformation_repository
-        latest = transformation_repository.get_latest_version(db, dataset_id)
-        content_dataset_id = latest.version_dataset_id if latest else dataset_id
-        if latest:
+        # 1. Plus Plan: Check latest version from transformation_repository for durable persistence across restarts
+        latest = None
+        if user_plan == "plus":
+            try:
+                from db.repositories.transformation_repository import transformation_repository
+                latest = transformation_repository.get_latest_version(db, dataset_id)
+                if latest:
+                    logger.info(
+                        "[DATASET_SVC] Plus Plan: Restoring transformed dataset version=%s for dataset=%s",
+                        latest.version_number, dataset_id
+                    )
+            except Exception as e:
+                logger.warning("[DATASET_SVC] Plus version lookup failed: %s", e)
+
+        # 2. Try spreadsheet history manager if snapshot/edits exist (and for Plus or when explicitly requested)
+        if user_plan == "plus" or not latest:
+            try:
+                from spreadsheet.persistence import spreadsheet_history_manager
+                # Only use spreadsheet_history_manager if actual revisions > 0 or snapshots exist
+                if getattr(dataset, "current_revision", 0) and dataset.current_revision > 0:
+                    restored_ds, restored_df = spreadsheet_history_manager.restore_dataset_state(db, dataset_id, user_id)
+                    if restored_df is not None:
+                        return restored_ds or dataset, restored_df
+            except Exception as e:
+                logger.debug("[DATASET_SVC] spreadsheet_history_manager restore skipped: %s", e)
+
+        content_dataset_id = latest.version_dataset_id if (latest and user_plan == "plus") else dataset_id
+        if latest and user_plan == "plus":
             if user_id is not None:
                 content_dataset = dataset_repository.get_by_id(db, content_dataset_id, user_id)
             else:

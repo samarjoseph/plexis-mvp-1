@@ -46,6 +46,7 @@ class AIRequest(BaseModel):
     temperature: float = 0.7
     max_tokens: Optional[int] = None
     model_id: Optional[str] = None
+    user_plan: Optional[str] = "free"
 
 class IProviderAdapter:
     """

@@ -69,6 +69,19 @@ def _verify_db_migration(app: Flask) -> None:
         else:
             app.logger.info("[DB] Schema up to date at revision: %s", current_rev)
 
+        # Ensure 'plan' column exists on 'users' table
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                try:
+                    conn.execute(text("SELECT plan FROM users LIMIT 1"))
+                except Exception:
+                    app.logger.info("[DB] Auto-migrating missing plan column on users table...")
+                    conn.execute(text("ALTER TABLE users ADD COLUMN plan VARCHAR(50) DEFAULT 'free'"))
+                    conn.commit()
+        except Exception as col_err:
+            app.logger.debug("[DB] Column check for users.plan: %s", col_err)
+
     except SystemExit:
         raise
     except Exception as e:
@@ -118,6 +131,13 @@ def create_app() -> Flask:
         app.register_blueprint(chats_bp)
     except ImportError:
         pass  # Not yet implemented — will be added in Phase 6
+
+    # Register user plan API blueprint
+    try:
+        from api.user_plan import user_plan_bp
+        app.register_blueprint(user_plan_bp)
+    except ImportError as e:
+        logger.warning('[app] user_plan_bp not loaded: %s', e)
 
     @app.route('/health', methods=['GET'])
     def root_health():

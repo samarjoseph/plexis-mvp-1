@@ -410,6 +410,30 @@ def ask():
     if not message and workspace_action:
         message = str(workspace_action.get("type") or "workspace_action")
 
+    # ── Check User Plan Quota for Messages & Tokens ──
+    try:
+        from db.session import get_db
+        from db.identity import identity_resolver
+        from core.plans import check_chat_message_quota
+        curr_user = identity_resolver.resolve(request)
+        if curr_user:
+            user_plan = getattr(curr_user, "plan", "free")
+            db = get_db()
+            allowed, reject_reason, stats = check_chat_message_quota(
+                db, curr_user.user_id, chat_id, user_plan, new_message_text=message
+            )
+            if not allowed:
+                return jsonify({
+                    "success": False,
+                    "error": "PLAN_LIMIT_REACHED",
+                    "answer": f"**Plan Limit Reached**\n\n{reject_reason}\n\nUpgrade to **Plus** for unlimited messages, tokens, and priority intelligence.",
+                    "message": reject_reason,
+                    "stats": stats,
+                    "plan": user_plan,
+                }), 403
+    except Exception as q_err:
+        logger.debug("[ChatAPI] Quota pre-check non-fatal error: %s", q_err)
+
     try:
         # 1. Run request through the pipeline (now workspace-aware + chat-scoped L2 restore)
         ctx = request_pipeline.process(

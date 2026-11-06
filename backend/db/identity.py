@@ -35,6 +35,7 @@ class CurrentUser:
     """
     user_id: UUID
     email: str
+    plan: str = "free"
 
 
 # ---------------------------------------------------------------------------
@@ -95,15 +96,23 @@ class HeaderIdentityResolver(IdentityResolver):
         else:
             logger.debug("[IDENTITY] Resolved identity from header: %s", email)
 
+        header_plan = (request.headers.get("X-User-Plan") or "").strip().lower()
+
         try:
             db = get_db()
             if db is None:
                 import uuid
                 dev_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, email)
-                return CurrentUser(user_id=dev_uuid, email=email)
+                plan = header_plan if header_plan in ("free", "plus") else "free"
+                return CurrentUser(user_id=dev_uuid, email=email, plan=plan)
             user = user_repository.get_or_create_by_email(db, email)
+            # Sync plan if client explicitly specified in dev header, otherwise use DB
+            if header_plan in ("free", "plus") and getattr(user, "plan", None) != header_plan:
+                user.plan = header_plan
+                db.flush()
+            user_plan = getattr(user, "plan", "free") or "free"
             db.commit()
-            return CurrentUser(user_id=user.id, email=user.email_normalized)
+            return CurrentUser(user_id=user.id, email=user.email_normalized, plan=user_plan)
         except Exception as e:
             logger.error("[IDENTITY] Failed to resolve user for email=%s: %s", email, e)
             raise IdentityError(f"Could not resolve user identity: {e}") from e

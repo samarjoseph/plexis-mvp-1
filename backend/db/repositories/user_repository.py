@@ -66,5 +66,17 @@ class UserRepository:
             synchronize_session=False,
         )
 
+    def update_plan(self, db: Session, user_id: UUID, plan: str) -> Optional[User]:
+        """Update subscription plan for a user ('free' or 'plus')."""
+        normalized_plan = str(plan).strip().lower()
+        if normalized_plan not in ("free", "plus"):
+            normalized_plan = "free"
+        user = self.get_by_id(db, user_id)
+        if user:
+            user.plan = normalized_plan
+            db.commit()
+            logger.info("[USER_REPO] Updated user %s plan to %s", user_id, normalized_plan)
+        return user
+
 
 user_repository = UserRepository()

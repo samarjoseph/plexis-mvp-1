@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import ProtectedRoute from './components/oauth/ProtectedRoute';
 import EarlyAccessPage from './components/early-access/EarlyAccessPage';
 import EarlyAccessAdmin from './components/early-access/EarlyAccessAdmin';
+import Billing from './pages/Billing';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -82,6 +83,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route path="/billing" element={<Billing />} />
       <Route path="/early-access" element={<EarlyAccessPage />} />
       <Route path="/early-access/admin" element={<EarlyAccessAdmin />} />
       <Route path="*" element={<Navigate to="/" replace />} />

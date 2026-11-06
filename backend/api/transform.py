@@ -139,6 +139,20 @@ def apply_plan():
             except Exception:
                 pass  # If can't check status, proceed (stateless fallback)
 
+        # ── Quota Check: Daily Transformations (Free plan max 4/day) ──
+        user_plan = getattr(current_user, "plan", "free") if current_user else "free"
+        user_id = current_user.user_id if current_user else None
+        from core.plans import check_daily_transformation_quota
+        allowed, used_today, limit = check_daily_transformation_quota(db, user_id, user_plan)
+        if not allowed:
+            return jsonify({
+                "error": "PLAN_LIMIT_REACHED",
+                "message": f"Free plan is limited to {limit} transformations per day (you have used {used_today}). Upgrade to Plus for unlimited transformations.",
+                "used_today": used_today,
+                "limit": limit,
+                "plan": user_plan,
+            }), 403
+
         # Resolve DataFrame
         entry = dataset_registry.get(dataset_id)
         if entry is None or entry.dataframe is None:

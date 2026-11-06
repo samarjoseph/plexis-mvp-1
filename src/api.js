@@ -28,16 +28,53 @@ export function getPlexisUserEmail() {
   return (raw ? raw.trim().toLowerCase() : '') || 'dev@plexis.local';
 }
 
+export function getPlexisUserPlan() {
+  try {
+    return localStorage.getItem('plexis_user_plan') || 'free';
+  } catch (_) {
+    return 'free';
+  }
+}
+
 /** Default headers for all API requests. */
 function defaultHeaders(extra = {}) {
   return {
     'Content-Type': 'application/json',
     'X-User-Email': getPlexisUserEmail(),
+    'X-User-Plan': getPlexisUserPlan(),
     ...extra,
   };
 }
 
 export const PlexisAPI = {
+  /** Get current user subscription plan, usage metrics, and limits */
+  async getUserPlan() {
+    const res = await fetch(`${BASE_URL}/api/user/plan`, {
+      headers: defaultHeaders(),
+    });
+    if (!res.ok) throw new Error(`Failed to fetch plan: ${res.status}`);
+    const data = await res.json();
+    if (data?.plan) {
+      try { localStorage.setItem('plexis_user_plan', data.plan); } catch (_) {}
+    }
+    return data;
+  },
+
+  /** Switch or upgrade subscription plan ('free' or 'plus') */
+  async updateUserPlan(plan) {
+    const res = await fetch(`${BASE_URL}/api/user/plan`, {
+      method: 'POST',
+      headers: defaultHeaders(),
+      body: JSON.stringify({ plan }),
+    });
+    if (!res.ok) throw new Error(`Failed to update plan: ${res.status}`);
+    const data = await res.json();
+    if (data?.plan) {
+      try { localStorage.setItem('plexis_user_plan', data.plan); } catch (_) {}
+    }
+    return data;
+  },
+
   /**
    * Upload a dataset. Returns raw fetch Response for SSE streaming.
    * SSE events: analyzing | module_ready | chunk | done | error
@@ -50,7 +87,10 @@ export const PlexisAPI = {
     if (chatId) formData.append("chat_id", chatId);
     return fetch(`${BASE_URL}/api/upload`, {
       method: "POST",
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: {
+        'X-User-Email': getPlexisUserEmail(),
+        'X-User-Plan': getPlexisUserPlan(),
+      },
       body: formData,
     });
   },

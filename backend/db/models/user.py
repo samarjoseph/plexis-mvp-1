@@ -15,6 +15,7 @@ class User(Base):
     email = Column(String(320), nullable=False)
     email_normalized = Column(String(320), nullable=False, unique=True, index=True)
     display_name = Column(String(255), nullable=True)
+    plan = Column(String(50), default="free", nullable=False)  # 'free' or 'plus'
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)

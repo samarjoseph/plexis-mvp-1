@@ -88,7 +88,25 @@ def get_dataset_data(dataset_id: str) -> Tuple[Any, int]:
         filter_col = request.args.get('filter_col', '').strip() or None
         filter_val = request.args.get('filter_val', '').strip()
 
+        # ── Resolve plan and enforce spreadsheet rendering limits ──
+        user_plan = "free"
+        try:
+            from db.identity import identity_resolver
+            curr_user = identity_resolver.resolve(request)
+            if curr_user and getattr(curr_user, "plan", None):
+                user_plan = str(curr_user.plan).strip().lower()
+        except Exception:
+            pass
+
         working = df.copy()
+        is_plan_capped = False
+        untruncated_total_rows = len(df)
+
+        # Free tier: max 15,000 rows rendered on spreadsheet
+        # Plus tier: renders whole dataset
+        if user_plan == "free" and len(working) > 15000:
+            working = working.iloc[:15000]
+            is_plan_capped = True
 
         # ── Global search (all columns, case-insensitive contains, NO regex) ─
         # regex=False prevents re.error crashes when users type regex chars ([(+*. etc.)
@@ -166,6 +184,10 @@ def get_dataset_data(dataset_id: str) -> Tuple[Any, int]:
             'has_more': (offset + limit) < total_rows,
             'dataset_id': dataset_id,
             'filename': entry.filename,
+            'plan': user_plan,
+            'plan_capped': is_plan_capped,
+            'plan_max_rows': 15000 if user_plan == "free" else None,
+            'untruncated_total_rows': untruncated_total_rows,
         }), 200
 
     except ValueError as ve:

@@ -328,21 +328,32 @@ def upload_dataset() -> Tuple[Any, int]:
         raw_bytes = file.read()
         file.seek(0)  # Reset so dataset_storage.save() can read from the start
 
-        # ── CSV File-size enforcement (Free-tier 35 MB limit) ────────────────
-        file_size_mb = len(raw_bytes) / (1024 * 1024)
-        ext_lower = ext.lower()
-        csv_limit_mb = Config.MAX_UPLOAD_SIZE_MB
+        # ── Resolve User Plan ───────────────────────────────────────────────
+        user_plan = "free"
+        try:
+            from db.identity import identity_resolver
+            curr_user = identity_resolver.resolve(request)
+            if curr_user and getattr(curr_user, "plan", None):
+                user_plan = str(curr_user.plan).strip().lower()
+        except Exception:
+            pass
 
-        if ext_lower == '.csv' and file_size_mb > csv_limit_mb:
+        # ── File-size enforcement: Free = 35 MB (Config), Plus = 50 MB ───────────────
+        file_size_mb = len(raw_bytes) / (1024 * 1024)
+        configured_csv_limit = getattr(Config, "MAX_UPLOAD_SIZE_MB", 35)
+        max_upload_mb = 50 if user_plan == "plus" else configured_csv_limit
+
+        if ext.lower() == '.csv' and file_size_mb > max_upload_mb:
             return jsonify({
                 "error": "File too large",
                 "error_code": "FILE_TOO_LARGE",
-                "limit_mb": csv_limit_mb,
+                "limit_mb": max_upload_mb,
                 "file_size_mb": round(file_size_mb, 1),
                 "status": 413,
+                "plan": user_plan,
                 "user_message": (
                     "**Need to upload a larger dataset?**\n\n"
-                    f"Plexis is currently in its free development phase, with CSV uploads limited to {csv_limit_mb} MB.\n\n"
+                    f"Plexis is currently in its free development phase, with CSV uploads limited to {max_upload_mb} MB.\n\n"
                     "We're working toward expanded upload limits on our upcoming paid plans. "
                     "We apologize for the inconvenience and appreciate your patience as we continue improving Plexis."
                 ),
@@ -357,6 +368,22 @@ def upload_dataset() -> Tuple[Any, int]:
 
         # Load DataFrame
         df = dataset_loader.load(saved_path)
+
+        # ── Row-count enforcement: Free = max 40,000 rows, Plus = unlimited ──
+        if user_plan == "free" and len(df) > 40000:
+            return jsonify({
+                "error": "Dataset exceeds row limit",
+                "error_code": "PLAN_ROW_LIMIT_EXCEEDED",
+                "limit_rows": 40000,
+                "dataset_rows": len(df),
+                "status": 413,
+                "plan": user_plan,
+                "user_message": (
+                    "**Row Limit Exceeded**\n\n"
+                    f"The Free plan supports datasets up to 40,000 rows (your dataset has {len(df):,} rows).\n\n"
+                    "Upgrade to **Plus** for unlimited rows and up to 50 MB uploads."
+                ),
+            }), 413
         event_bus.publish(DatasetLoadedEvent(filename=filename, rows=len(df), columns=len(df.columns)))
 
         profile = dataset_profiler.profile(df)
