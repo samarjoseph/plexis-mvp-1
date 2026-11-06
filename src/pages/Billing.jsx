@@ -262,7 +262,7 @@ export default function Billing() {
                 <span className="v2-plan-badge v2-plan-badge--plus">Active</span>
               )}
             </span>
-            <span className="v2-plan-badge v2-plan-badge--plus">PRO</span>
+            <span className="v2-plan-badge v2-plan-badge--plus">PLUS</span>
           </div>
 
           <div className="v2-billing-card-price-box">
