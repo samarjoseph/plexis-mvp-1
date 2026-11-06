@@ -179,7 +179,7 @@ export default function Spreadsheet({ onClose, viewMode, onViewModeChange }) {
         if (plan !== 'plus') {
           EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
             message: 'Want to meet more data? Upgrade to',
-            duration: 5500,
+            duration: 10000,
           });
         }
       } catch (_) {}

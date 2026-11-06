@@ -836,6 +836,7 @@ function DashboardInner() {
       EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
         message: 'Free plan limit reached: maximum 10 chats. Upgrade to',
         linkText: 'Plus',
+        duration: 10000,
       });
       return;
     }
@@ -1477,6 +1478,7 @@ function DashboardInner() {
     EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
       message: `File exceeds Free plan limit of ${limitMb} MB. Upgrade to`,
       linkText: 'Plus',
+      duration: 10000,
     });
     const errMsg = {
       id: `err-file-size-${Date.now()}`,
@@ -1509,6 +1511,7 @@ function DashboardInner() {
           EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
             message: 'Daily transformation limit reached (4/day on Free). Upgrade to',
             linkText: 'Plus',
+            duration: 10000,
           });
         }
         const errText = result.conflict

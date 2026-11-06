@@ -6224,20 +6224,20 @@ body.is-dragging * {
   box-shadow: 0 0 10px rgba(168, 85, 247, 0.25);
 }
 
-/* Plan Limitation Toast Notification - Compact Black Glassy Pill */
+/* Plan Limitation Toast Notification - Message Bubble with Tail */
 .v2-plan-limit-toast {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: 28px;
+  right: 28px;
   z-index: 9999;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px;
-  background: rgba(12, 12, 14, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 9999px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.4);
+  padding: 9px 15px;
+  background: rgba(14, 15, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   color: #e2e8f0;
@@ -6246,11 +6246,29 @@ body.is-dragging * {
   user-select: none;
 }
 
+/* Message Bubble Tail */
+.v2-plan-limit-toast::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  right: 18px;
+  width: 12px;
+  height: 12px;
+  background: rgba(14, 15, 18, 0.94);
+  border-right: 1px solid rgba(255, 255, 255, 0.13);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+  transform: rotate(45deg);
+  border-bottom-right-radius: 2px;
+  z-index: 1;
+}
+
 .v2-plan-toast-text {
   font-weight: 450;
   color: #e2e8f0;
   display: inline-flex;
   align-items: center;
+  position: relative;
+  z-index: 2;
 }
 
 .v2-plan-toast-plus-btn {
@@ -6280,16 +6298,19 @@ body.is-dragging * {
   border: none;
   color: #94a3b8;
   cursor: pointer;
-  padding: 2px;
+  padding: 3px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: color 0.15s ease, background 0.15s ease;
-  opacity: 0.6;
+  opacity: 0.65;
+  position: relative;
+  z-index: 2;
 }
 
 .v2-plan-toast-close:hover {
   color: #ffffff;
   opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
 }

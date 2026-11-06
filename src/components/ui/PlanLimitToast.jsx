@@ -18,9 +18,10 @@ export default function PlanLimitToast({ userPlan = 'free' }) {
 
       const id = Date.now();
       const message = payload?.message || 'Want to meet more data? Upgrade to';
-      const duration = payload?.duration || 5500;
+      const linkText = payload?.linkText || 'Plus';
+      const duration = payload?.duration || 10000;
 
-      setToast({ id, message, duration });
+      setToast({ id, message, linkText, duration });
     });
 
     return () => unsub();
@@ -35,18 +36,16 @@ export default function PlanLimitToast({ userPlan = 'free' }) {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  if (!toast) return null;
-
   return (
     <AnimatePresence>
       {toast && (
         <motion.div
           key={toast.id}
           className="v2-plan-limit-toast"
-          initial={{ opacity: 0, y: 16, scale: 0.96 }}
+          initial={{ opacity: 0, y: 14, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 12, scale: 0.96 }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          exit={{ opacity: 0, y: 10, scale: 0.96 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
           role="alert"
         >
           <span className="v2-plan-toast-text">
@@ -58,9 +57,9 @@ export default function PlanLimitToast({ userPlan = 'free' }) {
                 setToast(null);
                 navigate('/billing');
               }}
-              title="View Plus plan"
+              title={`View ${toast.linkText} plan`}
             >
-              Plus
+              {toast.linkText}
             </button>
           </span>
 
