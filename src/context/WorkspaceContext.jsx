@@ -82,6 +82,16 @@ export function WorkspaceProvider({ children }) {
     });
 
     const unsubOpen = EventBus.on(Events.WORKSPACE_OPENED, ({ datasetId, sessionId } = {}) => {
+      // Ironclad lock: Guest mode users can never open the live spreadsheet
+      const rawGuest = localStorage.getItem('plexis_guest_session');
+      if (rawGuest) {
+        try {
+          const parsed = JSON.parse(rawGuest);
+          if (parsed?.guest_token) {
+            return;
+          }
+        } catch (_) {}
+      }
       dispatch({
         type: WorkspaceActions.OPEN,
         datasetId: datasetId || stateRef.current.datasetId,

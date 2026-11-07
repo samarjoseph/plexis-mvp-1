@@ -1145,6 +1145,20 @@ class MasterRouter:
             has_data_intent = _has_mutation_intent(raw_msg) or bool(_TRANSFORM_RX.search(raw_msg))
             if not has_data_intent:
                 first_act = ui_cmds[0]["action"]
+                # ── GUEST RESTRICTION: Block spreadsheet & analytics in Guest Mode ──
+                is_guest_mode = getattr(context, 'is_guest', False) or (getattr(context, 'user', None) and getattr(context.user, 'is_guest', False))
+                if is_guest_mode:
+                    if any(c.get("action") in ("open_spreadsheet", "open_analytics", "locate_column") for c in ui_cmds):
+                        ans = "**Guest Mode Restriction**\n\nThe live spreadsheet and automated analytics are advanced features available to signed-in accounts.\n\nSign in with Google to explore your own datasets, unlock the live spreadsheet, and access deep automated analytics."
+                        context.complete_stage(stage)
+                        return EngineResult(
+                            answer=ans,
+                            source="system",
+                            provider="system",
+                            success=True,
+                            metadata={"guest_locked_action": "spreadsheet"},
+                            should_compose=False,
+                        )
                 label_map = {
                     "open_spreadsheet": "I've opened the live spreadsheet workspace for you.",
                     "close_spreadsheet": "I've closed the spreadsheet workspace.",

@@ -468,6 +468,7 @@ def ask():
             workspace_action=workspace_action,
             chat_id=chat_id,    # enables chat-scoped dataset restore on L1 cache miss
             client_messages=client_messages,
+            user=curr_user,
         )
 
         # 1b. Check if dataset metadata exists but data access failed (recoverable error)

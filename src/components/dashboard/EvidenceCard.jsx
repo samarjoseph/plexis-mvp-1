@@ -105,6 +105,16 @@ export default function EvidenceCard({ evidence }) {
   }
 
   const handleLocate = () => {
+    const rawGuest = localStorage.getItem('plexis_guest_session');
+    if (rawGuest) {
+      try {
+        const parsed = JSON.parse(rawGuest);
+        if (parsed?.guest_token) {
+          EventBus.emit(Events.WORKSPACE_ACTION_REQUESTED, { type: 'locked_feature', feature: 'spreadsheet' });
+          return;
+        }
+      } catch (_) {}
+    }
     EventBus.emit(Events.EVIDENCE_SELECTED, { evidenceId: normalized.id, evidence: normalized });
     EventBus.emit(Events.WORKSPACE_OPENED, {});
     EventBus.emit(Events.NAVIGATE_TO_EVIDENCE, { evidenceId: normalized.id });

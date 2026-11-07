@@ -25,6 +25,7 @@ class RequestPipeline:
         workspace_action: Optional[dict] = None,
         chat_id: Optional[str] = None,      # NEW: passed from /api/ask for L2 restore
         client_messages: Optional[List[dict]] = None,
+        user: Optional[Any] = None,
     ) -> ExecutionContext:
         """Run the full pipeline and return an enriched ExecutionContext."""
         ctx = ExecutionContext(message=message)
@@ -54,13 +55,24 @@ class RequestPipeline:
         # Stage 2.5: User Identity Resolution
         stage = ctx.start_stage('user_identity')
         try:
-            from flask import request as _flask_req
-            from db.session import db_session
-            from db.repositories.user_repository import user_repository
-            email = (_flask_req.headers.get('X-User-Email') or '').strip().lower() or 'dev@plexis.local'
-            with db_session() as _db:
-                _user = user_repository.get_or_create_by_email(_db, email)
-                ctx.user_id = _user.id
+            if user is not None:
+                ctx.user = user
+                ctx.user_id = getattr(user, 'user_id', None)
+                ctx.is_guest = getattr(user, 'is_guest', False)
+            else:
+                from flask import request as _flask_req, has_request_context
+                if has_request_context():
+                    from db.identity import identity_resolver
+                    _curr_user = identity_resolver.resolve(_flask_req)
+                    ctx.user = _curr_user
+                    ctx.user_id = getattr(_curr_user, 'user_id', None)
+                    ctx.is_guest = getattr(_curr_user, 'is_guest', False)
+                else:
+                    from db.session import db_session
+                    from db.repositories.user_repository import user_repository
+                    with db_session() as _db:
+                        _user = user_repository.get_or_create_by_email(_db, 'dev@plexis.local')
+                        ctx.user_id = _user.id
             ctx.complete_stage(stage)
         except Exception as e:
             ctx.complete_stage(stage, success=False, error=str(e))

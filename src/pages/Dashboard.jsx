@@ -669,6 +669,10 @@ function DashboardInner() {
   // Also handles 'ask_chat' — conversational fallback from the spreadsheet agent.
   useEffect(() => {
     const unsub = EventBus.on(Events.WORKSPACE_ACTION_REQUESTED, (action) => {
+      if (action?.type === 'locked_feature') {
+        handleLockedFeature(action.feature || 'spreadsheet');
+        return;
+      }
       const actionType = action.type;
       let prefilledText = action.prefilledQuestion;
 
@@ -1466,14 +1470,28 @@ function DashboardInner() {
         }),
       };
 
+      // If backend flagged a restricted action for guests (e.g. open spreadsheet or analytics)
+      if (isGuest && (apiResult?.guest_locked_action || apiResult?.metadata?.guest_locked_action)) {
+        const lockedFeat = apiResult.guest_locked_action || apiResult.metadata.guest_locked_action || 'spreadsheet';
+        handleLockedFeature(lockedFeat);
+      }
+
       // Execute UI commands from backend response (open/close spreadsheet, analytics, sidebar)
       if (apiResult?.ui_commands && Array.isArray(apiResult.ui_commands)) {
         apiResult.ui_commands.forEach((cmd) => {
-          if (cmd.action === 'open_spreadsheet') {
+          if (cmd.action === 'open_spreadsheet' || cmd.action === 'locate_column') {
+            if (isGuest) {
+              handleLockedFeature('spreadsheet');
+              return;
+            }
             EventBus.emit(Events.WORKSPACE_OPENED, { datasetId: cmd.dataset_id || currentConv.datasetId });
           } else if (cmd.action === 'close_spreadsheet') {
             EventBus.emit(Events.WORKSPACE_CLOSED);
           } else if (cmd.action === 'open_analytics') {
+            if (isGuest) {
+              handleLockedFeature('analytics');
+              return;
+            }
             setAnalyticsCollapsed(false);
           } else if (cmd.action === 'close_analytics') {
             setAnalyticsCollapsed(true);
@@ -1481,8 +1499,6 @@ function DashboardInner() {
             setSidebarCollapsed(false);
           } else if (cmd.action === 'close_sidebar') {
             setSidebarCollapsed(true);
-          } else if (cmd.action === 'locate_column') {
-            EventBus.emit(Events.WORKSPACE_OPENED, { datasetId: cmd.dataset_id || currentConv.datasetId });
           }
         });
       }
@@ -1733,6 +1749,10 @@ function DashboardInner() {
     { key: 'o', mod: true, shift: true, action: handleNewChat },
     { key: 'a', mod: true, shift: true, action: (e) => {
         e.preventDefault();
+        if (isGuest) {
+          handleLockedFeature('analytics');
+          return;
+        }
         setAnalyticsCollapsed((v) => !v);
     }},
     { key: 'k', mod: true, action: (e) => {
@@ -1741,6 +1761,10 @@ function DashboardInner() {
     }},
     { key: 'u', mod: true, action: (e) => {
         e.preventDefault();
+        if (isGuest) {
+          setCustomUploadModalOpen(true);
+          return;
+        }
         document.getElementById('dataset-upload-input')?.click();
     }},
     { key: 'b', mod: true, action: (e) => {
@@ -1752,7 +1776,7 @@ function DashboardInner() {
   // ── Render ─────────────────────────────────────────────────
   return (
     <motion.div
-      className={`v2-dashboard ${workspaceOpen ? 'v2-dashboard--workspace-open' : ''}`}
+      className={`v2-dashboard ${!isGuest && workspaceOpen ? 'v2-dashboard--workspace-open' : ''}`}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.4 }}
@@ -1868,7 +1892,7 @@ function DashboardInner() {
         />
 
         {/* DatasetWorkspace panel — side-by-side mode */}
-        {workspaceOpen && viewMode === 'side_by_side' && (
+        {!isGuest && workspaceOpen && viewMode === 'side_by_side' && (
           <>
             {/* Drag divider */}
             <div
@@ -1909,7 +1933,7 @@ function DashboardInner() {
 
       {/* DatasetWorkspace panel — popup mode */}
       <AnimatePresence>
-        {workspaceOpen && viewMode === 'popup' && (
+        {!isGuest && workspaceOpen && viewMode === 'popup' && (
           <motion.div
             className="v2-workspace-popup"
             initial={{ opacity: 0, scale: 0.96 }}
@@ -1926,7 +1950,7 @@ function DashboardInner() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {!analyticsCollapsed && (
+        {!isGuest && !analyticsCollapsed && (
           <AnalyticsPanelV2
             chartData={activeConversation?.chartData}
             chartType={chartType}

@@ -29,6 +29,8 @@ class ExecutionContext:
     # Identity
     user_id: Optional[Any] = None        # Resolved DB user UUID
     chat_id: Optional[Any] = None        # Resolved DB chat UUID
+    user: Optional[Any] = None           # Resolved CurrentUser identity
+    is_guest: bool = False               # Guest mode indicator
     
     # Dataset
     dataset_id: Optional[str] = None

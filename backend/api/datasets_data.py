@@ -36,6 +36,24 @@ logger = logging.getLogger(__name__)
 datasets_data_bp = Blueprint('datasets_data', __name__, url_prefix='/api')
 
 
+@datasets_data_bp.before_request
+def check_guest_spreadsheet_access():
+    if request.method == "OPTIONS":
+        return None
+    from db.identity import identity_resolver
+    try:
+        user = identity_resolver.resolve(request)
+        if user and user.is_guest:
+            return jsonify({
+                "error": "GUEST_RESTRICTED",
+                "code": "GUEST_SPREADSHEET_LOCKED",
+                "message": "The live spreadsheet workspace is unavailable in Guest Mode. Please sign in with Google to view and interact with the full spreadsheet."
+            }), 403
+    except Exception:
+        pass
+    return None
+
+
 def _try_restore_from_db(dataset_id: str) -> pd.DataFrame | None:
     """
     Attempt to restore a dataset DataFrame from PostgreSQL when L1 cache is cold.
