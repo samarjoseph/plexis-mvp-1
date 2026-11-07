@@ -5,6 +5,7 @@ function storageKey(userId) {
 }
 
 export function loadConversations(userId) {
+  if (userId === 'guest') return [];
   try {
     const raw = localStorage.getItem(storageKey(userId));
     return raw ? JSON.parse(raw) : [];
@@ -14,6 +15,7 @@ export function loadConversations(userId) {
 }
 
 export function saveConversations(userId, conversations) {
+  if (userId === 'guest') return; // Guest conversations must never be persisted
   localStorage.setItem(storageKey(userId), JSON.stringify(conversations));
 }
 

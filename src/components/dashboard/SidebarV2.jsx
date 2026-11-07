@@ -20,7 +20,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { sortConversations, getConversationLastActivity } from '../../utils/conversationStorage';
 import PlexisLogo from '../brand/PlexisLogo';
-import GoogleSignInButton from '../oauth/GoogleSignInButton';
+import GoogleSignInButton, { triggerGoogleSignIn } from '../oauth/GoogleSignInButton';
 import Tooltip from '../ui/Tooltip';
 
 /* ─────────────────────────────────────────────────────────────────
@@ -557,15 +557,23 @@ export default function SidebarV2({
           </div>
           </Tooltip>
 
-          <VirtualList
-            groups={groups}
-            activeId={activeId}
-            onSelect={onSelectChat}
-            onRename={onRenameChat}
-            onDelete={onDeleteChat}
-            onTogglePin={onTogglePin}
-            activeSearch={activeSearch}
-          />
+          {!isGuest ? (
+            <VirtualList
+              groups={groups}
+              activeId={activeId}
+              onSelect={onSelectChat}
+              onRename={onRenameChat}
+              onDelete={onDeleteChat}
+              onTogglePin={onTogglePin}
+              activeSearch={activeSearch}
+            />
+          ) : (
+            <div className="v2-sidebar-guest-placeholder">
+              <span className="v2-sidebar-guest-placeholder-text">
+                Conversations are temporary and not saved in Guest Mode
+              </span>
+            </div>
+          )}
 
           <div className="v2-sidebar-bottom" ref={profileMenuRef}>
             {isGuest ? (
@@ -593,8 +601,14 @@ export default function SidebarV2({
                   </button>
                 </div>
 
-                <div className="v2-guest-sidebar-cta" style={{ marginTop: '8px', width: '100%' }}>
-                  <GoogleSignInButton variant="nav" label="Sign in with Google" />
+                <div className="v2-guest-sidebar-cta">
+                  <button
+                    type="button"
+                    className="v2-guest-sidebar-google-link"
+                    onClick={triggerGoogleSignIn}
+                  >
+                    Continue with Google
+                  </button>
                 </div>
 
                 <AnimatePresence>

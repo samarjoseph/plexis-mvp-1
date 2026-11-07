@@ -174,7 +174,7 @@ function DashboardInner() {
   const { isOpen: workspaceOpen, setDataset, buildWorkspaceSummaryPayload } = useWorkspace();
 
   // ── State ──────────────────────────────────────────────────
-  const [conversations, setConversations] = useState(() => loadConversations(userId));
+  const [conversations, setConversations] = useState(() => isGuest ? [] : loadConversations(userId));
   const [activeId, setActiveId] = useState(null);
   const [isChatRouteLoading, setIsChatRouteLoading] = useState(() => Boolean(chatRef));
   const prevChatRef = useRef(chatRef);
@@ -314,6 +314,11 @@ function DashboardInner() {
   // ── Load from storage & Remote DB ───────────────────────────
   useEffect(() => {
     let isMounted = true;
+    if (isGuest) {
+      localStorage.removeItem('plexis_conversations_guest');
+      localStorage.removeItem('plexis_chats_guest');
+      return;
+    }
     const stored = loadConversations(userId);
     if (stored.length > 0) {
       setConversations(stored);
@@ -677,8 +682,8 @@ function DashboardInner() {
 
   // ── Persist to storage ─────────────────────────────────────
   useEffect(() => {
-    if (conversations.length > 0) saveConversations(userId, conversations);
-  }, [conversations, userId]);
+    if (!isGuest && conversations.length > 0) saveConversations(userId, conversations);
+  }, [conversations, userId, isGuest]);
 
   // ── Sync active dataset with WorkspaceContext ──────────
   useEffect(() => {
@@ -912,6 +917,10 @@ function DashboardInner() {
 
   // ── Helpers ────────────────────────────────────────────────
   const handleNewChat = () => {
+    if (isGuest) {
+      handleLockedFeature('history');
+      return;
+    }
     if (userPlan !== 'plus' && conversations.length >= 10) {
       EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
         message: 'Free plan limit reached: maximum 10 chats. Upgrade to',
@@ -1015,7 +1024,7 @@ function DashboardInner() {
     });
 
     // 4. Ensure backend chat record exists (non-blocking for instantaneous 0ms UI transition)
-    if (!currentConv.chatId && !isUUID(targetId)) {
+    if (!isGuest && !currentConv.chatId && !isUUID(targetId)) {
       const initialTitle = currentConv.title || 'New Chat';
       PlexisAPI.createChat(initialTitle).then((created) => {
         if (created?.chat_id) {
@@ -1056,7 +1065,7 @@ function DashboardInner() {
     }
 
     // 5. Dynamic AI title generation (only once at the start of conversation)
-    const shouldNameChat = (!currentConv.named && (currentConv.title === 'New Chat' || !currentConv.title));
+    const shouldNameChat = (!isGuest && !currentConv.named && (currentConv.title === 'New Chat' || !currentConv.title));
     if (shouldNameChat) {
       currentConv.named = true;
       setConversations((prev) =>
