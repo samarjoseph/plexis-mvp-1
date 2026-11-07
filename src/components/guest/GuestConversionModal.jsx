@@ -75,7 +75,7 @@ export default function GuestConversionModal({ isOpen, feature = 'spreadsheet', 
           </div>
 
           {/* Titles */}
-          <div className="guest-modal-tag">Plexis AI · Guest Mode Limit</div>
+          <div className="guest-modal-tag">Plexis · Guest Mode Limit</div>
           <h2 className="guest-modal-title">{config.title}</h2>
           <p className="guest-modal-desc">{config.description}</p>
 

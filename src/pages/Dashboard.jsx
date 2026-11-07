@@ -281,7 +281,7 @@ function DashboardInner() {
               id: 'guest_welcome_msg',
               sender: 'ai',
               role: 'assistant',
-              text: `Welcome to **Plexis AI Guest Mode**!\n\nI've preloaded our sample customer dataset: **\`${ds.filename || 'sample_customers.csv'}\`** (${ds.row_count || 100} records).\n\n**In Guest Mode, you can:**\n- Explore the sample data and ask natural-language questions\n- Perform up to **2 AI transformations** per month (e.g. *"Sort by spend descending"*)\n- Generate charts and data visualizations\n\n*Sign in with Google anytime to upload your own datasets, unlock the live spreadsheet, and access deep automated analytics.*`,
+              text: `Welcome to **Plexis Guest Mode**!\n\nI've preloaded our sample customer dataset: **\`${ds.filename || 'sample_customers.csv'}\`** (${ds.row_count || 100} records).\n\n**In Guest Mode, you can:**\n- Explore the sample data and ask natural-language questions\n- Perform up to **2 AI transformations** per month (e.g. *"Sort by spend descending"*)\n- Generate charts and data visualizations\n\n*Sign in with Google anytime to upload your own datasets, unlock the live spreadsheet, and access deep automated analytics.*`,
               createdAt: Date.now(),
             }
           ],
@@ -1716,6 +1716,12 @@ function DashboardInner() {
       />
 
       <PlanLimitToast userPlan={userPlan} />
+      {isGuest && (
+        <GuestNotification
+          transformationsUsed={guestSession?.transformations_used || 0}
+          transformationsMax={guestSession?.transformations_max || 2}
+        />
+      )}
       <SidebarV2
         userPlan={userPlan}
         collapsed={sidebarCollapsed}
@@ -1779,12 +1785,6 @@ function DashboardInner() {
 
       {/* Chat + Workspace split pane */}
       <div className="v2-chat-workspace-split">
-        {isGuest && (
-          <GuestNotification
-            transformationsUsed={guestSession?.transformations_used || 0}
-            transformationsMax={guestSession?.transformations_max || 2}
-          />
-        )}
         <ChatAreaV2
           userPlan={userPlan}
           isGuest={isGuest}

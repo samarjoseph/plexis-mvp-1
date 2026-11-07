@@ -1,32 +1,34 @@
 import React from 'react';
 import './GoogleSignInButton.css';
 
-export default function GoogleSignInButton({ variant = 'primary', label = 'Continue with Google' }) {
+export function triggerGoogleSignIn() {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    console.error("OAuth client not found. VITE_GOOGLE_CLIENT_ID is missing.");
+    alert("Google OAuth is not configured. Missing VITE_GOOGLE_CLIENT_ID.");
+    return;
+  }
+  
+  // BASE_URL is '/' in dev and '/PLEXIS-main/' in prod.
+  // Build redirect URI as: origin + base + 'auth/callback'
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, ''); // strip trailing slash
+  const redirectUri = window.location.origin + base + '/auth/callback';
+  
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'id_token',
+    scope: 'openid email profile',
+    nonce: Math.random().toString(36).substring(2),
+    prompt: 'select_account'
+  });
 
+  window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+export default function GoogleSignInButton({ variant = 'primary', label = 'Continue with Google' }) {
   const handleLogin = () => {
-    if (!clientId) {
-      console.error("OAuth client not found. VITE_GOOGLE_CLIENT_ID is missing.");
-      alert("Google OAuth is not configured. Missing VITE_GOOGLE_CLIENT_ID.");
-      return;
-    }
-    
-    // BASE_URL is '/' in dev and '/PLEXIS-main/' in prod.
-    // Build redirect URI as: origin + base + 'auth/callback'
-    const base = import.meta.env.BASE_URL.replace(/\/$/, ''); // strip trailing slash
-    const redirectUri = window.location.origin + base + '/auth/callback';
-    
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'id_token',
-      scope: 'openid email profile',
-      nonce: Math.random().toString(36).substring(2),
-      prompt: 'select_account'
-    });
-
-    
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    triggerGoogleSignIn();
   };
 
   return (

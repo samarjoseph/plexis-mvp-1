@@ -403,7 +403,7 @@ def _call_llm_for_operation(query: str, context_str: str, columns: list, session
     ctx_line = f"Context: {context_str}" if context_str else ""
 
     system_prompt = (
-        "You are the Plexis AI spreadsheet assistant.\n\n"
+        "You are the Plexis spreadsheet assistant.\n\n"
         "Your job: convert the user query into a structured JSON operation AND write a natural, concise explanation.\n\n"
         + (f"{ctx_line}\n\n" if ctx_line else "")
         + "Supported operations and schemas:\n"

@@ -51,18 +51,9 @@ export default function LandingPage() {
           <div className="nav-brand-logo-wrap" aria-hidden="true">
             <PlexisLogo width={28} height={28} />
           </div>
-          <span className="nav-brand-text">Plexis AI</span>
+          <span className="nav-brand-text">Plexis</span>
         </div>
         <div className="nav-actions">
-          <button
-            type="button"
-            className="landing-guest-nav-btn"
-            onClick={handleGuestStart}
-            disabled={isStartingGuest}
-          >
-            {isStartingGuest ? <Loader2 size={14} className="spin-icon" /> : <Sparkles size={14} />}
-            <span>Try without signing up</span>
-          </button>
           <GoogleSignInButton variant="nav" label="Continue with Google" />
         </div>
       </nav>
@@ -77,7 +68,7 @@ export default function LandingPage() {
           custom={0}
         >
           <span className="badge-dot"></span>
-          <span>Plexis AI · Intelligent AI Data Analyst</span>
+          <span>Plexis · Intelligent Data Analyst</span>
         </motion.div>
 
         <motion.h1
@@ -87,7 +78,7 @@ export default function LandingPage() {
           animate="visible"
           custom={1}
         >
-          Plexis AI – AI-Powered <br className="mobile-break" /> Data Analysis
+          Plexis – AI-Powered <br className="mobile-break" /> Data Analysis
         </motion.h1>
 
         <motion.p
@@ -97,7 +88,7 @@ export default function LandingPage() {
           animate="visible"
           custom={2}
         >
-          Meet Plexis AI (PlexisAI), your intelligent AI data analyst. Upload CSV and Excel
+          Meet Plexis, your intelligent AI data analyst. Upload CSV and Excel
           datasets, discover instant insights, perform AI spreadsheet analysis, and transform
           data seamlessly from one unified workspace.
         </motion.p>
@@ -208,10 +199,10 @@ export default function LandingPage() {
         <div className="footer-content">
           <div className="footer-brand">
             <PlexisLogo width={20} height={20} />
-            <span>Plexis AI</span>
+            <span>Plexis</span>
           </div>
           <p className="footer-text">
-            &copy; {new Date().getFullYear()} Plexis AI. All rights reserved.
+            &copy; {new Date().getFullYear()} Plexis. All rights reserved.
           </p>
         </div>
       </footer>

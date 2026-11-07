@@ -1,59 +1,63 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, X, LogIn } from 'lucide-react';
-import GoogleSignInButton from '../oauth/GoogleSignInButton';
-import './GuestModals.css';
+import { Sparkles, X } from 'lucide-react';
+import { triggerGoogleSignIn } from '../oauth/GoogleSignInButton';
 
 export default function GuestNotification({ transformationsUsed = 0, transformationsMax = 2 }) {
-  const [isDismissed, setIsDismissed] = useState(() => {
-    return sessionStorage.getItem('plexis_guest_banner_dismissed') === 'true';
+  const [dismissed, setDismissed] = useState(() => {
+    return sessionStorage.getItem('plexis_guest_toast_dismissed') === 'true';
   });
 
   const handleDismiss = () => {
-    setIsDismissed(true);
-    sessionStorage.setItem('plexis_guest_banner_dismissed', 'true');
+    setDismissed(true);
+    sessionStorage.setItem('plexis_guest_toast_dismissed', 'true');
   };
 
-  if (isDismissed) return null;
+  if (dismissed) return null;
 
   return (
     <AnimatePresence>
       <motion.div
-        className="guest-notification-bar glass-panel"
-        initial={{ opacity: 0, y: -16 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -16 }}
-        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="v2-plan-limit-toast"
+        style={{
+          bottom: '28px',
+          right: '28px',
+          top: 'auto',
+          left: 'auto',
+        }}
+        initial={{ opacity: 0, y: 6, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 4, scale: 0.95 }}
+        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+        role="alert"
       >
-        <div className="guest-notif-left">
-          <div className="guest-notif-badge">
-            <Sparkles size={14} className="guest-notif-sparkle" />
-            <span>Guest Mode</span>
-          </div>
-
-          <div className="guest-notif-body">
-            <span className="guest-notif-title">
-              You're exploring Plexis in Guest Mode.
-            </span>
-            <span className="guest-notif-text">
-              You can use our sample dataset and perform {transformationsMax} transformations per month
-              {transformationsUsed > 0 ? ` (${transformationsUsed}/${transformationsMax} used)` : ''}.
-              Sign in to upload your own datasets, access the live spreadsheet, analytics and saved conversations.
-            </span>
-          </div>
+        <div className="v2-plan-toast-logo" aria-hidden="true">
+          <Sparkles size={13} color="#3b82f6" />
         </div>
 
-        <div className="guest-notif-right">
-          <GoogleSignInButton variant="nav" label="Sign in with Google" />
+        <span className="v2-plan-toast-text">
+          Guest Mode: {transformationsMax} transformations/month
+          {transformationsUsed > 0 ? ` (${transformationsUsed}/${transformationsMax})` : ''}.{' '}
           <button
             type="button"
-            className="guest-notif-close"
-            onClick={handleDismiss}
-            aria-label="Dismiss guest notification"
+            className="v2-plan-toast-plus-btn"
+            onClick={triggerGoogleSignIn}
+            title="Sign in with Google"
           >
-            <X size={16} />
+            Sign in
           </button>
-        </div>
+        </span>
+
+        <button
+          type="button"
+          className="v2-plan-toast-close"
+          onClick={handleDismiss}
+          aria-label="Dismiss guest notification"
+        >
+          <X size={13} />
+        </button>
+
+        <span className="v2-plan-toast-tail v2-plan-toast-tail--fallback" />
       </motion.div>
     </AnimatePresence>
   );

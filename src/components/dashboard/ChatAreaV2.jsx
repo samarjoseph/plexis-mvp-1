@@ -201,7 +201,7 @@ const ChatMessageList = memo(function ChatMessageList({
               </div>
               <div className="v2-welcome-card-content">
                 <span className="v2-welcome-card-title">Ask Anything</span>
-                <span className="v2-welcome-card-desc">Chat with Plexis AI freely</span>
+                <span className="v2-welcome-card-desc">Chat with Plexis freely</span>
               </div>
               <ArrowUpRight className="v2-welcome-card-arrow" size={15} />
             </motion.button>

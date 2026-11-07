@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check, Paintbrush, User, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import GoogleSignInButton from '../oauth/GoogleSignInButton';
 import { useAuth } from '../../context/AuthContext';
 
 const COLORS = [
@@ -14,7 +16,8 @@ const COLORS = [
 const ACCENT_KEY = 'plexis_accent';
 
 export default function SettingsPanelV2({ isOpen, onClose }) {
-  const { user, logout } = useAuth();
+  const { user, logout, isGuest, exitGuestSession } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('appearance');
   const [accent, setAccent] = useState(
     () => localStorage.getItem(ACCENT_KEY) || 'indigo'
@@ -146,19 +149,44 @@ export default function SettingsPanelV2({ isOpen, onClose }) {
 
                 <section>
                   <label>Authentication</label>
-                  <p style={{ color: 'var(--dash-muted)', fontSize: '0.82rem', marginBottom: '16px' }}>
-                    Your account is managed via Google OAuth.
-                  </p>
-                  <button
-                    className="v2-signout-btn"
-                    onClick={() => {
-                      onClose();
-                      logout();
-                    }}
-                  >
-                    <LogOut size={16} />
-                    Sign out
-                  </button>
+                  {isGuest ? (
+                    <>
+                      <p style={{ color: 'var(--dash-muted)', fontSize: '0.82rem', marginBottom: '14px' }}>
+                        You are exploring Plexis in Guest Mode with a temporary session.
+                      </p>
+                      <div style={{ marginBottom: '14px' }}>
+                        <GoogleSignInButton variant="nav" label="Sign in with Google" />
+                      </div>
+                      <button
+                        className="v2-signout-btn"
+                        onClick={() => {
+                          onClose();
+                          exitGuestSession?.();
+                          logout();
+                          navigate('/');
+                        }}
+                      >
+                        <LogOut size={16} />
+                        Exit Guest Mode
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ color: 'var(--dash-muted)', fontSize: '0.82rem', marginBottom: '16px' }}>
+                        Your account is managed via Google OAuth.
+                      </p>
+                      <button
+                        className="v2-signout-btn"
+                        onClick={() => {
+                          onClose();
+                          logout();
+                        }}
+                      >
+                        <LogOut size={16} />
+                        Sign out
+                      </button>
+                    </>
+                  )}
                 </section>
               </motion.div>
             )}

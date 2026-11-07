@@ -387,7 +387,8 @@ export default function SidebarV2({
   userPlan = 'free',
 }) {
   const navigate = useNavigate();
-  const { user, isGuest, logout } = useAuth();
+  const { user, isGuest, logout, exitGuestSession } = useAuth();
+  const profileMenuRef = useRef(null);
   const isDesktop = useIsDesktop();
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchLocal, setSearchLocal] = useState('');
@@ -424,6 +425,17 @@ export default function SidebarV2({
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   }, [isDesktop]);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    const handleOutside = (e) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [profileOpen]);
 
   const activeSearch = searchQuery || searchLocal;
 
@@ -555,22 +567,90 @@ export default function SidebarV2({
             activeSearch={activeSearch}
           />
 
-          <div className="v2-sidebar-bottom">
+          <div className="v2-sidebar-bottom" ref={profileMenuRef}>
             {isGuest ? (
-              <div className="v2-sidebar-profile v2-sidebar-profile--guest">
-                <div className="v2-profile-btn" style={{ cursor: 'default' }}>
-                  <div className="v2-profile-avatar-fallback guest-badge-avatar" style={{ background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', fontWeight: 'bold' }}>
-                    G
-                  </div>
-                  <div className="v2-profile-info">
-                    <span className="v2-profile-name">Guest Mode</span>
-                    <span className="v2-profile-email">2 transformations/month</span>
-                  </div>
+              <>
+                <div className="v2-sidebar-profile v2-sidebar-profile--guest">
+                  <button
+                    type="button"
+                    className="v2-profile-btn"
+                    onClick={() => setProfileOpen((v) => !v)}
+                  >
+                    <div
+                      className="v2-profile-avatar-fallback guest-badge-avatar"
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.2)',
+                        color: '#38bdf8',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      G
+                    </div>
+                    <div className="v2-profile-info">
+                      <span className="v2-profile-name">Guest Mode</span>
+                      <span className="v2-profile-email">2 transformations/month</span>
+                    </div>
+                  </button>
                 </div>
-                <div className="v2-guest-sidebar-cta" style={{ marginTop: '10px', width: '100%' }}>
+
+                <div className="v2-guest-sidebar-cta" style={{ marginTop: '8px', width: '100%' }}>
                   <GoogleSignInButton variant="nav" label="Sign in with Google" />
                 </div>
-              </div>
+
+                <AnimatePresence>
+                  {profileOpen && (
+                    <motion.div
+                      className="v2-profile-dropdown"
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                      transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+                    >
+                      <div className="v2-profile-dropdown-header">
+                        <div
+                          className="v2-profile-avatar-fallback guest-badge-avatar"
+                          style={{
+                            background: 'rgba(56, 189, 248, 0.2)',
+                            color: '#38bdf8',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          G
+                        </div>
+                        <div>
+                          <span className="v2-profile-name">Guest Mode</span>
+                          <span className="v2-profile-email">2 transformations/month</span>
+                        </div>
+                      </div>
+
+                      <div className="v2-profile-dropdown-divider" />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileOpen(false);
+                          onOpenSettings();
+                        }}
+                      >
+                        <Settings size={14} /> Settings
+                      </button>
+
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => {
+                          setProfileOpen(false);
+                          exitGuestSession?.();
+                          logout();
+                          navigate('/');
+                        }}
+                      >
+                        <LogOut size={14} /> Exit Guest Mode
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
             ) : (
               <>
                 <div className="v2-sidebar-profile">
