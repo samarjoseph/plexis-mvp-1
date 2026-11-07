@@ -169,7 +169,9 @@ class CacheManager:
 
         # Columns
         columns = {}
-        for col_name, c in data.get("columns", {}).items():
+        cols_raw = data.get("columns")
+        cols_dict = cols_raw if isinstance(cols_raw, dict) else {}
+        for col_name, c in cols_dict.items():
             num_data = c.get("numeric_stats")
             cat_data = c.get("categorical_stats")
             dt_data = c.get("datetime_stats")

@@ -232,7 +232,8 @@ class DKOSerializer:
                 metadata=_meta(g.get("metadata")),
             )
 
-        kg_d = data.get("knowledge_graph", {})
+        kg_raw = data.get("knowledge_graph")
+        kg_d = kg_raw if isinstance(kg_raw, dict) else {}
         kg = KnowledgeGraph(
             hierarchies=[_dep(h) for h in kg_d.get("hierarchies", [])],
             dependencies=[_dep(d) for d in kg_d.get("dependencies", [])],
@@ -240,7 +241,8 @@ class DKOSerializer:
             correlations=[],  # ColumnCorrelation reconstruction skipped — not critical
         )
 
-        identity_d = data.get("identity", {})
+        id_raw = data.get("identity")
+        identity_d = id_raw if isinstance(id_raw, dict) else {}
         identity = DatasetIdentity(
             probable_purpose=identity_d.get("probable_purpose", ""),
             primary_entities=identity_d.get("primary_entities", []),
@@ -260,7 +262,9 @@ class DKOSerializer:
         ]
 
         columns = {}
-        for name, col_data in data.get("columns", {}).items():
+        cols_raw = data.get("columns")
+        cols_dict = cols_raw if isinstance(cols_raw, dict) else {}
+        for name, col_data in cols_dict.items():
             col = _col(col_data)
             if col:
                 columns[name] = col

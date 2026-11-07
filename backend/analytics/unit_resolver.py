@@ -89,8 +89,27 @@ def resolve_unit(
 
     # 1. Check explicit dataset or column metadata
     if dataset_metadata and isinstance(dataset_metadata, dict):
-        # Direct column unit
-        col_meta = dataset_metadata.get("columns", {}).get(col) or dataset_metadata.get(col)
+        col_meta = None
+        columns_val = dataset_metadata.get("columns")
+        if isinstance(columns_val, dict):
+            col_meta = columns_val.get(col)
+        elif isinstance(columns_val, list):
+            for item in columns_val:
+                if isinstance(item, dict) and item.get("name") == col:
+                    col_meta = item
+                    break
+        if not col_meta and col:
+            col_meta = dataset_metadata.get(col)
+
+        # Also inspect 'column_types' (dataset_profiler output format)
+        if not col_meta and col:
+            col_types = dataset_metadata.get("column_types")
+            if isinstance(col_types, list):
+                for item in col_types:
+                    if isinstance(item, dict) and item.get("name") == col:
+                        col_meta = item
+                        break
+
         if isinstance(col_meta, dict) and col_meta.get("unit"):
             unit_val = str(col_meta["unit"]).strip()
             return UnitResolution(
@@ -101,7 +120,7 @@ def resolve_unit(
             )
         # Dataset-level units map
         units_map = dataset_metadata.get("units")
-        if isinstance(units_map, dict) and units_map.get(col):
+        if isinstance(units_map, dict) and col and units_map.get(col):
             unit_val = str(units_map[col]).strip()
             return UnitResolution(
                 status="known",
@@ -111,7 +130,7 @@ def resolve_unit(
             )
 
     # 2. Check documented data dictionary or verified schema definition
-    if data_dictionary and isinstance(data_dictionary, dict):
+    if data_dictionary and isinstance(data_dictionary, dict) and col:
         entry = data_dictionary.get(col) or data_dictionary.get(col.lower())
         if isinstance(entry, dict) and entry.get("unit"):
             unit_val = str(entry["unit"]).strip()
@@ -123,7 +142,7 @@ def resolve_unit(
             )
 
     # 3. Check explicitly supplied user definitions
-    if user_definitions and isinstance(user_definitions, dict):
+    if user_definitions and isinstance(user_definitions, dict) and col:
         user_unit = user_definitions.get(col) or user_definitions.get(col.lower())
         if user_unit:
             unit_val = str(user_unit).strip()

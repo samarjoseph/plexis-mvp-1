@@ -28,8 +28,11 @@ def _load_cache():
                 
             for ds_name, ds_data in data.items():
                 cols = {}
-                for col_name, col_data in ds_data.get("columns", {}).items():
-                    cols[col_name] = ColumnOntology(**col_data)
+                cols_raw = ds_data.get("columns")
+                cols_dict = cols_raw if isinstance(cols_raw, dict) else {}
+                for col_name, col_data in cols_dict.items():
+                    if isinstance(col_data, dict):
+                        cols[col_name] = ColumnOntology(**col_data)
                     
                 ontology = DatasetOntology(
                     dataset_name=ds_data.get("dataset_name", ds_name),

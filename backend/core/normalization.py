@@ -65,8 +65,9 @@ class QueryNormalizer:
         
         # 4. Extract possible columns (if dataset_profile is available)
         possible_cols = set()
-        if context.dataset_profile and 'columns' in context.dataset_profile:
-            cols = context.dataset_profile['columns']
+        dp = context.dataset_profile
+        if dp and isinstance(dp, dict):
+            cols = dp.get('column_types') or dp.get('columns')
             # columns could be a list of dicts or list of strings
             col_names = []
             if isinstance(cols, list):

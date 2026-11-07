@@ -287,7 +287,7 @@ class SemanticContextBuilder:
                     if isinstance(col, dict):
                         columns.append({
                             "name": col.get('name', ''),
-                            "type": col.get('type', 'unknown'),
+                            "type": col.get('type') or col.get('dtype', 'unknown'),
                             "dtype": col.get('dtype', ''),
                             "samples": col.get('sample_values', [])[:3],
                         })
@@ -298,12 +298,13 @@ class SemanticContextBuilder:
         # Priority 3: dataset_profile
         try:
             if getattr(context, 'dataset_profile', None):
-                cols = context.dataset_profile.get('columns', [])
+                raw_cols = context.dataset_profile.get('column_types') or context.dataset_profile.get('columns', [])
+                cols = raw_cols if isinstance(raw_cols, (list, tuple)) else []
                 for col in cols[:50]:
                     if isinstance(col, dict):
                         columns.append({
                             "name": col.get('name', ''),
-                            "type": col.get('type', 'unknown'),
+                            "type": col.get('type') or col.get('dtype', 'unknown'),
                             "dtype": '',
                             "samples": [],
                         })
