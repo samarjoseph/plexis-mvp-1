@@ -6254,33 +6254,33 @@ body.is-dragging * {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 2.5px 7px;
-  border-radius: 5px;
+  padding: 2.5px 9px;
+  border-radius: 9999px;
   line-height: 1.35;
   transition: all 0.2s ease;
 }
 
 .v2-plan-badge--free {
   background: rgba(148, 163, 184, 0.12);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  border: 1px solid rgba(148, 163, 184, 0.22);
   color: #cbd5e1;
 }
 
 .v2-plan-badge--plus {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(59, 130, 246, 0.35));
-  border: 1px solid rgba(59, 130, 246, 0.55);
-  color: #eff6ff;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
+  background: rgba(37, 99, 235, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  color: #93c5fd;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
 }
 
 .v2-plan-badge--popular {
-  background: linear-gradient(135deg, #ff3366 0%, #f43f5e 50%, #e11d48 100%);
+  background: linear-gradient(135deg, #ff2e63 0%, #ff4b72 50%, #e11d48 100%);
   border: 1px solid rgba(255, 255, 255, 0.25);
   color: #ffffff;
-  border-radius: 5px;
+  border-radius: 9999px;
   font-size: 9.5px;
   font-weight: 800;
-  padding: 2px 7.5px;
+  padding: 2px 8.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   box-shadow: 0 2px 10px rgba(244, 63, 94, 0.4);
@@ -6404,4 +6404,20 @@ body.is-dragging * {
   color: #ffffff;
   opacity: 1;
   background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 640px) {
+  .v2-plan-limit-toast {
+    left: 14px !important;
+    right: 14px !important;
+    bottom: 14px !important;
+    top: auto !important;
+    max-width: none !important;
+    width: auto !important;
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+  .v2-plan-toast-tail {
+    display: none;
+  }
 }

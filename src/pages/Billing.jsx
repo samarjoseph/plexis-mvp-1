@@ -201,17 +201,11 @@ export default function Billing() {
           <PlexisLogo width={22} height={22} />
           <span className="v2-billing-brand-text">Plexis</span>
           <span className={`v2-plan-badge v2-plan-badge--${currentPlan}`}>
-            {currentPlan === 'plus' ? (
-              <>
-                <Sparkles size={11} color="#60a5fa" /> Plus
-              </>
-            ) : (
-              'Free'
-            )}
+            {currentPlan === 'plus' ? 'Plus' : 'Free'}
           </span>
         </div>
 
-        <div style={{ width: '80px' }} />
+        <div className="v2-billing-nav-spacer" />
       </header>
 
       {/* Hero */}
@@ -222,7 +216,7 @@ export default function Billing() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3, delay: 0.1 }}
         >
-          <Sparkles size={13} />
+          <Sparkles size={13} color="#60a5fa" />
           <span>Plans & Intelligence Quotas</span>
         </motion.div>
 
@@ -360,13 +354,12 @@ export default function Billing() {
 
           <div className="v2-billing-card-header">
             <span className="v2-billing-card-name">
-              <Sparkles size={20} color="#3b82f6" />
+              <Sparkles size={18} color="#3b82f6" />
               Plus Plan
-              {isPlus && (
-                <span className="v2-plan-badge v2-plan-badge--plus">Active</span>
-              )}
             </span>
-            <span className="v2-plan-badge v2-plan-badge--plus">PLUS</span>
+            {isPlus && (
+              <span className="v2-plan-badge v2-plan-badge--plus">Active</span>
+            )}
           </div>
 
           <div className="v2-billing-card-price-box">
@@ -479,62 +472,64 @@ export default function Billing() {
       <section className="v2-billing-matrix-section">
         <h2 className="v2-billing-matrix-title">Full Capability Comparison</h2>
 
-        <table className="v2-billing-matrix-table">
-          <thead>
-            <tr>
-              <th>Feature & Limit</th>
-              <th>Free Plan</th>
-              <th>Plus Plan</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td className="v2-matrix-col-feature">Transformation Persistence</td>
-              <td className="v2-matrix-col-free">Resets on cold restart / wake up</td>
-              <td className="v2-matrix-col-plus">Permanent & durable across restarts</td>
-            </tr>
-            <tr>
-              <td className="v2-matrix-col-feature">Spreadsheet Rendering</td>
-              <td className="v2-matrix-col-free">Max 15,000 rows</td>
-              <td className="v2-matrix-col-plus">Whole dataset (Unlimited rows)</td>
-            </tr>
-            <tr>
-              <td className="v2-matrix-col-feature">Daily AI Transformations</td>
-              <td className="v2-matrix-col-free">4 transformations / day</td>
-              <td className="v2-matrix-col-plus">Unlimited transformations</td>
-            </tr>
-            <tr>
-              <td className="v2-matrix-col-feature">Chat Conversations</td>
-              <td className="v2-matrix-col-free">10 chats per account</td>
-              <td className="v2-matrix-col-plus">Unlimited chats</td>
-            </tr>
-            <tr>
-              <td className="v2-matrix-col-feature">Messages per Chat</td>
-              <td className="v2-matrix-col-free">50 messages</td>
-              <td className="v2-matrix-col-plus">Unlimited messages</td>
-            </tr>
-            <tr>
-              <td className="v2-matrix-col-feature">Tokens per Chat</td>
-              <td className="v2-matrix-col-free">7,000 tokens</td>
-              <td className="v2-matrix-col-plus">Unlimited tokens</td>
-            </tr>
-            <tr>
-              <td className="v2-matrix-col-feature">Total Messages Across Account</td>
-              <td className="v2-matrix-col-free">500 total messages</td>
-              <td className="v2-matrix-col-plus">Unlimited total messages</td>
-            </tr>
-            <tr>
-              <td className="v2-matrix-col-feature">Dataset Upload Capacity</td>
-              <td className="v2-matrix-col-free">35 MB & max 40,000 rows</td>
-              <td className="v2-matrix-col-plus">50 MB & unlimited rows</td>
-            </tr>
-            <tr>
-              <td className="v2-matrix-col-feature">LLM Inference Scheduling</td>
-              <td className="v2-matrix-col-free">Standard queue</td>
-              <td className="v2-matrix-col-plus">VIP Priority Queue (Answered first)</td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="v2-billing-table-wrapper">
+          <table className="v2-billing-matrix-table">
+            <thead>
+              <tr>
+                <th>Feature & Limit</th>
+                <th>Free Plan</th>
+                <th>Plus Plan</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="v2-matrix-col-feature">Transformation Persistence</td>
+                <td className="v2-matrix-col-free">Resets on cold restart / wake up</td>
+                <td className="v2-matrix-col-plus">Permanent & durable across restarts</td>
+              </tr>
+              <tr>
+                <td className="v2-matrix-col-feature">Spreadsheet Rendering</td>
+                <td className="v2-matrix-col-free">Max 15,000 rows</td>
+                <td className="v2-matrix-col-plus">Whole dataset (Unlimited rows)</td>
+              </tr>
+              <tr>
+                <td className="v2-matrix-col-feature">Daily AI Transformations</td>
+                <td className="v2-matrix-col-free">4 transformations / day</td>
+                <td className="v2-matrix-col-plus">Unlimited transformations</td>
+              </tr>
+              <tr>
+                <td className="v2-matrix-col-feature">Chat Conversations</td>
+                <td className="v2-matrix-col-free">10 chats per account</td>
+                <td className="v2-matrix-col-plus">Unlimited chats</td>
+              </tr>
+              <tr>
+                <td className="v2-matrix-col-feature">Messages per Chat</td>
+                <td className="v2-matrix-col-free">50 messages</td>
+                <td className="v2-matrix-col-plus">Unlimited messages</td>
+              </tr>
+              <tr>
+                <td className="v2-matrix-col-feature">Tokens per Chat</td>
+                <td className="v2-matrix-col-free">7,000 tokens</td>
+                <td className="v2-matrix-col-plus">Unlimited tokens</td>
+              </tr>
+              <tr>
+                <td className="v2-matrix-col-feature">Total Messages Across Account</td>
+                <td className="v2-matrix-col-free">500 total messages</td>
+                <td className="v2-matrix-col-plus">Unlimited total messages</td>
+              </tr>
+              <tr>
+                <td className="v2-matrix-col-feature">Dataset Upload Capacity</td>
+                <td className="v2-matrix-col-free">35 MB & max 40,000 rows</td>
+                <td className="v2-matrix-col-plus">50 MB & unlimited rows</td>
+              </tr>
+              <tr>
+                <td className="v2-matrix-col-feature">LLM Inference Scheduling</td>
+                <td className="v2-matrix-col-free">Standard queue</td>
+                <td className="v2-matrix-col-plus">VIP Priority Queue (Answered first)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {/* Cursor-Anchored Toast Notification */}

@@ -82,42 +82,47 @@
   color: #ffffff;
 }
 
-/* Plan Badges */
+/* Top Nav Spacer for centering */
+.v2-billing-nav-spacer {
+  width: 80px;
+}
+
+/* Plan Badges - Smooth Capsule Shape */
 .v2-plan-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 2.5px 7px;
-  border-radius: 5px;
+  padding: 2.5px 9px;
+  border-radius: 9999px;
   line-height: 1.35;
   transition: all 0.2s ease;
 }
 
 .v2-plan-badge--free {
   background: rgba(148, 163, 184, 0.12);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  border: 1px solid rgba(148, 163, 184, 0.22);
   color: #cbd5e1;
 }
 
 .v2-plan-badge--plus {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(59, 130, 246, 0.35));
-  border: 1px solid rgba(59, 130, 246, 0.55);
-  color: #eff6ff;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
+  background: rgba(37, 99, 235, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  color: #93c5fd;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
 }
 
 .v2-plan-badge--popular {
-  background: linear-gradient(135deg, #ff3366 0%, #f43f5e 50%, #e11d48 100%);
+  background: linear-gradient(135deg, #ff2e63 0%, #ff4b72 50%, #e11d48 100%);
   border: 1px solid rgba(255, 255, 255, 0.25);
   color: #ffffff;
-  border-radius: 5px;
+  border-radius: 9999px;
   font-size: 9.5px;
   font-weight: 800;
-  padding: 2px 7.5px;
+  padding: 2px 8.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   box-shadow: 0 2px 10px rgba(244, 63, 94, 0.4);
@@ -135,19 +140,23 @@
   margin: 0 auto;
 }
 
+/* Hero Eyebrow - Capsule Pill */
 .v2-billing-hero-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 5px;
-  background: rgba(37, 99, 235, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: #60a5fa;
+  gap: 7px;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   margin-bottom: 20px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .v2-billing-hero-title {
@@ -217,23 +226,31 @@
 /* Strawberry-Pink Popular Badge on Top-Left Corner of Plus Card */
 .v2-billing-popular-tag {
   position: absolute;
-  top: -11px;
-  left: 24px;
-  background: linear-gradient(135deg, #ff3366 0%, #f43f5e 50%, #e11d48 100%);
+  top: -12px;
+  left: 20px;
+  background: linear-gradient(135deg, #ff2e63 0%, #ff4b72 50%, #e11d48 100%);
   color: #ffffff;
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 3px 10px;
-  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 750;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  padding: 3.5px 13px;
+  border-radius: 9999px;
   box-shadow: 0 4px 14px rgba(244, 63, 94, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  transform: rotate(-5deg);
+  transform-origin: center;
   z-index: 10;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   user-select: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.v2-billing-card--plus:hover .v2-billing-popular-tag {
+  transform: rotate(-3deg) scale(1.04);
+  box-shadow: 0 6px 18px rgba(244, 63, 94, 0.55);
 }
 
 .v2-billing-card-header {
@@ -390,15 +407,23 @@
   text-align: center;
 }
 
+/* Scrollable Table Container for mobile protection */
+.v2-billing-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 17, 26, 0.6);
+  backdrop-filter: blur(16px);
+}
+
 .v2-billing-matrix-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  background: rgba(15, 17, 26, 0.6);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  overflow: hidden;
+  background: transparent;
+  border: none;
 }
 
 .v2-billing-matrix-table th,
@@ -523,4 +548,177 @@
   color: #ffffff;
   opacity: 1;
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================================
+   RESPONSIVE LAYOUT & MOBILE OPTIMIZATIONS
+   ============================================================ */
+
+@media (max-width: 900px) {
+  .v2-billing-hero {
+    padding: 48px 20px 32px;
+  }
+
+  .v2-billing-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    padding: 20px 20px 50px;
+  }
+
+  .v2-billing-card {
+    padding: 32px 24px;
+  }
+
+  .v2-billing-matrix-section {
+    padding: 0 20px 60px;
+  }
+}
+
+@media (max-width: 640px) {
+  .v2-billing-nav {
+    padding: 12px 16px;
+  }
+
+  .v2-billing-nav-brand {
+    gap: 8px;
+  }
+
+  .v2-billing-brand-text {
+    font-size: 16px;
+  }
+
+  .v2-billing-back-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    gap: 5px;
+  }
+
+  .v2-billing-nav-spacer {
+    display: none;
+  }
+
+  .v2-billing-hero {
+    padding: 28px 16px 20px;
+  }
+
+  .v2-billing-hero-eyebrow {
+    font-size: 11.5px;
+    padding: 5px 14px;
+    margin-bottom: 14px;
+    gap: 5px;
+  }
+
+  .v2-billing-hero-title {
+    font-size: 26px;
+    line-height: 1.2;
+    margin-bottom: 10px;
+    letter-spacing: -0.02em;
+  }
+
+  .v2-billing-hero-desc {
+    font-size: 13.5px;
+    line-height: 1.5;
+    padding: 0 4px;
+  }
+
+  .v2-billing-grid {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 12px 16px 40px;
+    gap: 26px;
+    box-sizing: border-box;
+  }
+
+  .v2-billing-card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 28px 20px 24px;
+    border-radius: 18px;
+  }
+
+  .v2-billing-card-name {
+    font-size: 20px;
+  }
+
+  .v2-billing-card-price {
+    font-size: 34px;
+  }
+
+  .v2-billing-card-period {
+    font-size: 13px;
+  }
+
+  .v2-billing-card-desc {
+    font-size: 13px;
+    margin-bottom: 20px;
+    min-height: auto;
+  }
+
+  .v2-billing-features {
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .v2-billing-feature-item {
+    font-size: 13px;
+    gap: 10px;
+  }
+
+  .v2-billing-cta-btn {
+    padding: 12px 16px;
+    font-size: 13.5px;
+    border-radius: 10px;
+  }
+
+  .v2-billing-popular-tag {
+    top: -11px;
+    left: 16px;
+    font-size: 10px;
+    padding: 3px 11px;
+  }
+
+  .v2-billing-matrix-section {
+    padding: 0 16px 50px;
+  }
+
+  .v2-billing-matrix-title {
+    font-size: 18px;
+    margin-bottom: 16px;
+  }
+
+  .v2-billing-table-wrapper {
+    border-radius: 14px;
+  }
+
+  .v2-billing-matrix-table {
+    min-width: 520px;
+  }
+
+  .v2-billing-matrix-table th,
+  .v2-billing-matrix-table td {
+    padding: 11px 12px;
+    font-size: 12px;
+  }
+
+  .v2-billing-matrix-table th {
+    font-size: 10.5px;
+  }
+
+  .v2-billing-toast {
+    left: 16px !important;
+    right: 16px !important;
+    bottom: 16px !important;
+    top: auto !important;
+    max-width: none !important;
+    width: auto !important;
+    border-radius: 10px;
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  .v2-billing-toast-tail {
+    display: none;
+  }
 }
