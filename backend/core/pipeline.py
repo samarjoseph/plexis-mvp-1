@@ -137,6 +137,14 @@ class RequestPipeline:
         """
         entry = None
 
+        # ── Step 0: Guest Mode Auto-Resolution ───────────────────────────────
+        if ctx.user and getattr(ctx.user, "is_guest", False) and getattr(ctx.user, "session_id", None):
+            from core.guest import provision_guest_dataset
+            guest_ds_id = f"guest_ds_{ctx.user.session_id}"
+            entry = dataset_registry.get(guest_ds_id) or provision_guest_dataset(ctx.user.session_id)
+            if entry:
+                logger.info("[Pipeline] Guest dataset resolved: %s (%s)", entry.dataset_id, entry.filename)
+
         # Sanitize explicit dataset_id
         requested_dataset_id = None
         if dataset_id:
@@ -153,6 +161,12 @@ class RequestPipeline:
             entry = dataset_registry.get(dataset_id)
             if not entry:
                 entry = dataset_registry.get_by_filename(dataset_id)
+
+        # ── Step 1.5: Guest dataset on-demand restore ────────────────────────
+        if not entry and dataset_id and str(dataset_id).startswith("guest_ds_"):
+            from core.guest import provision_guest_dataset
+            session_id_part = str(dataset_id)[len("guest_ds_"):]
+            entry = provision_guest_dataset(session_id_part)
 
         # ── Step 2: Explicit dataset_id → L2 DB restore ───────────────────────
         if not entry and dataset_id:

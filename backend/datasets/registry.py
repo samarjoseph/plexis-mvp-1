@@ -60,6 +60,18 @@ class DatasetRegistry:
         if dataset_id in self._restoring:
             return None
 
+        # Guest dataset on-demand provisioning across workers/cold-starts
+        if dataset_id and str(dataset_id).startswith("guest_ds_"):
+            try:
+                from core.guest import provision_guest_dataset
+                session_id = str(dataset_id)[len("guest_ds_"):]
+                entry = provision_guest_dataset(session_id)
+                if entry:
+                    return entry
+            except Exception as ex:
+                logger.error("[Registry] On-demand guest dataset provisioning failed: %s", ex)
+            return None
+
         self._restoring.add(dataset_id)
         # L2 Auto-restore on cache miss
         try:
@@ -102,6 +114,17 @@ class DatasetRegistry:
     def get_by_filename(self, filename: str) -> Optional[DatasetEntry]:
         matches = [d for d in self._datasets.values() if d.filename == filename]
         if not matches:
+            if filename in ("sample_customers.csv", "sample_customer.csv"):
+                try:
+                    from flask import has_request_context, request
+                    if has_request_context():
+                        from db.identity import identity_resolver
+                        from core.guest import provision_guest_dataset
+                        curr_user = identity_resolver.resolve(request)
+                        if curr_user and curr_user.is_guest and curr_user.session_id:
+                            return provision_guest_dataset(curr_user.session_id)
+                except Exception:
+                    pass
             return None
         matches.sort(key=lambda x: x.upload_timestamp, reverse=True)
         return matches[0]

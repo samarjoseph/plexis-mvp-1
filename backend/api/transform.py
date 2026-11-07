@@ -45,7 +45,7 @@ def create_plan():
         from core.guest import check_guest_transformation_quota
         guest_ds_id = f"guest_ds_{current_user.session_id}"
         req_ds = (request.get_json(silent=True) or {}).get('dataset_id', '')
-        if req_ds and req_ds != guest_ds_id:
+        if req_ds and req_ds not in (guest_ds_id, "sample_customer.csv", "sample_customers.csv"):
             return jsonify({'error': 'Guests cannot access other datasets'}), 403
 
         allowed, used, limit = check_guest_transformation_quota(get_db(), current_user.guest_id or "")
@@ -164,7 +164,10 @@ def apply_plan():
             from core.guest import check_guest_transformation_quota
             guest_ds_id = f"guest_ds_{current_user.session_id}"
             if dataset_id != guest_ds_id:
-                return jsonify({'error': 'Guests cannot access other datasets'}), 403
+                if dataset_id in ("sample_customer.csv", "sample_customers.csv"):
+                    dataset_id = guest_ds_id
+                else:
+                    return jsonify({'error': 'Guests cannot access other datasets'}), 403
 
             guest_allowed, guest_used, guest_limit = check_guest_transformation_quota(db, current_user.guest_id or "")
             if not guest_allowed:

@@ -939,10 +939,10 @@ function DashboardInner() {
     if (isSampleGuest) {
       const ds = guestSession?.dataset;
       const dsId = ds?.id || (guestSession?.session_id ? `guest_ds_${guestSession.session_id}` : 'guest_ds_sample');
-      const dsFilename = ds?.filename || 'sample_customer.csv';
+      const dsFilename = ds?.filename || 'sample_customers.csv';
       const dsRows = ds?.row_count || 100;
-      const dsCols = ds?.column_count || 5;
-      const dsFields = ds?.columns || ['customer_id', 'name', 'age', 'city', 'spend'];
+      const dsCols = ds?.column_count || 6;
+      const dsFields = ds?.columns || ['id', 'name', 'email', 'city', 'phone', 'age'];
 
       setDataset(dsId, guestSession?.session_id);
       EventBus.emit(Events.DATASET_LOADED, { datasetId: dsId, filename: dsFilename });
@@ -961,6 +961,20 @@ function DashboardInner() {
         rows: dsRows,
         columns: dsCols,
       };
+    } else if (isGuest && (!currentConv.datasetId || currentConv.datasetId === 'No active dataset')) {
+      const gDs = guestSession?.dataset;
+      const gDsId = gDs?.id || (guestSession?.session_id ? `guest_ds_${guestSession.session_id}` : 'guest_ds_sample');
+      currentConv.datasetId = gDsId;
+      currentConv.activeDatasetName = gDs?.filename || 'sample_customers.csv';
+      currentConv.datasetName = gDs?.filename || 'sample_customers.csv';
+      if (!currentConv.datasetInfo && gDs) {
+        currentConv.datasetInfo = {
+          filename: gDs.filename || 'sample_customers.csv',
+          rows: gDs.row_count || 100,
+          columns: gDs.column_count || 6,
+          fields: gDs.columns || ['id', 'name', 'email', 'city', 'phone', 'age'],
+        };
+      }
     }
 
     // 2. Build updated messages with user's new message(s)
@@ -1015,7 +1029,7 @@ function DashboardInner() {
       const ds = guestSession?.dataset;
       const dsFilename = ds?.filename || 'sample_customer.csv';
       const dsRows = ds?.row_count || 100;
-      const dsCols = ds?.column_count || 5;
+      const dsCols = ds?.column_count || 6;
       const dsId = ds?.id || (guestSession?.session_id ? `guest_ds_${guestSession.session_id}` : 'guest_ds_sample');
 
       const welcomeAiMsg = {
@@ -1339,9 +1353,11 @@ function DashboardInner() {
 
       const resolvedChatId = currentConv.chatId || (isUUID(targetId) ? targetId : (isUUID(activeId) ? activeId : null));
 
+      const resolvedDatasetId = currentConv.datasetId || (isGuest && guestSession?.session_id ? `guest_ds_${guestSession.session_id}` : (currentConv.datasetName && currentConv.datasetName !== 'No active dataset' && !currentConv.datasetName.startsWith('New Chat') ? currentConv.datasetName : '')) || '';
+
       const apiResult = await PlexisAPI.askQuestion(
         runtimeText,
-        currentConv.datasetId || (currentConv.datasetName && currentConv.datasetName !== 'No active dataset' && !currentConv.datasetName.startsWith('New Chat') ? currentConv.datasetName : '') || '',
+        resolvedDatasetId,
         {
           workspaceState: workspaceOpen ? workspaceState : null,
           workspaceAction,

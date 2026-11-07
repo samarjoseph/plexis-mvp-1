@@ -424,12 +424,13 @@ def ask():
         curr_user = identity_resolver.resolve(request)
         if curr_user and curr_user.is_guest:
             guest_ds_id = f"guest_ds_{curr_user.session_id}"
-            if dataset_id and dataset_id != guest_ds_id:
+            if dataset_id and dataset_id not in (guest_ds_id, "sample_customer.csv", "sample_customers.csv"):
                 return jsonify({
                     "success": False,
                     "error": "GUEST_RESTRICTED",
                     "answer": "Guest Mode is restricted to the preloaded sample dataset. Sign in with Google to explore your own datasets.",
                 }), 403
+            dataset_id = guest_ds_id
     except Exception:
         pass
 
