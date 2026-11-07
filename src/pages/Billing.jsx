@@ -82,6 +82,15 @@ export default function Billing() {
   }, []);
 
   useEffect(() => {
+    document.body.classList.add('v2-billing-body');
+    document.documentElement.classList.add('v2-billing-html');
+    return () => {
+      document.body.classList.remove('v2-billing-body');
+      document.documentElement.classList.remove('v2-billing-html');
+    };
+  }, []);
+
+  useEffect(() => {
     // Check for Stripe Checkout return
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get('session_id');
