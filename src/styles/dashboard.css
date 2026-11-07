@@ -6179,9 +6179,9 @@ body.is-dragging * {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 11px;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
   margin-right: 14px;
   border-radius: 8px;
   background: transparent;
@@ -6209,10 +6209,13 @@ body.is-dragging * {
 }
 
 .v2-header-plan-text {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
   letter-spacing: -0.015em;
   color: inherit;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .v2-header-plan-plus-text {
@@ -6231,7 +6234,7 @@ body.is-dragging * {
 }
 
 .v2-header-plan-free-text {
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 600;
   color: #94a3b8;
   letter-spacing: -0.01em;
