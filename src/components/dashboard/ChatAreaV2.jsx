@@ -370,7 +370,7 @@ export default function ChatAreaV2({
             aria-label="Subscription plan"
           >
             <span className="v2-header-plan-text">Plan</span>
-            <span className={`v2-plan-badge v2-plan-badge--${userPlan || 'free'}`}>
+            <span className={userPlan === 'plus' ? 'v2-header-plan-plus-text' : 'v2-header-plan-free-text'}>
               {userPlan === 'plus' ? 'Plus' : 'Free'}
             </span>
           </button>

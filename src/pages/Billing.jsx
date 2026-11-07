@@ -353,7 +353,10 @@ export default function Billing() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.3 }}
         >
-          <div className="v2-billing-card-glow" />
+          {/* Strawberry-Pink Popular Badge on the left corner */}
+          <div className="v2-billing-popular-tag">
+            Popular
+          </div>
 
           <div className="v2-billing-card-header">
             <span className="v2-billing-card-name">
@@ -363,10 +366,7 @@ export default function Billing() {
                 <span className="v2-plan-badge v2-plan-badge--plus">Active</span>
               )}
             </span>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <span className="v2-plan-badge v2-plan-badge--popular">Popular</span>
-              <span className="v2-plan-badge v2-plan-badge--plus">PLUS</span>
-            </div>
+            <span className="v2-plan-badge v2-plan-badge--plus">PLUS</span>
           </div>
 
           <div className="v2-billing-card-price-box">

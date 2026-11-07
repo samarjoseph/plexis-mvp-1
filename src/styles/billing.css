@@ -111,16 +111,16 @@
 }
 
 .v2-plan-badge--popular {
-  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
-  border: 1px solid rgba(147, 197, 253, 0.45);
+  background: linear-gradient(135deg, #ff3366 0%, #f43f5e 50%, #e11d48 100%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   color: #ffffff;
   border-radius: 5px;
   font-size: 9.5px;
   font-weight: 800;
-  padding: 2px 7px;
+  padding: 2px 7.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  box-shadow: 0 0 10px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 2px 10px rgba(244, 63, 94, 0.4);
 }
 
 .v2-plan-badge-icon {
@@ -201,28 +201,39 @@
 }
 
 .v2-billing-card--plus {
-  border-color: rgba(59, 130, 246, 0.4);
-  background: linear-gradient(
-    180deg,
-    rgba(15, 23, 42, 0.85) 0%,
-    rgba(10, 15, 30, 0.8) 100%
-  );
-  box-shadow: 0 0 30px rgba(37, 99, 235, 0.15);
+  background: rgba(15, 17, 26, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  overflow: visible;
 }
 
 .v2-billing-card--plus:hover {
-  border-color: rgba(59, 130, 246, 0.7);
-  box-shadow: 0 20px 50px rgba(37, 99, 235, 0.25);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
 }
 
-.v2-billing-card-glow {
+/* Strawberry-Pink Popular Badge on Top-Left Corner of Plus Card */
+.v2-billing-popular-tag {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 250px;
-  height: 250px;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.2), transparent 70%);
-  pointer-events: none;
+  top: -11px;
+  left: 24px;
+  background: linear-gradient(135deg, #ff3366 0%, #f43f5e 50%, #e11d48 100%);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 5px;
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
 }
 
 .v2-billing-card-header {

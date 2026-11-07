@@ -6215,6 +6215,36 @@ body.is-dragging * {
   color: inherit;
 }
 
+.v2-header-plan-plus-text {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #3b82f6; /* Pure blue text, not a button */
+  letter-spacing: -0.01em;
+  text-transform: capitalize;
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+  line-height: 1;
+}
+
+.v2-header-plan-free-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: -0.01em;
+  text-transform: capitalize;
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+  line-height: 1;
+}
+
 .v2-plan-badge {
   display: inline-flex;
   align-items: center;
@@ -6244,16 +6274,16 @@ body.is-dragging * {
 }
 
 .v2-plan-badge--popular {
-  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
-  border: 1px solid rgba(147, 197, 253, 0.45);
+  background: linear-gradient(135deg, #ff3366 0%, #f43f5e 50%, #e11d48 100%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   color: #ffffff;
   border-radius: 5px;
   font-size: 9.5px;
   font-weight: 800;
-  padding: 2px 7px;
+  padding: 2px 7.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  box-shadow: 0 0 10px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 2px 10px rgba(244, 63, 94, 0.4);
 }
 
 /* Plan Limitation Toast Notification - Cursor-Anchored Message Bubble */
