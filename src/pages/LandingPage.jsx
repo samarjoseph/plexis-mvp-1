@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Database, BarChart3, MessageSquare, Globe, Brain, Shield, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
@@ -21,20 +21,36 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const { startGuestSession } = useAuth();
   const [isStartingGuest, setIsStartingGuest] = useState(false);
+  const [isWarmingUp, setIsWarmingUp] = useState(false);
   const [guestError, setGuestError] = useState(null);
+
+  // Proactively ping health endpoint on landing page mount (0 LLM calls, wakes sleeping server)
+  useEffect(() => {
+    PlexisAPI.warmup();
+  }, []);
 
   const handleGuestStart = async () => {
     if (isStartingGuest) return;
     setIsStartingGuest(true);
+    setIsWarmingUp(false);
     setGuestError(null);
+
+    // If backend is sleeping and takes > 2.5s, update status to reassure user
+    const warmTimer = setTimeout(() => {
+      setIsWarmingUp(true);
+    }, 2500);
+
     try {
       const sessionData = await PlexisAPI.createGuestSession();
+      clearTimeout(warmTimer);
       startGuestSession(sessionData);
       navigate('/dashboard');
     } catch (err) {
+      clearTimeout(warmTimer);
       console.error('Failed to start guest session:', err);
       setGuestError(err.message || 'Could not start guest session. Please try again.');
       setIsStartingGuest(false);
+      setIsWarmingUp(false);
     }
   };
 
@@ -106,12 +122,13 @@ export default function LandingPage() {
             type="button"
             className="hero-guest-btn glass-panel"
             onClick={handleGuestStart}
+            onMouseEnter={() => PlexisAPI.warmup()}
             disabled={isStartingGuest}
           >
             {isStartingGuest ? (
               <>
                 <Loader2 size={18} className="spin-icon" />
-                <span>Starting guest session...</span>
+                <span>{isWarmingUp ? 'Waking up server (almost ready)...' : 'Starting guest session...'}</span>
               </>
             ) : (
               <>
@@ -185,10 +202,20 @@ export default function LandingPage() {
               type="button"
               className="hero-guest-btn glass-panel"
               onClick={handleGuestStart}
+              onMouseEnter={() => PlexisAPI.warmup()}
               disabled={isStartingGuest}
             >
-              <Sparkles size={16} className="hero-guest-icon" />
-              <span>Try without signing up</span>
+              {isStartingGuest ? (
+                <>
+                  <Loader2 size={16} className="spin-icon" />
+                  <span>{isWarmingUp ? 'Waking up server...' : 'Starting...'}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} className="hero-guest-icon" />
+                  <span>Try without signing up</span>
+                </>
+              )}
             </button>
           </div>
         </motion.div>

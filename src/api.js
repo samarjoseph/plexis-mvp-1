@@ -625,4 +625,20 @@ export const PlexisAPI = {
     if (!res.ok) throw new Error(`Failed to fetch guest status: ${res.status}`);
     return res.json();
   },
+
+  /**
+   * Proactively warm up free-tier / scale-to-zero server as early as possible.
+   * Hits lightweight health endpoint with 0 LLM calls, waking up cold-start backend.
+   */
+  async warmup() {
+    try {
+      const res = await fetch(`${BASE_URL}/api/health`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  },
 };
