@@ -84,6 +84,18 @@ def create_chat():
     if err:
         return err
 
+    if current_user.is_guest:
+        # Ephemeral guest session: no DB chat created
+        return jsonify({
+            "id": f"guest_chat_{current_user.session_id}",
+            "slug": "guest-session",
+            "title": "Guest Session",
+            "current_dataset_id": f"guest_ds_{current_user.session_id}",
+            "is_guest": True,
+            "created_at": None,
+            "last_message_at": None,
+        }), 201
+
     db = get_db()
 
     # ── Chat Quota Check (Free plan max 10 chats) ──
@@ -189,6 +201,9 @@ def list_chats():
     if err:
         return err
 
+    if current_user.is_guest:
+        return jsonify({"chats": []}), 200
+
     db = get_db()
     try:
         chats = chat_service.list_chats(db, user_id=current_user.user_id)
@@ -208,6 +223,13 @@ def get_chat(slug_or_id: str):
     current_user, err = _resolve_identity()
     if err:
         return err
+
+    if current_user.is_guest:
+        return jsonify({
+            "error": "GUEST_RESTRICTED",
+            "code": "GUEST_HISTORY_LOCKED",
+            "message": "Saved conversation history is not available in Guest Mode. Please sign in to save and access your conversations."
+        }), 403
 
     db = get_db()
     try:

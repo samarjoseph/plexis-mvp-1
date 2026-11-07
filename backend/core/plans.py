@@ -16,9 +16,34 @@ logger = logging.getLogger(__name__)
 
 PLAN_FREE = "free"
 PLAN_PLUS = "plus"
+PLAN_GUEST = "guest"
 
 # Comprehensive feature limits per plan
 PLAN_LIMITS: Dict[str, Dict[str, Any]] = {
+    PLAN_GUEST: {
+        "name": "Guest",
+        "description": "Exploratory guest session with preloaded sample dataset",
+        "price_usd": 0,
+        "max_chats": 0,
+        "max_messages_per_chat": 20,
+        "max_tokens_per_chat": 4000,
+        "max_messages_total": 20,
+        "max_daily_transformations": 2,
+        "max_monthly_transformations": 2,
+        "max_spreadsheet_rows": 0,
+        "max_dataset_rows": 100,
+        "max_upload_size_mb": 0,
+        "llm_priority": "NORMAL",
+        "transformation_persistence": False,
+        "allow_custom_upload": False,
+        "allow_spreadsheet": False,
+        "allow_analytics": False,
+        "features": [
+            "Preloaded sample customer dataset",
+            "Max 2 transformations per month",
+            "Temporary guest session (no signup required)"
+        ]
+    },
     PLAN_FREE: {
         "name": "Free",
         "description": "Essential data analysis and exploratory workspace",
@@ -73,10 +98,12 @@ PLAN_LIMITS: Dict[str, Dict[str, Any]] = {
 
 
 def normalize_plan(plan: Optional[str]) -> str:
-    """Normalize plan string to 'free' or 'plus'."""
+    """Normalize plan string to 'guest', 'free' or 'plus'."""
     if not plan:
         return PLAN_FREE
     p = str(plan).strip().lower()
+    if p == PLAN_GUEST:
+        return PLAN_GUEST
     return PLAN_PLUS if p == PLAN_PLUS else PLAN_FREE
 
 

@@ -39,12 +39,46 @@ export function getPlexisUserPlan() {
   }
 }
 
+/**
+ * Get the active guest token from localStorage if present and not expired.
+ */
+export function getPlexisGuestToken() {
+  try {
+    const raw = localStorage.getItem('plexis_guest_session');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.guest_token) {
+        if (parsed.expires_at && Date.now() > parsed.expires_at * 1000) {
+          localStorage.removeItem('plexis_guest_session');
+          return null;
+        }
+        return parsed.guest_token;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Return authoritative authentication headers (Guest token or User email).
+ */
+export function getAuthHeaders(extra = {}) {
+  const headers = { ...extra };
+  const guestToken = getPlexisGuestToken();
+  if (guestToken) {
+    headers['X-Guest-Token'] = guestToken;
+    headers['Authorization'] = `Bearer ${guestToken}`;
+  } else {
+    headers['X-User-Email'] = getPlexisUserEmail();
+  }
+  return headers;
+}
+
 /** Default headers for all API requests. */
 function defaultHeaders(extra = {}) {
   return {
     'Content-Type': 'application/json',
-    'X-User-Email': getPlexisUserEmail(),
-    ...extra,
+    ...getAuthHeaders(extra),
   };
 }
 
@@ -184,7 +218,7 @@ export const PlexisAPI = {
   /** List all available modules for a dataset (sorted by richness). */
   async listModules(datasetId) {
     const r = await fetch(`${BASE_URL}/api/datasets/${datasetId}/modules`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (!r.ok) throw new Error(`listModules failed: ${r.status}`);
     return r.json();
@@ -193,7 +227,7 @@ export const PlexisAPI = {
   /** Get raw JSON data for a specific module. */
   async getModule(datasetId, moduleId) {
     const r = await fetch(`${BASE_URL}/api/datasets/${datasetId}/modules/${moduleId}`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (!r.ok) throw new Error(`getModule ${moduleId} failed: ${r.status}`);
     return r.json();
@@ -222,7 +256,7 @@ export const PlexisAPI = {
 
   async getDataset(datasetId) {
     const r = await fetch(`${BASE_URL}/api/datasets/${datasetId}`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (!r.ok) throw new Error(`getDataset failed: ${r.status}`);
     return r.json();
@@ -230,7 +264,7 @@ export const PlexisAPI = {
 
   async listDatasets() {
     const r = await fetch(`${BASE_URL}/api/datasets`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (!r.ok) throw new Error(`listDatasets failed: ${r.status}`);
     return r.json();
@@ -338,7 +372,7 @@ export const PlexisAPI = {
    */
   async listChats() {
     const r = await fetch(`${BASE_URL}/api/chats`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (!r.ok) throw new Error(`listChats failed: ${r.status}`);
     return r.json();
@@ -352,7 +386,7 @@ export const PlexisAPI = {
    */
   async loadChat(slug) {
     const r = await fetch(`${BASE_URL}/api/chats/${slug}`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (r.status === 404) return null;
     if (!r.ok) throw new Error(`loadChat failed: ${r.status}`);
@@ -366,7 +400,7 @@ export const PlexisAPI = {
   async deleteChat(chatId) {
     const r = await fetch(`${BASE_URL}/api/chats/${chatId}`, {
       method: 'DELETE',
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (!r.ok) throw new Error(`deleteChat failed: ${r.status}`);
     return r.json();
@@ -412,7 +446,7 @@ export const PlexisAPI = {
    */
   async locateAnalysis(analysisId) {
     const r = await fetch(`${BASE_URL}/api/analysis/${analysisId}/locate`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (!r.ok) throw new Error(`locateAnalysis failed: ${r.status}`);
     return r.json();
@@ -481,7 +515,7 @@ export const PlexisAPI = {
   /** Get completed investigation */
   getInvestigation: async (datasetId) => {
     const response = await fetch(`${BASE_URL}/api/datasets/${datasetId}/investigation`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() }
+      headers: getAuthHeaders()
     });
     if (!response.ok && response.status !== 404 && response.status !== 202) {
         throw new Error(`getInvestigation failed: ${response.status}`);
@@ -527,7 +561,7 @@ export const PlexisAPI = {
   /** Export the current (possibly transformed) dataset as a CSV download. */
   async exportDataset(datasetId) {
     const res = await fetch(`${BASE_URL}/api/transform/export/${datasetId}`, {
-      headers: { 'X-User-Email': getPlexisUserEmail() },
+      headers: getAuthHeaders(),
     });
     if (!res.ok) throw new Error(`Export failed: ${res.status}`);
     const blob = await res.blob();
@@ -563,5 +597,32 @@ export const PlexisAPI = {
       console.warn('[PlexisAPI] generateChatTitle error:', err);
     }
     return null;
+  },
+  /**
+   * Create a guest session and provision preloaded sample dataset.
+   * @param {string} [seed] - Optional client seed
+   */
+  async createGuestSession(seed = null) {
+    const res = await fetch(`${BASE_URL}/api/guest/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seed: seed || Math.random().toString(36).substring(2) }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `Failed to create guest session (${res.status})`);
+    }
+    return res.json();
+  },
+
+  /**
+   * Get guest status, remaining transformations, and session validity.
+   */
+  async getGuestStatus() {
+    const res = await fetch(`${BASE_URL}/api/guest/status`, {
+      headers: defaultHeaders(),
+    });
+    if (!res.ok) throw new Error(`Failed to fetch guest status: ${res.status}`);
+    return res.json();
   },
 };

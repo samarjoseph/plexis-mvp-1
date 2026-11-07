@@ -22,6 +22,24 @@ logger = logging.getLogger(__name__)
 spreadsheet_bp = Blueprint('spreadsheet', __name__, url_prefix='/api/spreadsheet')
 
 
+@spreadsheet_bp.before_request
+def check_guest_spreadsheet_access():
+    if request.method == "OPTIONS":
+        return None
+    from db.identity import identity_resolver
+    try:
+        user = identity_resolver.resolve(request)
+        if user and user.is_guest:
+            return jsonify({
+                "error": "GUEST_RESTRICTED",
+                "code": "GUEST_SPREADSHEET_LOCKED",
+                "message": "The interactive spreadsheet panel is unavailable in Guest Mode. Please sign in to explore and edit datasets directly in the spreadsheet view."
+            }), 403
+    except Exception:
+        pass
+    return None
+
+
 # ─── Dataset store helper ────────────────────────────────────────────────────
 
 def _get_dataframe(dataset_id: str):

@@ -40,6 +40,26 @@ def create_plan():
 
     Body: { message: str, dataset_id: str }
     """
+    current_user, _ = _resolve_user(request)
+    if current_user and current_user.is_guest:
+        from core.guest import check_guest_transformation_quota
+        guest_ds_id = f"guest_ds_{current_user.session_id}"
+        req_ds = (request.get_json(silent=True) or {}).get('dataset_id', '')
+        if req_ds and req_ds != guest_ds_id:
+            return jsonify({'error': 'Guests cannot access other datasets'}), 403
+
+        allowed, used, limit = check_guest_transformation_quota(get_db(), current_user.guest_id or "")
+        if not allowed:
+            return jsonify({
+                "error": "GUEST_LIMIT_REACHED",
+                "code": "GUEST_LIMIT_EXHAUSTED",
+                "message": f"Guest Mode is limited to {limit} transformations per month (you have used {used}). Sign in with Google to upload your own datasets and get unlimited transformations.",
+                "transformations_used": used,
+                "transformations_max": limit,
+                "transformations_remaining": 0,
+                "plan": "guest",
+            }), 403
+
     data = request.get_json(silent=True) or {}
     message = (data.get('message') or '').strip()
     dataset_id = (data.get('dataset_id') or '').strip()
@@ -139,19 +159,38 @@ def apply_plan():
             except Exception:
                 pass  # If can't check status, proceed (stateless fallback)
 
-        # ── Quota Check: Daily Transformations (Free plan max 4/day) ──
-        user_plan = getattr(current_user, "plan", "free") if current_user else "free"
-        user_id = current_user.user_id if current_user else None
-        from core.plans import check_daily_transformation_quota
-        allowed, used_today, limit = check_daily_transformation_quota(db, user_id, user_plan)
-        if not allowed:
-            return jsonify({
-                "error": "PLAN_LIMIT_REACHED",
-                "message": f"Free plan is limited to {limit} transformations per day (you have used {used_today}). Upgrade to Plus for unlimited transformations.",
-                "used_today": used_today,
-                "limit": limit,
-                "plan": user_plan,
-            }), 403
+        # ── Quota Check: Guest Mode (Max 2 transformations per month) ──
+        if current_user and current_user.is_guest:
+            from core.guest import check_guest_transformation_quota
+            guest_ds_id = f"guest_ds_{current_user.session_id}"
+            if dataset_id != guest_ds_id:
+                return jsonify({'error': 'Guests cannot access other datasets'}), 403
+
+            guest_allowed, guest_used, guest_limit = check_guest_transformation_quota(db, current_user.guest_id or "")
+            if not guest_allowed:
+                return jsonify({
+                    "error": "GUEST_LIMIT_REACHED",
+                    "code": "GUEST_LIMIT_EXHAUSTED",
+                    "message": f"Guest Mode is limited to {guest_limit} transformations per month (you have used {guest_used}). Sign in with Google to unlock custom uploads, live spreadsheet, and unlimited transformations.",
+                    "transformations_used": guest_used,
+                    "transformations_max": guest_limit,
+                    "transformations_remaining": 0,
+                    "plan": "guest",
+                }), 403
+        else:
+            # ── Quota Check: Daily Transformations (Free plan max 4/day) ──
+            user_plan = getattr(current_user, "plan", "free") if current_user else "free"
+            user_id = current_user.user_id if current_user else None
+            from core.plans import check_daily_transformation_quota
+            allowed, used_today, limit = check_daily_transformation_quota(db, user_id, user_plan)
+            if not allowed:
+                return jsonify({
+                    "error": "PLAN_LIMIT_REACHED",
+                    "message": f"Free plan is limited to {limit} transformations per day (you have used {used_today}). Upgrade to Plus for unlimited transformations.",
+                    "used_today": used_today,
+                    "limit": limit,
+                    "plan": user_plan,
+                }), 403
 
         # Resolve DataFrame
         entry = dataset_registry.get(dataset_id)
@@ -183,18 +222,30 @@ def apply_plan():
                 return jsonify({'error': result.error, 'conflict': True}), 409
             return jsonify({'error': result.error or 'Transformation failed'}), 500
 
+        # Record transformation quota consumption for guests only on successful commit
+        guest_count = None
+        if current_user and current_user.is_guest:
+            from core.guest import record_guest_transformation
+            guest_count = record_guest_transformation(db, current_user.guest_id or "")
+
         # Remove from L1 cache
         transformation_store.remove(plan_id)
         transformation_store.finish_plan_context(plan_id, 'APPLIED')
 
-        return jsonify({
+        resp_payload = {
             'success': True,
             'version_id': result.version_id,
             'version_number': result.version_number,
             'changed_cells': result.changed_cells,
             'operation_label': result.operation_label,
             'intelligence_provenance': getattr(result, 'intelligence_provenance', None),
-        }), 200
+        }
+        if current_user and current_user.is_guest:
+            resp_payload["transformations_used"] = guest_count
+            resp_payload["transformations_max"] = 2
+            resp_payload["transformations_remaining"] = max(0, 2 - (guest_count or 0))
+
+        return jsonify(resp_payload), 200
 
     except Exception as e:
         logger.error('[transform/apply] Error: %s', e, exc_info=True)

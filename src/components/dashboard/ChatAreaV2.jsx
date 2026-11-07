@@ -86,16 +86,22 @@ const ChatMessageList = memo(function ChatMessageList({
   isApplyingTransform,
   chatBodyRef,
   scrollRef,
+  isGuest = false,
+  onLockedFeature = null,
 }) {
   const { openWorkspace } = useWorkspace();
 
   const handleSpreadsheetClick = useCallback(() => {
+    if (isGuest) {
+      onLockedFeature?.('spreadsheet');
+      return;
+    }
     if (activeDatasetId) {
       openWorkspace(activeDatasetId, activeSessionId);
     } else {
       onUploadClick?.();
     }
-  }, [activeDatasetId, activeSessionId, openWorkspace, onUploadClick]);
+  }, [isGuest, onLockedFeature, activeDatasetId, activeSessionId, openWorkspace, onUploadClick]);
 
   return (
     <div className="v2-chat-messages" ref={chatBodyRef}>
@@ -126,7 +132,13 @@ const ChatMessageList = memo(function ChatMessageList({
               whileHover={{ y: -4, scale: 1.02 }}
               whileTap={{ scale: 0.96 }}
               className="v2-welcome-card v2-welcome-card--upload"
-              onClick={onUploadClick}
+              onClick={() => {
+                if (isGuest) {
+                  onLockedFeature?.('upload');
+                  return;
+                }
+                onUploadClick?.();
+              }}
             >
               <div className="v2-welcome-card-icon">
                 <FileSpreadsheet size={19} />
@@ -261,6 +273,8 @@ export default function ChatAreaV2({
   onExportDataset,
   isApplyingTransform,
   userPlan = 'free',
+  isGuest = false,
+  onLockedFeature = null,
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -362,23 +376,46 @@ export default function ChatAreaV2({
         </div>
 
         <div className="v2-chat-header-actions" style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="v2-header-plan-btn"
-            onClick={() => navigate('/billing')}
-            title="Subscription plan & limits"
-            aria-label="Subscription plan"
-          >
-            <span className="v2-header-plan-text">Plan</span>
-            <span className={userPlan === 'plus' ? 'v2-header-plan-plus-text' : 'v2-header-plan-free-text'}>
-              {userPlan === 'plus' ? 'Plus' : 'Free'}
-            </span>
-          </button>
+          {isGuest ? (
+            <div className="v2-header-guest-wrap" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                className="v2-header-plan-btn v2-header-plan-btn--guest"
+                onClick={() => onLockedFeature?.('quota')}
+                title="Guest Mode (Max 2 transformations/month)"
+                aria-label="Guest Mode"
+              >
+                <span className="v2-header-plan-text">Mode</span>
+                <span className="v2-header-plan-guest-text">Guest</span>
+              </button>
+              <button
+                type="button"
+                className="v2-header-guest-signin-btn"
+                onClick={() => onLockedFeature?.('spreadsheet')}
+              >
+                Sign In
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="v2-header-plan-btn"
+              onClick={() => navigate('/billing')}
+              title="Subscription plan & limits"
+              aria-label="Subscription plan"
+            >
+              <span className="v2-header-plan-text">Plan</span>
+              <span className={userPlan === 'plus' ? 'v2-header-plan-plus-text' : 'v2-header-plan-free-text'}>
+                {userPlan === 'plus' ? 'Plus' : 'Free'}
+              </span>
+            </button>
+          )}
           {activeDatasetId && (
-            <Tooltip label="Open data table" side="left">
+            <Tooltip label={isGuest ? "Live Spreadsheet (Locked in Guest Mode)" : "Open data table"} side="left">
               <WorkspaceToggleButton
                 datasetId={activeDatasetId}
                 sessionId={activeSessionId}
+                onClick={isGuest ? () => onLockedFeature?.('spreadsheet') : undefined}
               />
             </Tooltip>
           )}
@@ -390,11 +427,11 @@ export default function ChatAreaV2({
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.2 }}
               >
-                <Tooltip label="Open Analytics" shortcut="Ctrl+Shift+A" side="left">
+                <Tooltip label={isGuest ? "Analytics (Locked in Guest Mode)" : "Open Analytics"} shortcut="Ctrl+Shift+A" side="left">
                   <button
                     type="button"
                     className="v2-analytics-btn"
-                    onClick={onToggleAnalytics}
+                    onClick={isGuest ? () => onLockedFeature?.('analytics') : onToggleAnalytics}
                     aria-label="Open Analytics"
                   >
                     <BarChart3 size={18} />
@@ -431,6 +468,8 @@ export default function ChatAreaV2({
         isApplyingTransform={isApplyingTransform}
         chatBodyRef={chatBodyRef}
         scrollRef={scrollRef}
+        isGuest={isGuest}
+        onLockedFeature={onLockedFeature}
       />
 
       {/* ── Isolated Chat Input Bar ── */}
@@ -442,6 +481,8 @@ export default function ChatAreaV2({
         onFileSizeError={onFileSizeError}
         isLoading={isLoading}
         initialText={inputText || ''}
+        isGuest={isGuest}
+        onLockedFeature={onLockedFeature}
       />
     </main>
   );

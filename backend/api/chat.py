@@ -100,6 +100,14 @@ def _try_persist_messages(
     if not Config.DATABASE_URL:
         return None
     try:
+        from db.identity import identity_resolver
+        try:
+            curr_user = identity_resolver.resolve(request)
+            if curr_user and curr_user.is_guest:
+                logger.debug("[GUEST] Skipping message persistence for guest session=%s", curr_user.session_id)
+                return None
+        except Exception:
+            pass
         from db.session import db_session
         from db.repositories.user_repository import user_repository
         from db.repositories.message_repository import message_repository
@@ -409,6 +417,21 @@ def ask():
         return jsonify(err_dict), status
     if not message and workspace_action:
         message = str(workspace_action.get("type") or "workspace_action")
+
+    # ── Guest Mode Dataset Check ──
+    try:
+        from db.identity import identity_resolver
+        curr_user = identity_resolver.resolve(request)
+        if curr_user and curr_user.is_guest:
+            guest_ds_id = f"guest_ds_{curr_user.session_id}"
+            if dataset_id and dataset_id != guest_ds_id:
+                return jsonify({
+                    "success": False,
+                    "error": "GUEST_RESTRICTED",
+                    "answer": "Guest Mode is restricted to the preloaded sample dataset. Sign in with Google to explore your own datasets.",
+                }), 403
+    except Exception:
+        pass
 
     # ── Check User Plan Quota for Messages & Tokens ──
     try:

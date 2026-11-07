@@ -36,6 +36,9 @@ class CurrentUser:
     user_id: UUID
     email: str
     plan: str = "free"
+    is_guest: bool = False
+    guest_id: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -81,9 +84,41 @@ class HeaderIdentityResolver(IdentityResolver):
 
     def resolve(self, request: Request) -> CurrentUser:
         """
-        Resolve user from X-User-Email header.
+        Resolve user from request.
+        First checks for guest session token (X-Guest-Token or Authorization: Bearer gst...).
+        If not a guest, falls back to X-User-Email header.
         Creates user in DB if not exists (upsert by normalized email).
         """
+        # 1. Check for guest token header first (backend-authoritative guest session)
+        guest_token = (request.headers.get("X-Guest-Token") or "").strip()
+        if not guest_token:
+            auth_header = (request.headers.get("Authorization") or "").strip()
+            if auth_header.lower().startswith("bearer gst."):
+                guest_token = auth_header[7:].strip()
+            elif auth_header.startswith("gst."):
+                guest_token = auth_header
+
+        if guest_token:
+            from core.guest import verify_guest_token
+            session_data = verify_guest_token(guest_token)
+            if not session_data:
+                logger.warning("[IDENTITY] Invalid or expired guest token provided")
+                raise IdentityError("Invalid or expired guest session. Please refresh or sign in.")
+
+            import uuid
+            session_id = session_data["session_id"]
+            guest_id = session_data["guest_id"]
+            guest_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"guest:{session_id}")
+            logger.debug("[IDENTITY] Resolved guest identity session=%s guest_id=%s", session_id, guest_id)
+            return CurrentUser(
+                user_id=guest_uuid,
+                email=f"guest_{session_id[:8]}@guest.plexis.local",
+                plan="guest",
+                is_guest=True,
+                guest_id=guest_id,
+                session_id=session_id,
+            )
+
         # Import here to avoid circular imports at module load
         from db.session import get_db
         from db.repositories.user_repository import user_repository

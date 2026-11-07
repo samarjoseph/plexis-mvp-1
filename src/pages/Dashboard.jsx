@@ -21,6 +21,8 @@ import SettingsPanelV2 from '../components/dashboard/SettingsPanelV2';
 import DatasetWorkspace from '../components/workspace/DatasetWorkspace.jsx';
 import LocateResultSelector from '../components/dashboard/LocateResultSelector.jsx';
 import PlanLimitToast from '../components/ui/PlanLimitToast.jsx';
+import GuestNotification from '../components/guest/GuestNotification.jsx';
+import GuestConversionModal from '../components/guest/GuestConversionModal.jsx';
 import '../styles/dashboard.css';
 import '../styles/workspace.css';
 
@@ -163,7 +165,11 @@ const MIN_CHAT_LOAD_MS = 2500;
 function DashboardInner() {
   const { chatRef } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isGuest, guestSession, updateGuestSession } = useAuth();
+  const [guestModal, setGuestModal] = useState({ isOpen: false, feature: 'spreadsheet' });
+  const handleLockedFeature = useCallback((feature) => {
+    setGuestModal({ isOpen: true, feature });
+  }, []);
   const userId = user?.id || 'anonymous';
   const { isOpen: workspaceOpen, setDataset, buildWorkspaceSummaryPayload } = useWorkspace();
 
@@ -245,6 +251,65 @@ function DashboardInner() {
   const [locateSelector, setLocateSelector] = useState(null); // {analysisId, rows, column, value}
 
   const activeConversation = conversations.find((c) => c.id === activeId) || null;
+
+  // ── Auto-initialize preloaded sample dataset for Guest Mode ──
+  useEffect(() => {
+    if (isGuest && guestSession?.dataset) {
+      const ds = guestSession.dataset;
+      setConversations((prev) => {
+        const existing = prev.find((c) => String(c.id).startsWith('guest_chat_'));
+        if (existing) {
+          setActiveId(existing.id);
+          return prev;
+        }
+        const guestConv = {
+          id: `guest_chat_${guestSession.session_id}`,
+          chatId: `guest_chat_${guestSession.session_id}`,
+          slug: 'guest-session',
+          title: 'Sample Customers Analysis',
+          datasetId: ds.id,
+          activeDatasetName: ds.filename || 'sample_customers.csv',
+          datasetName: ds.filename || 'sample_customers.csv',
+          datasetInfo: {
+            filename: ds.filename || 'sample_customers.csv',
+            rows: ds.row_count || 100,
+            columns: ds.column_count || 5,
+            fields: ds.columns || [],
+          },
+          messages: [
+            {
+              id: 'guest_welcome_msg',
+              sender: 'ai',
+              role: 'assistant',
+              text: `Welcome to **Plexis AI Guest Mode**!\n\nI've preloaded our sample customer dataset: **\`${ds.filename || 'sample_customers.csv'}\`** (${ds.row_count || 100} records).\n\n**In Guest Mode, you can:**\n- Explore the sample data and ask natural-language questions\n- Perform up to **2 AI transformations** per month (e.g. *"Sort by spend descending"*)\n- Generate charts and data visualizations\n\n*Sign in with Google anytime to upload your own datasets, unlock the live spreadsheet, and access deep automated analytics.*`,
+              createdAt: Date.now(),
+            }
+          ],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setActiveId(guestConv.id);
+        return [guestConv];
+      });
+      setDataset(ds.id, guestSession.session_id);
+    }
+  }, [isGuest, guestSession, setDataset]);
+
+  const handleStageFile = useCallback((file) => {
+    if (isGuest) {
+      handleLockedFeature('upload');
+      return;
+    }
+    setStagedFile(file);
+  }, [isGuest, handleLockedFeature]);
+
+  const handleToggleAnalytics = useCallback(() => {
+    if (isGuest) {
+      handleLockedFeature('analytics');
+      return;
+    }
+    setAnalyticsCollapsed((v) => !v);
+  }, [isGuest, handleLockedFeature]);
 
   // ── Load from storage & Remote DB ───────────────────────────
   useEffect(() => {
@@ -1522,7 +1587,9 @@ function DashboardInner() {
       const result = await PlexisAPI.applyTransformation(planId, resolvedDatasetId);
       const ts = Date.now();
       if (result.error) {
-        if (result.daily_limit_reached || String(result.error).toLowerCase().includes('quota') || String(result.error).toLowerCase().includes('limit')) {
+        if (result.code === 'GUEST_LIMIT_EXHAUSTED' || result.error === 'GUEST_LIMIT_REACHED' || (isGuest && (result.transformations_used >= 2 || String(result.error).toLowerCase().includes('limit')))) {
+          handleLockedFeature('quota');
+        } else if (result.daily_limit_reached || String(result.error).toLowerCase().includes('quota') || String(result.error).toLowerCase().includes('limit')) {
           EventBus.emit(Events.PLAN_LIMIT_NOTICE, {
             message: 'Daily transformation limit reached (4/day on Free). Upgrade to',
             linkText: 'Plus',
@@ -1540,6 +1607,11 @@ function DashboardInner() {
         );
         return;
       }
+      // Update guest session transformation count
+      if (isGuest && result.transformations_used != null) {
+        updateGuestSession({ transformations_used: result.transformations_used });
+      }
+
       // Add TransformResultCard message
       setConversations((prev) =>
         updateConversation(prev, activeId, {
@@ -1707,15 +1779,23 @@ function DashboardInner() {
 
       {/* Chat + Workspace split pane */}
       <div className="v2-chat-workspace-split">
+        {isGuest && (
+          <GuestNotification
+            transformationsUsed={guestSession?.transformations_used || 0}
+            transformationsMax={guestSession?.transformations_max || 2}
+          />
+        )}
         <ChatAreaV2
           userPlan={userPlan}
+          isGuest={isGuest}
+          onLockedFeature={handleLockedFeature}
           messages={activeConversation?.messages || []}
           inputText={inputText}
           onInputChange={setInputText}
           onSend={handleSend}
           onRetry={handleRetry}
           stagedFile={stagedFile}
-          onStageFile={setStagedFile}
+          onStageFile={handleStageFile}
           onCancelFile={() => setStagedFile(null)}
           onFileSizeError={handleFileSizeError}
           isLoading={isLoading}
@@ -1727,7 +1807,7 @@ function DashboardInner() {
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
           analyticsCollapsed={analyticsCollapsed}
-          onToggleAnalytics={() => setAnalyticsCollapsed((v) => !v)}
+          onToggleAnalytics={handleToggleAnalytics}
           onApplyTransform={handleApplyTransform}
           onCancelTransform={handleCancelTransform}
           onClarificationAction={(message, workspaceAction) =>
@@ -1814,6 +1894,12 @@ function DashboardInner() {
       <SettingsPanelV2
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      <GuestConversionModal
+        isOpen={guestModal.isOpen}
+        feature={guestModal.feature}
+        onClose={() => setGuestModal({ isOpen: false, feature: null })}
       />
 
       {/* Locate Result Selector — shown when Locate finds multiple matching rows */}

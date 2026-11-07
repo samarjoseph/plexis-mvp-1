@@ -144,6 +144,13 @@ def create_app() -> Flask:
     except ImportError as e:
         logger.warning('[app] billing_bp not loaded: %s', e)
 
+    # Register guest mode blueprint
+    try:
+        from api.guest import guest_bp
+        app.register_blueprint(guest_bp)
+    except ImportError as e:
+        logger.warning('[app] guest_bp not loaded: %s', e)
+
     @app.route('/health', methods=['GET'])
     def root_health():
         return jsonify({

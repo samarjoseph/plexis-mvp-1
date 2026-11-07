@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Database, BarChart3, MessageSquare, Globe, Brain, Shield, Sparkles } from 'lucide-react';
+import { Database, BarChart3, MessageSquare, Globe, Brain, Shield, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 import GoogleSignInButton from '../components/oauth/GoogleSignInButton';
 import PlexisLogo from '../components/brand/PlexisLogo';
+import { useAuth } from '../context/AuthContext';
+import { PlexisAPI } from '../api';
 import './LandingPage.css';
 
 const fadeUp = {
@@ -15,6 +18,26 @@ const fadeUp = {
 };
 
 export default function LandingPage() {
+  const navigate = useNavigate();
+  const { startGuestSession } = useAuth();
+  const [isStartingGuest, setIsStartingGuest] = useState(false);
+  const [guestError, setGuestError] = useState(null);
+
+  const handleGuestStart = async () => {
+    if (isStartingGuest) return;
+    setIsStartingGuest(true);
+    setGuestError(null);
+    try {
+      const sessionData = await PlexisAPI.createGuestSession();
+      startGuestSession(sessionData);
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Failed to start guest session:', err);
+      setGuestError(err.message || 'Could not start guest session. Please try again.');
+      setIsStartingGuest(false);
+    }
+  };
+
   return (
     <div className="landing">
       {/* Background */}
@@ -25,16 +48,21 @@ export default function LandingPage() {
       {/* Navbar */}
       <nav className="landing-nav-top">
         <div className="nav-brand">
-          {/*
-            Landing page: PlexisLogo is purely decorative — no sidebar to toggle.
-            Use the same visual as the sidebar logo button for brand consistency.
-          */}
           <div className="nav-brand-logo-wrap" aria-hidden="true">
             <PlexisLogo width={28} height={28} />
           </div>
           <span className="nav-brand-text">Plexis AI</span>
         </div>
         <div className="nav-actions">
+          <button
+            type="button"
+            className="landing-guest-nav-btn"
+            onClick={handleGuestStart}
+            disabled={isStartingGuest}
+          >
+            {isStartingGuest ? <Loader2 size={14} className="spin-icon" /> : <Sparkles size={14} />}
+            <span>Try without signing up</span>
+          </button>
           <GoogleSignInButton variant="nav" label="Continue with Google" />
         </div>
       </nav>
@@ -73,6 +101,38 @@ export default function LandingPage() {
           datasets, discover instant insights, perform AI spreadsheet analysis, and transform
           data seamlessly from one unified workspace.
         </motion.p>
+
+        {/* Hero CTA Button Group */}
+        <motion.div
+          className="hero-cta-group"
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={3}
+        >
+          <GoogleSignInButton variant="hero" label="Continue with Google" />
+          <button
+            type="button"
+            className="hero-guest-btn glass-panel"
+            onClick={handleGuestStart}
+            disabled={isStartingGuest}
+          >
+            {isStartingGuest ? (
+              <>
+                <Loader2 size={18} className="spin-icon" />
+                <span>Starting guest session...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={18} className="hero-guest-icon" />
+                <span>Try without signing up</span>
+                <ArrowRight size={16} className="hero-guest-arrow" />
+              </>
+            )}
+          </button>
+        </motion.div>
+
+        {guestError && <p className="landing-guest-error">{guestError}</p>}
       </section>
 
       {/* Features */}
@@ -127,7 +187,19 @@ export default function LandingPage() {
           transition={{ duration: 0.7 }}
         >
           <h2>Start analyzing smarter today</h2>
-          <p>Join data pioneers using Plexis to unlock narratives in minutes, not hours.</p>
+          <p>Experience intelligent data discovery and automated transformations.</p>
+          <div className="landing-cta-actions">
+            <GoogleSignInButton variant="primary" label="Continue with Google" />
+            <button
+              type="button"
+              className="hero-guest-btn glass-panel"
+              onClick={handleGuestStart}
+              disabled={isStartingGuest}
+            >
+              <Sparkles size={16} className="hero-guest-icon" />
+              <span>Try without signing up</span>
+            </button>
+          </div>
         </motion.div>
       </section>
 

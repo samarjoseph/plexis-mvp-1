@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 analysis_bp = Blueprint("analysis", __name__)
 
 
+@analysis_bp.before_request
+def check_guest_analytics_access():
+    if request.method == "OPTIONS":
+        return None
+    from db.identity import identity_resolver
+    try:
+        user = identity_resolver.resolve(request)
+        if user and user.is_guest:
+            return jsonify({
+                "error": "GUEST_RESTRICTED",
+                "code": "GUEST_ANALYTICS_LOCKED",
+                "message": "The deep analytics panel is unavailable in Guest Mode. Please sign in to run automated statistical analysis, anomaly detection, and deep correlations."
+            }), 403
+    except Exception:
+        pass
+    return None
+
+
 def _log_action(db, operation_id, action_type, user_id=None, dataset_id=None, metadata=None):
     """
     Best-effort action logging. Never raises — errors are swallowed.

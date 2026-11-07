@@ -303,6 +303,18 @@ def upload_dataset() -> Tuple[Any, int]:
       event: done        — generation complete; payload: {dataset_id, dataset_info, available_modules}
       event: error       — if a fatal error occurs
     """
+    from db.identity import identity_resolver
+    try:
+        curr_user = identity_resolver.resolve(request)
+        if curr_user and curr_user.is_guest:
+            return jsonify({
+                "error": "GUEST_RESTRICTED",
+                "code": "GUEST_UPLOAD_NOT_ALLOWED",
+                "message": "Custom dataset uploads are disabled in Guest Mode. Please sign in with Google to upload your own datasets."
+            }), 403
+    except Exception:
+        pass
+
     if 'file' not in request.files:
         err, status = error_response('No file provided', 400)
         return jsonify(err), status
@@ -333,6 +345,12 @@ def upload_dataset() -> Tuple[Any, int]:
         try:
             from db.identity import identity_resolver
             curr_user = identity_resolver.resolve(request)
+            if curr_user and curr_user.is_guest:
+                return jsonify({
+                    "error": "GUEST_RESTRICTED",
+                    "code": "GUEST_UPLOAD_NOT_ALLOWED",
+                    "message": "Custom dataset uploads are disabled in Guest Mode. Please sign in with Google to upload your own datasets."
+                }), 403
             if curr_user and getattr(curr_user, "plan", None):
                 user_plan = str(curr_user.plan).strip().lower()
         except Exception:
@@ -529,6 +547,27 @@ def upload_dataset() -> Tuple[Any, int]:
 @datasets_bp.route('/datasets', methods=['GET'])
 def list_datasets() -> Tuple[Any, int]:
     """List all registered datasets."""
+    from db.identity import identity_resolver
+    try:
+        user = identity_resolver.resolve(request)
+    except Exception:
+        user = None
+
+    if user and user.is_guest:
+        guest_ds_id = f"guest_ds_{user.session_id}"
+        entry = dataset_registry.get(guest_ds_id)
+        datasets = []
+        if entry:
+            datasets.append({
+                'dataset_id': entry.dataset_id,
+                'filename': entry.filename,
+                'upload_timestamp': entry.upload_timestamp,
+                'rows': entry.row_count,
+                'columns': entry.column_count,
+                'memory_usage': entry.profile.get('memory_usage', 'unknown') if entry.profile else 'unknown',
+            })
+        return jsonify({'datasets': datasets}), 200
+
     entries = dataset_registry.all_datasets()
     datasets = []
     for e in entries:
@@ -550,6 +589,17 @@ def list_datasets() -> Tuple[Any, int]:
 @datasets_bp.route('/datasets/<dataset_id>', methods=['GET'])
 def get_dataset(dataset_id: str) -> Tuple[Any, int]:
     """Get the intelligence profile for a specific dataset."""
+    from db.identity import identity_resolver
+    try:
+        user = identity_resolver.resolve(request)
+        if user and user.is_guest:
+            guest_ds_id = f"guest_ds_{user.session_id}"
+            if dataset_id != guest_ds_id:
+                err, status = error_response("Guests cannot access other datasets", 403)
+                return jsonify(err), status
+    except Exception:
+        pass
+
     entry = dataset_registry.get_by_id(dataset_id)
     if not entry:
         err, status = error_response(f"Dataset '{dataset_id}' not found", 404)

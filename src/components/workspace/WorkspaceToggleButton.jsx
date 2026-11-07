@@ -9,12 +9,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Grid3x3 } from 'lucide-react';
 import { useDatasetWorkspace } from '../../hooks/useDatasetWorkspace.js';
 
-export default function WorkspaceToggleButton({ datasetId, sessionId, className = '' }) {
+export default function WorkspaceToggleButton({ datasetId, sessionId, className = '', onClick }) {
   const { isOpen, toggle, openForDataset, totalRows } = useDatasetWorkspace();
 
   if (!datasetId) return null;
 
-  const handleClick = () => {
+  const handleClick = (e) => {
+    if (onClick) {
+      onClick(e);
+      return;
+    }
     if (datasetId) {
       openForDataset(datasetId, sessionId);
     } else {

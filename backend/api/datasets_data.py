@@ -65,6 +65,17 @@ def get_dataset_data(dataset_id: str) -> Tuple[Any, int]:
     All filtering and sorting is done server-side via pandas.
     Falls back to PostgreSQL restore if dataset not in L1 cache.
     """
+    from db.identity import identity_resolver
+    try:
+        user = identity_resolver.resolve(request)
+        if user and user.is_guest:
+            guest_ds_id = f"guest_ds_{user.session_id}"
+            if dataset_id != guest_ds_id:
+                err, status = error_response("Guests cannot access other datasets", 403)
+                return jsonify(err), status
+    except Exception:
+        pass
+
     entry = dataset_registry.get_by_id(dataset_id)
     df: pd.DataFrame | None = entry.dataframe if entry else None
 

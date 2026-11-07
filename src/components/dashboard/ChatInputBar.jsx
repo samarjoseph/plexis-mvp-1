@@ -25,6 +25,8 @@ export default function ChatInputBar({
   onFileSizeError = null,
   isLoading,
   initialText = '',
+  isGuest = false,
+  onLockedFeature = null,
 }) {
   const [draftText, setDraftText] = useState(initialText);
   const [isMultiline, setIsMultiline] = useState(false);
@@ -134,7 +136,13 @@ export default function ChatInputBar({
             <button
               type="button"
               className="v2-attach-btn"
-              onClick={() => fileRef.current?.click()}
+              onClick={() => {
+                if (isGuest) {
+                  onLockedFeature?.('upload');
+                  return;
+                }
+                fileRef.current?.click();
+              }}
               disabled={isLoading}
             >
               <Plus size={18} />
@@ -150,6 +158,11 @@ export default function ChatInputBar({
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) {
+                e.target.value = '';
+                return;
+              }
+              if (isGuest) {
+                onLockedFeature?.('upload');
                 e.target.value = '';
                 return;
               }

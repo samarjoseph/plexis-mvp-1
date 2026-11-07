@@ -34,8 +34,10 @@ backend/.env
 backend/.env.local
 storage/uploads/
 backend/storage/uploads/
-backend/data/
+backend/data/*
+!backend/data/sample_customers.csv
 *.csv
+!backend/data/sample_customers.csv
 temp*.txt
 scratch/
 
