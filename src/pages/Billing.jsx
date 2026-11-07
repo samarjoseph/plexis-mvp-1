@@ -431,30 +431,13 @@ export default function Billing() {
           </ul>
 
           {isPlus ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-              <button
-                type="button"
-                className="v2-billing-cta-btn v2-billing-cta-btn--current"
-                disabled
-              >
-                <CheckCircle2 size={16} /> Active Plan
-              </button>
-              <button
-                type="button"
-                className="v2-billing-cta-btn"
-                style={{
-                  background: 'rgba(37, 99, 235, 0.14)',
-                  border: '1px solid rgba(59, 130, 246, 0.38)',
-                  color: '#eff6ff',
-                  fontSize: '13px',
-                }}
-                disabled={updating}
-                onClick={handleUpgradeToPlus}
-                title="Open Stripe payment interface to test card checkout"
-              >
-                <Sparkles size={14} color="#60a5fa" /> Open Stripe Checkout Page
-              </button>
-            </div>
+            <button
+              type="button"
+              className="v2-billing-cta-btn v2-billing-cta-btn--current"
+              disabled
+            >
+              <CheckCircle2 size={16} /> Active Plan
+            </button>
           ) : (
             <button
               type="button"

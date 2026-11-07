@@ -227,7 +227,7 @@
 .v2-billing-popular-tag {
   position: absolute;
   top: -12px;
-  left: 20px;
+  left: -2px;
   background: linear-gradient(135deg, #ff2e63 0%, #ff4b72 50%, #e11d48 100%);
   color: #ffffff;
   font-size: 10.5px;
@@ -238,8 +238,8 @@
   border-radius: 9999px;
   box-shadow: 0 4px 14px rgba(244, 63, 94, 0.45);
   border: 1px solid rgba(255, 255, 255, 0.35);
-  transform: rotate(-5deg);
-  transform-origin: center;
+  transform: rotate(-6deg);
+  transform-origin: left bottom;
   z-index: 10;
   display: inline-flex;
   align-items: center;
@@ -623,60 +623,116 @@
 
   .v2-billing-grid {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: nowrap;
     width: 100%;
-    padding: 12px 16px 40px;
-    gap: 26px;
+    overflow-x: auto;
+    overflow-y: visible;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding: 18px 16px 28px;
+    gap: 16px;
     box-sizing: border-box;
+    justify-content: flex-start;
   }
 
+  /* Visible horizontal scroll bar for mobile comparison & long text reading */
+  .v2-billing-grid::-webkit-scrollbar {
+    height: 6px;
+    display: block;
+  }
+
+  .v2-billing-grid::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 9999px;
+    margin: 0 16px;
+  }
+
+  .v2-billing-grid::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.45);
+    border-radius: 9999px;
+  }
+
+  .v2-billing-grid::-webkit-scrollbar-thumb:hover {
+    background: rgba(59, 130, 246, 0.7);
+  }
+
+  /* Compact card sized to mobile width and height */
   .v2-billing-card {
-    width: 100%;
-    max-width: 100%;
+    flex: 0 0 calc(84vw - 16px);
+    width: calc(84vw - 16px);
+    min-width: 260px;
+    max-width: 310px;
     box-sizing: border-box;
-    padding: 28px 20px 24px;
-    border-radius: 18px;
+    scroll-snap-align: center;
+    padding: 22px 18px 20px;
+    border-radius: 16px;
+  }
+
+  .v2-billing-card-header {
+    margin-bottom: 8px;
   }
 
   .v2-billing-card-name {
-    font-size: 20px;
+    font-size: 19px;
+    gap: 8px;
+  }
+
+  .v2-billing-card-price-box {
+    margin: 8px 0 10px;
   }
 
   .v2-billing-card-price {
-    font-size: 34px;
+    font-size: 28px;
   }
 
   .v2-billing-card-period {
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .v2-billing-card-desc {
-    font-size: 13px;
-    margin-bottom: 20px;
+    font-size: 12px;
+    line-height: 1.45;
+    margin-bottom: 12px;
     min-height: auto;
   }
 
   .v2-billing-features {
-    gap: 12px;
-    margin-bottom: 24px;
+    gap: 9px;
+    margin-bottom: 18px;
   }
 
   .v2-billing-feature-item {
-    font-size: 13px;
-    gap: 10px;
+    font-size: 12px;
+    line-height: 1.35;
+    gap: 8px;
+    word-break: break-word;
+  }
+
+  .v2-billing-feature-icon {
+    width: 15px;
+    height: 15px;
+  }
+
+  .v2-billing-feature-icon svg {
+    width: 13px;
+    height: 13px;
   }
 
   .v2-billing-cta-btn {
-    padding: 12px 16px;
-    font-size: 13.5px;
+    padding: 11px 16px;
+    font-size: 13px;
     border-radius: 10px;
   }
 
+  /* Pinned strictly to the top-left corner of the card box */
   .v2-billing-popular-tag {
     top: -11px;
-    left: 16px;
-    font-size: 10px;
+    left: -2px;
+    font-size: 9.5px;
     padding: 3px 11px;
+    transform: rotate(-6deg);
+    transform-origin: left bottom;
   }
 
   .v2-billing-matrix-section {
