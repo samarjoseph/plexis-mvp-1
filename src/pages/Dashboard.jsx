@@ -23,6 +23,7 @@ import LocateResultSelector from '../components/dashboard/LocateResultSelector.j
 import PlanLimitToast from '../components/ui/PlanLimitToast.jsx';
 import GuestNotification from '../components/guest/GuestNotification.jsx';
 import GuestConversionModal from '../components/guest/GuestConversionModal.jsx';
+import CustomUploadGuestModal from '../components/guest/CustomUploadGuestModal.jsx';
 import '../styles/dashboard.css';
 import '../styles/workspace.css';
 
@@ -167,6 +168,7 @@ function DashboardInner() {
   const navigate = useNavigate();
   const { user, isGuest, guestSession, updateGuestSession } = useAuth();
   const [guestModal, setGuestModal] = useState({ isOpen: false, feature: 'spreadsheet' });
+  const [customUploadModalOpen, setCustomUploadModalOpen] = useState(false);
   const handleLockedFeature = useCallback((feature) => {
     setGuestModal({ isOpen: true, feature });
   }, []);
@@ -252,56 +254,13 @@ function DashboardInner() {
 
   const activeConversation = conversations.find((c) => c.id === activeId) || null;
 
-  // ── Auto-initialize preloaded sample dataset for Guest Mode ──
-  useEffect(() => {
-    if (isGuest && guestSession?.dataset) {
-      const ds = guestSession.dataset;
-      setConversations((prev) => {
-        const existing = prev.find((c) => String(c.id).startsWith('guest_chat_'));
-        if (existing) {
-          setActiveId(existing.id);
-          return prev;
-        }
-        const guestConv = {
-          id: `guest_chat_${guestSession.session_id}`,
-          chatId: `guest_chat_${guestSession.session_id}`,
-          slug: 'guest-session',
-          title: 'Sample Customers Analysis',
-          datasetId: ds.id,
-          activeDatasetName: ds.filename || 'sample_customers.csv',
-          datasetName: ds.filename || 'sample_customers.csv',
-          datasetInfo: {
-            filename: ds.filename || 'sample_customers.csv',
-            rows: ds.row_count || 100,
-            columns: ds.column_count || 5,
-            fields: ds.columns || [],
-          },
-          messages: [
-            {
-              id: 'guest_welcome_msg',
-              sender: 'ai',
-              role: 'assistant',
-              text: `Welcome to **Plexis Guest Mode**!\n\nI've preloaded our sample customer dataset: **\`${ds.filename || 'sample_customers.csv'}\`** (${ds.row_count || 100} records).\n\n**In Guest Mode, you can:**\n- Explore the sample data and ask natural-language questions\n- Perform up to **2 AI transformations** per month (e.g. *"Sort by spend descending"*)\n- Generate charts and data visualizations\n\n*Sign in with Google anytime to upload your own datasets, unlock the live spreadsheet, and access deep automated analytics.*`,
-              createdAt: Date.now(),
-            }
-          ],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        setActiveId(guestConv.id);
-        return [guestConv];
-      });
-      setDataset(ds.id, guestSession.session_id);
-    }
-  }, [isGuest, guestSession, setDataset]);
-
   const handleStageFile = useCallback((file) => {
-    if (isGuest) {
-      handleLockedFeature('upload');
+    if (isGuest && !file?.isSampleGuest) {
+      setCustomUploadModalOpen(true);
       return;
     }
     setStagedFile(file);
-  }, [isGuest, handleLockedFeature]);
+  }, [isGuest]);
 
   const handleToggleAnalytics = useCallback(() => {
     if (isGuest) {
@@ -976,6 +935,34 @@ function DashboardInner() {
       targetId = currentConv.id;
     }
 
+    const isSampleGuest = Boolean(runtimeFile?.isSampleGuest || (isGuest && runtimeFile?.name?.includes('sample_customer')));
+    if (isSampleGuest) {
+      const ds = guestSession?.dataset;
+      const dsId = ds?.id || (guestSession?.session_id ? `guest_ds_${guestSession.session_id}` : 'guest_ds_sample');
+      const dsFilename = ds?.filename || 'sample_customer.csv';
+      const dsRows = ds?.row_count || 100;
+      const dsCols = ds?.column_count || 5;
+      const dsFields = ds?.columns || ['customer_id', 'name', 'age', 'city', 'spend'];
+
+      setDataset(dsId, guestSession?.session_id);
+      EventBus.emit(Events.DATASET_LOADED, { datasetId: dsId, filename: dsFilename });
+      EvidenceRegistry.setCurrentFingerprint(ds?.schema_fingerprint || dsId);
+
+      currentConv.datasetId = dsId;
+      currentConv.activeDatasetName = dsFilename;
+      currentConv.datasetName = dsFilename;
+      currentConv.datasetInfo = {
+        filename: dsFilename,
+        rows: dsRows,
+        columns: dsCols,
+        fields: dsFields,
+      };
+      currentConv.datasetStats = {
+        rows: dsRows,
+        columns: dsCols,
+      };
+    }
+
     // 2. Build updated messages with user's new message(s)
     let updatedMessages = currentConv.messages || [];
     if (errorMsgIdToRemove) {
@@ -1022,6 +1009,42 @@ function DashboardInner() {
       saveConversations(userId, next);
       return next;
     });
+
+    // If guest sent sample CSV without typed text, immediately greet with dataset summary and ready prompt
+    if (isSampleGuest && !runtimeText?.trim()) {
+      const ds = guestSession?.dataset;
+      const dsFilename = ds?.filename || 'sample_customer.csv';
+      const dsRows = ds?.row_count || 100;
+      const dsCols = ds?.column_count || 5;
+      const dsId = ds?.id || (guestSession?.session_id ? `guest_ds_${guestSession.session_id}` : 'guest_ds_sample');
+
+      const welcomeAiMsg = {
+        id: `ai-sample-${Date.now()}`,
+        sender: 'ai',
+        text: `Loaded **\`${dsFilename}\`** (${dsRows} records, ${dsCols} columns).\n\n**In Guest Mode, you can:**\n- Explore this sample data and ask natural-language questions\n- Perform up to **2 AI transformations** per month (e.g. *"Filter customers with spend > 500"*)\n- Generate charts and data visualizations\n\n*Sign in with Google anytime to upload your own datasets, unlock the live spreadsheet, and access deep automated analytics.*`,
+        createdAt: Date.now(),
+      };
+
+      setLoadingChatIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetId);
+        return next;
+      });
+
+      setConversations((prev) => {
+        const next = updateConversation(prev, targetId, {
+          messages: [...updatedMessages, welcomeAiMsg],
+          activeDatasetName: dsFilename,
+          datasetName: dsFilename,
+          datasetId: dsId,
+          datasetStats: { rows: dsRows, columns: dsCols },
+          title: `Dataset: ${dsFilename}`,
+        });
+        saveConversations(userId, next);
+        return next;
+      });
+      return;
+    }
 
     // 4. Ensure backend chat record exists (non-blocking for instantaneous 0ms UI transition)
     if (!isGuest && !currentConv.chatId && !isUUID(targetId)) {
@@ -1105,7 +1128,7 @@ function DashboardInner() {
     }
 
     // ── File Upload → SSE Streaming Path ────────────────────────
-    if (runtimeFile) {
+    if (runtimeFile && !isSampleGuest) {
       const streamMsgId = `ai-stream-${Date.now()}`;
       streamingTargetIdRef.current = targetId;
 
@@ -1798,6 +1821,7 @@ function DashboardInner() {
           userPlan={userPlan}
           isGuest={isGuest}
           onLockedFeature={handleLockedFeature}
+          onOpenCustomUploadModal={() => setCustomUploadModalOpen(true)}
           messages={activeConversation?.messages || []}
           inputText={inputText}
           onInputChange={setInputText}
@@ -1909,6 +1933,11 @@ function DashboardInner() {
         isOpen={guestModal.isOpen}
         feature={guestModal.feature}
         onClose={() => setGuestModal({ isOpen: false, feature: null })}
+      />
+
+      <CustomUploadGuestModal
+        isOpen={customUploadModalOpen}
+        onClose={() => setCustomUploadModalOpen(false)}
       />
 
       {/* Locate Result Selector — shown when Locate finds multiple matching rows */}

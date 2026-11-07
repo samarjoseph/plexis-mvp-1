@@ -67,8 +67,8 @@ function MessageBubbleV2({
           <div className="v2-msg-file-icon">
             <FileSpreadsheet size={20} />
           </div>
-          <div>
-            <div className="v2-msg-file-name">{message.fileName}</div>
+          <div className="v2-msg-file-info">
+            <div className="v2-msg-file-name" title={message.fileName}>{message.fileName}</div>
             <div className="v2-msg-file-size">{message.fileSize}</div>
           </div>
         </motion.div>

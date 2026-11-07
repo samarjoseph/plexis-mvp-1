@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, ArrowUp, X, FileSpreadsheet } from 'lucide-react';
+import { Plus, ArrowUp, X, FileSpreadsheet, Upload } from 'lucide-react';
 import Tooltip from '../ui/Tooltip';
 import { EventBus } from '../../events/EventBus';
 import { Events } from '../../events/Events';
@@ -27,11 +27,25 @@ export default function ChatInputBar({
   initialText = '',
   isGuest = false,
   onLockedFeature = null,
+  onOpenCustomUploadModal = null,
 }) {
   const [draftText, setDraftText] = useState(initialText);
   const [isMultiline, setIsMultiline] = useState(false);
   const textareaRef = useRef(null);
   const fileRef = useRef(null);
+  const menuRef = useRef(null);
+  const [guestMenuOpen, setGuestMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!guestMenuOpen) return;
+    const handleOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setGuestMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [guestMenuOpen]);
 
   // Synchronous height adjustment without forced full-page layout thrashing
   const adjustHeight = useCallback(() => {
@@ -122,7 +136,7 @@ export default function ChatInputBar({
     <div className="v2-chat-input-area">
       <div className="v2-input-container">
         {stagedFile && (
-          <div className="v2-staged-file">
+          <div className="v2-staged-file" title={stagedFile.name}>
             <FileSpreadsheet size={14} />
             <span>{stagedFile.name}</span>
             <button type="button" onClick={onCancelFile} aria-label="Remove file">
@@ -132,22 +146,71 @@ export default function ChatInputBar({
         )}
 
         <div className={`v2-input-row ${isMultiline ? 'v2-input-row--multiline' : ''}`}>
-          <Tooltip label="Upload Dataset" shortcut="Ctrl+U" side="top">
-            <button
-              type="button"
-              className="v2-attach-btn"
-              onClick={() => {
-                if (isGuest) {
-                  onLockedFeature?.('upload');
-                  return;
-                }
-                fileRef.current?.click();
-              }}
-              disabled={isLoading}
-            >
-              <Plus size={18} />
-            </button>
-          </Tooltip>
+          <div className="v2-attach-btn-wrap" ref={menuRef} style={{ position: 'relative' }}>
+            <Tooltip label="Upload Dataset" shortcut="Ctrl+U" side="top">
+              <button
+                type="button"
+                className="v2-attach-btn"
+                onClick={() => {
+                  if (isGuest) {
+                    setGuestMenuOpen((prev) => !prev);
+                    return;
+                  }
+                  fileRef.current?.click();
+                }}
+                disabled={isLoading}
+                aria-expanded={isGuest ? guestMenuOpen : undefined}
+                aria-haspopup={isGuest ? 'true' : undefined}
+              >
+                <Plus size={18} />
+              </button>
+            </Tooltip>
+
+            {isGuest && guestMenuOpen && (
+              <div className="v2-upload-menu-popup">
+                <button
+                  type="button"
+                  className="v2-upload-menu-item"
+                  onClick={() => {
+                    setGuestMenuOpen(false);
+                    onOpenCustomUploadModal?.();
+                  }}
+                >
+                  <div className="v2-upload-menu-icon">
+                    <Upload size={15} />
+                  </div>
+                  <div className="v2-upload-menu-text">
+                    <span className="v2-upload-menu-title">Upload from device</span>
+                    <span className="v2-upload-menu-sub">Custom CSV files</span>
+                  </div>
+                </button>
+
+                <div className="v2-upload-menu-divider" />
+
+                <button
+                  type="button"
+                  className="v2-upload-menu-item"
+                  onClick={() => {
+                    setGuestMenuOpen(false);
+                    onStageFile?.({
+                      name: 'sample_customer.csv',
+                      size: 15420,
+                      type: 'text/csv',
+                      isSampleGuest: true,
+                    });
+                  }}
+                >
+                  <div className="v2-upload-menu-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>
+                    <FileSpreadsheet size={15} />
+                  </div>
+                  <div className="v2-upload-menu-text">
+                    <span className="v2-upload-menu-title">sample_customer.csv</span>
+                    <span className="v2-upload-menu-sub">Preloaded customer dataset (100 rows)</span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           <input
             id="dataset-upload-input"

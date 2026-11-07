@@ -134,7 +134,12 @@ const ChatMessageList = memo(function ChatMessageList({
               className="v2-welcome-card v2-welcome-card--upload"
               onClick={() => {
                 if (isGuest) {
-                  onLockedFeature?.('upload');
+                  onStageFile?.({
+                    name: 'sample_customer.csv',
+                    size: 15420,
+                    type: 'text/csv',
+                    isSampleGuest: true,
+                  });
                   return;
                 }
                 onUploadClick?.();
@@ -275,6 +280,7 @@ export default function ChatAreaV2({
   userPlan = 'free',
   isGuest = false,
   onLockedFeature = null,
+  onOpenCustomUploadModal = null,
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -483,6 +489,7 @@ export default function ChatAreaV2({
         initialText={inputText || ''}
         isGuest={isGuest}
         onLockedFeature={onLockedFeature}
+        onOpenCustomUploadModal={onOpenCustomUploadModal}
       />
     </main>
   );
