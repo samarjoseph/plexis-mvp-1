@@ -56,6 +56,53 @@ def _stripe_to_dict(obj):
     return {}
 
 
+@billing_bp.route("/upgrade-free", methods=["POST"])
+def upgrade_free():
+    """
+    Promotional Launch Upgrade: Upgrade account to Plus for free.
+    Updates DB to plus and dispatches founder email notification via SMTP.
+    """
+    current_user, err = _resolve_identity()
+    if err:
+        return err
+
+    if getattr(current_user, "is_guest", False):
+        return jsonify({
+            "error": "GUEST_RESTRICTED",
+            "message": "Guest accounts cannot upgrade directly. Please sign in with Google first."
+        }), 403
+
+    db = get_db()
+    account_name = None
+    if db is not None:
+        user = user_repository.update_plan(db, current_user.user_id, "plus")
+        if user:
+            account_name = getattr(user, "name", None) or getattr(user, "display_name", None)
+
+    if not account_name:
+        account_name = current_user.email.split("@")[0]
+
+    # Send founder email notification via SMTP in background
+    try:
+        from core.notifications import notify_plus_upgrade
+        notify_plus_upgrade(
+            account_name=account_name,
+            email=current_user.email,
+            account_id=str(current_user.user_id),
+            action_type="Upgrade to Plus (Free Launch Access)",
+        )
+    except Exception as n_err:
+        logger.error("[BILLING] Failed to dispatch upgrade notification: %s", n_err)
+
+    from core.plans import get_plan_limits
+    return jsonify({
+        "success": True,
+        "plan": "plus",
+        "message": "Congratulations! You have unlocked Plexis Plus (Free Launch Access).",
+        "limits": get_plan_limits("plus"),
+    }), 200
+
+
 @billing_bp.route("/create-checkout-session", methods=["POST"])
 def create_checkout_session():
     """Create a Stripe Checkout Session for upgrading to Plus ($30/month)."""

@@ -97,6 +97,24 @@ export const PlexisAPI = {
     return data;
   },
 
+  /** Upgrade user to Plus plan via Free Launch Access promotion */
+  async upgradeToPlusFree() {
+    const res = await fetch(`${BASE_URL}/api/billing/upgrade-free`, {
+      method: 'POST',
+      headers: defaultHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Upgrade failed: ${res.status}`);
+    }
+    const data = await res.json();
+    if (data?.plan) {
+      try { localStorage.setItem('plexis_user_plan', data.plan); } catch (_) {}
+      try { EventBus.emit(Events.PLAN_UPDATED, { plan: data.plan }); } catch (_) {}
+    }
+    return data;
+  },
+
   /** Create Stripe Checkout Session for Plus Plan ($30/mo) */
   async createCheckoutSession() {
     const res = await fetch(`${BASE_URL}/api/billing/create-checkout-session`, {

@@ -130,17 +130,27 @@ export default function Billing() {
   const handleUpgradeToPlus = async () => {
     if (updating) return;
     setUpdating(true);
-    showToast('Redirecting to Stripe Checkout...');
+    showToast('Unlocking Plexis Plus...');
     try {
-      const res = await PlexisAPI.createCheckoutSession();
-      if (res?.checkout_url) {
-        window.location.href = res.checkout_url;
+      const res = await PlexisAPI.upgradeToPlusFree();
+      if (res?.success) {
+        setCurrentPlan('plus');
+        setPlanData((prev) => (prev ? { ...prev, plan: 'plus' } : { plan: 'plus' }));
+        try { localStorage.setItem('plexis_user_plan', 'plus'); } catch (_) {}
+        showToast('🎉 Congratulations! You have unlocked Plexis Plus (Free Launch Access).');
+        PlexisAPI.getUserPlan().then((fresh) => {
+          if (fresh?.plan) {
+            setCurrentPlan(fresh.plan);
+            setPlanData(fresh);
+          }
+        });
       } else {
-        throw new Error(res?.error || 'No checkout URL received from Stripe');
+        throw new Error(res?.message || 'Upgrade failed');
       }
     } catch (err) {
-      console.error('[Billing] Stripe checkout initiation failed:', err);
-      showToast(err.message || 'Failed to initiate Stripe Checkout. Please try again.');
+      console.error('[Billing] Upgrade failed:', err);
+      showToast(err.message || 'Failed to upgrade to Plus. Please try again.');
+    } finally {
       setUpdating(false);
     }
   };
@@ -372,8 +382,9 @@ export default function Billing() {
           </div>
 
           <div className="v2-billing-card-price-box">
-            <span className="v2-billing-card-price">$30</span>
-            <span className="v2-billing-card-period">/ month</span>
+            <span className="v2-billing-card-price">$0</span>
+            <span style={{ textDecoration: 'line-through', opacity: 0.45, marginLeft: 8, fontSize: '1.25rem', color: '#94a3b8' }}>$30</span>
+            <span className="v2-billing-card-period">/ month (Free Launch Access)</span>
           </div>
 
           <p className="v2-billing-card-desc">
@@ -454,7 +465,7 @@ export default function Billing() {
               disabled={updating}
               onClick={handleUpgradeToPlus}
             >
-              <Sparkles size={16} /> Upgrade to Plus ($30/mo)
+              <Sparkles size={16} /> Upgrade to Plus (Free Launch Access)
             </button>
           )}
         </motion.div>

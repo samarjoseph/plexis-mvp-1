@@ -178,6 +178,15 @@ class Config:
     FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "https://plexisai.vercel.app").strip().rstrip("/")
     PLUS_PRICE_CENTS: int = int(os.environ.get("PLUS_PRICE_CENTS", "3000"))  # $30.00 / month
 
+    # ── SMTP Notifications ────────────────────────────────────────────────────
+    SMTP_HOST: str = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
+    SMTP_PORT: int = int(os.environ.get("SMTP_PORT", "587"))
+    SMTP_USER: str = os.environ.get("SMTP_USER", "").strip()
+    SMTP_PASSWORD: str = os.environ.get("SMTP_PASSWORD", "").strip()
+    ADMIN_NOTIFICATION_EMAIL: str = os.environ.get(
+        "ADMIN_NOTIFICATION_EMAIL", "samaryadavclass2b@gmail.com"
+    ).strip()
+
     @classmethod
     def validate(cls) -> None:
         """Validate configuration settings per role."""

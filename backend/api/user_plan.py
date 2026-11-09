@@ -149,10 +149,27 @@ def update_user_plan():
         }), 400
 
     db = get_db()
+    account_name = None
     if db is not None:
         user = user_repository.update_plan(db, current_user.user_id, requested_plan)
         if not user:
             return jsonify({"error": "User not found"}), 404
+        account_name = getattr(user, "name", None) or getattr(user, "display_name", None)
+
+    if not account_name:
+        account_name = current_user.email.split("@")[0]
+
+    if requested_plan == PLAN_PLUS:
+        try:
+            from core.notifications import notify_plus_upgrade
+            notify_plus_upgrade(
+                account_name=account_name,
+                email=current_user.email,
+                account_id=str(current_user.user_id),
+                action_type="Plan Switched to Plus",
+            )
+        except Exception as n_err:
+            logger.error("[USER_PLAN] Failed to dispatch upgrade notification: %s", n_err)
 
     logger.info("[USER_PLAN] User %s switched to plan: %s", current_user.email, requested_plan)
     limits = get_plan_limits(requested_plan)
