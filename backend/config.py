@@ -178,7 +178,7 @@ class Config:
     FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "https://plexisai.vercel.app").strip().rstrip("/")
     PLUS_PRICE_CENTS: int = int(os.environ.get("PLUS_PRICE_CENTS", "3000"))  # $30.00 / month
 
-    # ── SMTP Notifications ────────────────────────────────────────────────────
+    # ── SMTP & Email API Notifications ────────────────────────────────────────
     SMTP_HOST: str = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
     SMTP_PORT: int = int(os.environ.get("SMTP_PORT", "587"))
     SMTP_USER: str = os.environ.get("SMTP_USER", "").strip()
@@ -186,6 +186,12 @@ class Config:
     ADMIN_NOTIFICATION_EMAIL: str = os.environ.get(
         "ADMIN_NOTIFICATION_EMAIL", "samaryadavclass2b@gmail.com"
     ).strip()
+    RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "").strip()
+    RESEND_FROM_EMAIL: str = os.environ.get(
+        "RESEND_FROM_EMAIL", "Plexis Alerts <onboarding@resend.dev>"
+    ).strip()
+    BREVO_API_KEY: str = os.environ.get("BREVO_API_KEY", "").strip()
+    DISCORD_WEBHOOK_URL: str = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
     @classmethod
     def validate(cls) -> None:

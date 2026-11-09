@@ -22,6 +22,147 @@ logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
+def _send_via_resend(
+    api_key: str,
+    from_email: str,
+    recipient: str,
+    subject: str,
+    body_text: str,
+    body_html: Optional[str] = None,
+    attachments: Optional[list] = None,
+) -> bool:
+    """Dispatches email via Resend HTTPS REST API (Port 443 — works 100% on Render)."""
+    try:
+        import base64
+        import requests
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        sender = from_email or "Plexis Alerts <onboarding@resend.dev>"
+        payload = {
+            "from": sender,
+            "to": [recipient],
+            "subject": subject,
+            "text": body_text,
+        }
+        if body_html:
+            payload["html"] = body_html
+
+        if attachments:
+            resend_att = []
+            for att in attachments:
+                fname = att.get("filename", "attachment.bin")
+                raw_bytes = att.get("content_bytes", b"")
+                b64 = (
+                    base64.b64encode(raw_bytes).decode("utf-8")
+                    if isinstance(raw_bytes, (bytes, bytearray))
+                    else str(raw_bytes)
+                )
+                resend_att.append({
+                    "filename": fname,
+                    "content": b64,
+                })
+            payload["attachments"] = resend_att
+
+        resp = requests.post("https://api.resend.com/emails", headers=headers, json=payload, timeout=12)
+        if 200 <= resp.status_code < 300:
+            logger.info("[NOTIFICATIONS] Successfully sent email via Resend API to %s (subject: '%s')", recipient, subject)
+            return True
+        else:
+            logger.error("[NOTIFICATIONS] Resend API error (status %d): %s", resp.status_code, resp.text)
+            return False
+    except Exception as e:
+        logger.error("[NOTIFICATIONS] Failed to dispatch email via Resend API: %s", e, exc_info=True)
+        return False
+
+
+def _send_via_brevo(
+    api_key: str,
+    recipient: str,
+    subject: str,
+    body_text: str,
+    body_html: Optional[str] = None,
+    attachments: Optional[list] = None,
+) -> bool:
+    """Dispatches email via Brevo HTTPS REST API (Port 443 — works 100% on Render)."""
+    try:
+        import base64
+        import requests
+
+        headers = {
+            "api-key": api_key,
+            "Content-Type": "application/json",
+        }
+        sender_email = Config.ADMIN_NOTIFICATION_EMAIL or "samaryadavclass2b@gmail.com"
+        payload = {
+            "sender": {"name": "Plexis Alerts", "email": sender_email},
+            "to": [{"email": recipient}],
+            "subject": subject,
+            "textContent": body_text,
+        }
+        if body_html:
+            payload["htmlContent"] = body_html
+
+        if attachments:
+            brevo_att = []
+            for att in attachments:
+                fname = att.get("filename", "attachment.bin")
+                raw_bytes = att.get("content_bytes", b"")
+                b64 = (
+                    base64.b64encode(raw_bytes).decode("utf-8")
+                    if isinstance(raw_bytes, (bytes, bytearray))
+                    else str(raw_bytes)
+                )
+                brevo_att.append({
+                    "name": fname,
+                    "content": b64,
+                })
+            payload["attachment"] = brevo_att
+
+        resp = requests.post("https://api.brevo.com/v3/smtp/email", headers=headers, json=payload, timeout=12)
+        if 200 <= resp.status_code < 300:
+            logger.info("[NOTIFICATIONS] Successfully sent email via Brevo API to %s (subject: '%s')", recipient, subject)
+            return True
+        else:
+            logger.error("[NOTIFICATIONS] Brevo API error (status %d): %s", resp.status_code, resp.text)
+            return False
+    except Exception as e:
+        logger.error("[NOTIFICATIONS] Failed to dispatch email via Brevo API: %s", e, exc_info=True)
+        return False
+
+
+def _send_via_discord(
+    webhook_url: str,
+    title: str,
+    description: str,
+    color: int = 0x2563EB,
+) -> bool:
+    """Dispatches instant notification to a Discord channel webhook (Port 443)."""
+    if not webhook_url:
+        return False
+    try:
+        import requests
+        payload = {
+            "embeds": [
+                {
+                    "title": title[:256],
+                    "description": description[:2000],
+                    "color": color,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "footer": {"text": "Plexis Telemetry System"},
+                }
+            ]
+        }
+        requests.post(webhook_url, json=payload, timeout=6)
+        logger.info("[NOTIFICATIONS] Successfully dispatched alert to Discord Webhook")
+        return True
+    except Exception as e:
+        logger.warning("[NOTIFICATIONS] Discord webhook dispatch failed: %s", e)
+        return False
+
+
 def _send_email_thread(
     recipient: str,
     subject: str,
@@ -29,7 +170,40 @@ def _send_email_thread(
     body_html: Optional[str] = None,
     attachments: Optional[list] = None,
 ) -> bool:
-    """Internal synchronous email dispatcher via SMTP with attachment support."""
+    """
+    Internal synchronous email dispatcher with multiple transports:
+    1. Resend HTTPS API (Recommended for Render — port 443 is never blocked)
+    2. Brevo HTTPS API (Alternative HTTPS provider)
+    3. Direct SMTP (Fallback for localhost or servers with unblocked ports 25/587)
+    """
+    # Forward to Discord Webhook if configured
+    if Config.DISCORD_WEBHOOK_URL:
+        _send_via_discord(Config.DISCORD_WEBHOOK_URL, subject, body_text)
+
+    # 1. Prefer Resend API (HTTPS Port 443)
+    if Config.RESEND_API_KEY:
+        return _send_via_resend(
+            api_key=Config.RESEND_API_KEY,
+            from_email=Config.RESEND_FROM_EMAIL,
+            recipient=recipient,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+            attachments=attachments,
+        )
+
+    # 2. Prefer Brevo API (HTTPS Port 443)
+    if Config.BREVO_API_KEY:
+        return _send_via_brevo(
+            api_key=Config.BREVO_API_KEY,
+            recipient=recipient,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+            attachments=attachments,
+        )
+
+    # 3. Direct SMTP Fallback
     smtp_host = Config.SMTP_HOST
     smtp_port = Config.SMTP_PORT
     smtp_user = Config.SMTP_USER or Config.ADMIN_NOTIFICATION_EMAIL
@@ -37,8 +211,9 @@ def _send_email_thread(
 
     if not smtp_pass:
         logger.warning(
-            "[NOTIFICATIONS] SMTP_PASSWORD is not configured in environment. "
-            "Skipping email delivery to %s for subject '%s'. Set SMTP_PASSWORD in Render/.env to enable live emails.",
+            "[NOTIFICATIONS] No email service configured (RESEND_API_KEY, BREVO_API_KEY, or SMTP_PASSWORD). "
+            "Skipping notification delivery to %s for subject '%s'. "
+            "To receive email alerts on Render (which blocks raw SMTP), add RESEND_API_KEY in Render Environment Variables.",
             recipient,
             subject,
         )
@@ -76,7 +251,7 @@ def _send_email_thread(
                 mpart.add_header("Content-Disposition", f'attachment; filename="{fname}"')
                 msg.attach(mpart)
 
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as server:
             server.ehlo()
             server.starttls()
             server.ehlo()
@@ -85,6 +260,16 @@ def _send_email_thread(
 
         logger.info("[NOTIFICATIONS] Successfully sent email to %s (subject: %s)", recipient, subject)
         return True
+    except OSError as err:
+        if getattr(err, "errno", None) == 101 or "Network is unreachable" in str(err):
+            logger.error(
+                "[NOTIFICATIONS] Render blocked outbound SMTP traffic ([Errno 101] Network is unreachable). "
+                "Render Free tier blocks outbound SMTP ports 25, 465, and 587. "
+                "Fix: Add RESEND_API_KEY in Render Environment Variables (free at https://resend.com) to send via HTTPS Port 443."
+            )
+        else:
+            logger.error("[NOTIFICATIONS] Failed to dispatch email via SMTP: %s", err, exc_info=True)
+        return False
     except Exception as e:
         logger.error("[NOTIFICATIONS] Failed to dispatch email via SMTP: %s", e, exc_info=True)
         return False
