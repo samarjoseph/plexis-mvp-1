@@ -659,4 +659,20 @@ export const PlexisAPI = {
       return false;
     }
   },
+
+  /**
+   * Submit user complaint, issue report, or feedback with screenshot to founder.
+   */
+  async submitHelpFeedback(payload) {
+    const res = await fetch(`${BASE_URL}/api/help/feedback`, {
+      method: 'POST',
+      headers: defaultHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || `Submission failed (${res.status})`);
+    }
+    return res.json();
+  },
 };

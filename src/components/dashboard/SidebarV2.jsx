@@ -14,6 +14,7 @@ import {
   LogOut,
   Sparkles,
   Settings,
+  HelpCircle,
   PanelLeft,
   X,
 } from 'lucide-react';
@@ -651,6 +652,16 @@ export default function SidebarV2({
 
                       <button
                         type="button"
+                        onClick={() => {
+                          setProfileOpen(false);
+                          navigate('/help');
+                        }}
+                      >
+                        <HelpCircle size={14} /> Help
+                      </button>
+
+                      <button
+                        type="button"
                         className="danger"
                         onClick={() => {
                           setProfileOpen(false);
@@ -737,6 +748,14 @@ export default function SidebarV2({
                         }}
                       >
                         <Settings size={14} /> Settings
+                      </button>
+                      <button
+                        onClick={() => {
+                          setProfileOpen(false);
+                          navigate('/help');
+                        }}
+                      >
+                        <HelpCircle size={14} /> Help
                       </button>
                       <button
                         className="danger"

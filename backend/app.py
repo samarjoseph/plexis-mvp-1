@@ -151,6 +151,13 @@ def create_app() -> Flask:
     except ImportError as e:
         logger.warning('[app] guest_bp not loaded: %s', e)
 
+    # Register help & feedback blueprint
+    try:
+        from api.help import help_bp
+        app.register_blueprint(help_bp)
+    except ImportError as e:
+        logger.warning('[app] help_bp not loaded: %s', e)
+
     @app.route('/', methods=['GET'])
     @app.route('/health', methods=['GET'])
     def root_health():
