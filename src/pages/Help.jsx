@@ -219,7 +219,7 @@ export default function Help() {
             <a href="#faq" className="v2-help-quick-btn">
               <HelpCircle size={14} /> FAQ
             </a>
-            <a href="#contact" className="v2-help-quick-btn" style={{ background: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8' }}>
+            <a href="#contact" className="v2-help-quick-btn v2-help-quick-btn--primary">
               <Send size={14} /> Report an Issue
             </a>
           </div>
@@ -228,7 +228,7 @@ export default function Help() {
         {/* SECTION 1: Guides Grid */}
         <section id="guide" style={{ marginBottom: 48 }}>
           <h2 className="v2-help-section-title">
-            <Layers size={20} color="#38bdf8" /> Core Capabilities & Guide
+            <Layers size={20} color="#3b82f6" /> Core Capabilities & Guide
           </h2>
           <div className="v2-help-grid">
             <div className="v2-help-card">
@@ -320,7 +320,7 @@ export default function Help() {
         {/* SECTION 2: Power Prompts */}
         <section id="prompts" style={{ marginBottom: 48 }}>
           <h2 className="v2-help-section-title">
-            <Terminal size={20} color="#38bdf8" /> Example Prompts to Try
+            <Terminal size={20} color="#3b82f6" /> Example Prompts to Try
           </h2>
           <div className="v2-help-grid">
             <div className="v2-help-card">
@@ -352,7 +352,7 @@ export default function Help() {
         {/* SECTION 3: Keyboard Shortcuts */}
         <section id="shortcuts" style={{ marginBottom: 48 }}>
           <h2 className="v2-help-section-title">
-            <Table size={20} color="#38bdf8" /> Keyboard Shortcuts
+            <Table size={20} color="#3b82f6" /> Keyboard Shortcuts
           </h2>
           <div className="v2-help-shortcuts-grid">
             <div className="v2-help-shortcut-item">
@@ -381,7 +381,7 @@ export default function Help() {
         {/* SECTION 4: FAQs */}
         <section id="faq" style={{ marginBottom: 56 }}>
           <h2 className="v2-help-section-title">
-            <HelpCircle size={20} color="#38bdf8" /> Frequently Asked Questions
+            <HelpCircle size={20} color="#3b82f6" /> Frequently Asked Questions
           </h2>
           <div className="v2-help-faq-list">
             {faqs.map((faq, idx) => {
@@ -394,7 +394,7 @@ export default function Help() {
                     onClick={() => setOpenFaq(isOpen ? null : idx)}
                   >
                     <span>{faq.q}</span>
-                    {isOpen ? <ChevronUp size={18} color="#38bdf8" /> : <ChevronDown size={18} color="#64748b" />}
+                    {isOpen ? <ChevronUp size={18} color="#3b82f6" /> : <ChevronDown size={18} color="#64748b" />}
                   </button>
                   {isOpen && <div className="v2-help-faq-answer">{faq.a}</div>}
                 </div>
@@ -485,7 +485,7 @@ export default function Help() {
                     onDrop={handleDrop}
                   >
                     <div className="v2-help-upload-content">
-                      <UploadCloud size={28} color="#38bdf8" />
+                      <UploadCloud size={28} color="#3b82f6" />
                       <div>
                         <strong>Click to upload</strong> or drag and drop screenshot here
                       </div>

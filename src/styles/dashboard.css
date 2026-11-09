@@ -18,10 +18,10 @@
   --dash-text: #f0f2f5;
   --dash-muted: #8b95a5;
   --dash-dim: #4a5568;
-  --dash-accent: #6366f1;
-  --dash-accent-hover: #4f46e5;
-  --dash-accent-glow: rgba(99, 102, 241, 0.15);
-  --dash-accent-2: #a855f7;
+  --dash-accent: #2563eb;
+  --dash-accent-hover: #1d4ed8;
+  --dash-accent-glow: rgba(37, 99, 235, 0.12);
+  --dash-accent-2: #3b82f6;
   --dash-font: 'Inter', system-ui, -apple-system, sans-serif;
   --dash-mono: 'JetBrains Mono', ui-monospace, monospace;
   --dash-ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -247,10 +247,10 @@
 }
 
 .v2-new-chat-btn:hover {
-  border-color: var(--dash-accent);
-  color: var(--dash-accent);
-  background: var(--dash-accent-glow);
-  box-shadow: 0 0 14px var(--dash-accent-glow);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
 }
 
 /* ─────── SEARCH ─────── */
@@ -1055,20 +1055,20 @@
 }
 
 .v2-msg-file-card:hover {
-  border-color: rgba(56, 189, 248, 0.45);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), 0 0 14px rgba(56, 189, 248, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .v2-msg-file-icon {
   width: 36px;
   height: 36px;
   border-radius: 9px;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.08));
-  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #38bdf8;
+  color: #60a5fa;
   flex-shrink: 0;
 }
 
@@ -1464,7 +1464,7 @@
 
 .v2-staged-file svg {
   flex-shrink: 0;
-  color: #38bdf8;
+  color: #3b82f6;
 }
 
 .v2-staged-file button {
@@ -1551,21 +1551,23 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--dash-accent), var(--dash-accent-hover));
+  background: #2563eb;
   color: white;
-  transition: all 0.25s var(--dash-ease);
+  transition: all 0.2s var(--dash-ease);
   flex-shrink: 0;
   margin: 0;
-  box-shadow: 0 2px 8px var(--dash-accent-glow);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .v2-send-btn:hover {
-  box-shadow: 0 4px 20px var(--dash-accent-glow);
+  background: #1d4ed8;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   transform: translateY(-1px);
 }
 
@@ -2208,17 +2210,17 @@
 }
 
 .v2-analytics-float-btn:hover {
-  color: var(--dash-accent);
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(99, 102, 241, 0.25);
-  box-shadow: 0 4px 20px var(--dash-accent-glow);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .v2-analytics-float-btn.active {
-  background: var(--dash-accent);
+  background: #2563eb;
   color: white;
-  border-color: var(--dash-accent);
-  box-shadow: 0 0 20px var(--dash-accent-glow);
+  border-color: #2563eb;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* ── SETTINGS MODAL ─────────────────────────────────────────── */
@@ -2954,8 +2956,8 @@
 
 .v2-error-retry-compact:hover {
   background: rgba(30, 58, 138, 0.7); /* Slightly lighter background */
-  border-color: rgba(59, 130, 246, 0.9); /* Brighter border */
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4); /* Brighter glow */
+  border-color: rgba(59, 130, 246, 0.8);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   transform: scale(1.02);
 }
 
@@ -2991,7 +2993,7 @@
   bottom: 0;
   width: 2px;
   background: var(--dash-accent);
-  box-shadow: 0 0 8px var(--dash-accent-glow);
+  box-shadow: none;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -3022,7 +3024,7 @@ body.is-dragging * {
   user-select: none !important;
 }
 
-/* "?"? ANALYTICS BUTTON RUNNING BORDER "?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"?"? */
+/* ─────── ANALYTICS BUTTON RUNNING BORDER ────────────────────────────── */
 .v2-analytics-btn {
   position: relative;
   border-radius: 8px;
@@ -3040,7 +3042,7 @@ body.is-dragging * {
 
 .v2-analytics-btn:hover {
   background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 12px var(--dash-accent-glow);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 
@@ -6325,20 +6327,19 @@ body.is-dragging * {
   background: rgba(37, 99, 235, 0.16);
   border: 1px solid rgba(59, 130, 246, 0.38);
   color: #93c5fd;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
 }
 
 .v2-plan-badge--popular {
-  background: linear-gradient(135deg, #ff2e63 0%, #ff4b72 50%, #e11d48 100%);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: #2563eb;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffffff;
   border-radius: 9999px;
   font-size: 9.5px;
-  font-weight: 800;
+  font-weight: 700;
   padding: 2px 8.5px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  box-shadow: 0 2px 10px rgba(244, 63, 94, 0.4);
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
 }
 
 /* Plan Limitation Toast Notification - Cursor-Anchored Message Bubble */
@@ -6481,7 +6482,7 @@ body.is-dragging * {
 .v2-header-plan-guest-text {
   font-size: 14.5px;
   font-weight: 700;
-  color: #38bdf8;
+  color: #93c5fd;
   letter-spacing: -0.01em;
   text-transform: capitalize;
   display: inline-flex;
@@ -6493,9 +6494,9 @@ body.is-dragging * {
   height: 28px;
   padding: 0 12px;
   border-radius: 8px;
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  color: #38bdf8;
+  background: #2563eb;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
@@ -6504,17 +6505,19 @@ body.is-dragging * {
   justify-content: center;
   transition: all 0.2s ease;
   margin-right: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .v2-header-guest-signin-btn:hover {
-  background: rgba(56, 189, 248, 0.22);
-  border-color: rgba(56, 189, 248, 0.55);
+  background: #1d4ed8;
+  border-color: rgba(255, 255, 255, 0.2);
   color: #ffffff;
   transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .guest-badge-avatar {
-  border: 1px solid rgba(56, 189, 248, 0.4);
+  border: 1px solid rgba(59, 130, 246, 0.4);
 }
 
 /* ── Guest Sidebar Google Link ────────────────────────────────────────── */
@@ -6543,7 +6546,7 @@ body.is-dragging * {
 }
 
 .v2-guest-sidebar-google-link:hover {
-  color: #38bdf8;
+  color: #60a5fa;
   opacity: 0.95;
 }
 
@@ -6593,7 +6596,7 @@ body.is-dragging * {
 
 .v2-guest-toast-title {
   font-weight: 700;
-  color: #38bdf8;
+  color: #60a5fa;
   letter-spacing: -0.01em;
 }
 
@@ -6609,23 +6612,24 @@ body.is-dragging * {
 
 .v2-guest-toast-signin {
   font-size: 12px;
-  font-weight: 700;
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.1);
-  border: 1px solid rgba(56, 189, 248, 0.28);
+  font-weight: 600;
+  color: #ffffff;
+  background: #2563eb;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 6px;
-  padding: 3px 9px;
+  padding: 3px 10px;
   cursor: pointer;
   transition: all 0.18s ease;
   font-family: inherit;
   margin-left: 2px;
   outline: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .v2-guest-toast-signin:hover {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: rgba(56, 189, 248, 0.45);
-  color: #7dd3fc;
+  background: #1d4ed8;
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
   transform: translateY(-0.5px);
 }
 

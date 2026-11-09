@@ -42,9 +42,9 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.1);
-  border: 1px solid rgba(56, 189, 248, 0.2);
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(37, 99, 235, 0.25);
   padding: 4px 10px;
   border-radius: 999px;
   margin-bottom: 12px;
@@ -90,8 +90,9 @@
 }
 
 .v2-terms-tab-btn.active {
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.1);
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(37, 99, 235, 0.3);
   font-weight: 600;
 }
 
@@ -138,6 +139,6 @@
 }
 
 .v2-terms-content a {
-  color: #38bdf8;
+  color: #60a5fa;
   text-decoration: underline;
 }
