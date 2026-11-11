@@ -9,6 +9,7 @@ Safety rules:
 - No eval/exec
 """
 from __future__ import annotations
+import gc
 import gzip
 import hashlib
 import logging
@@ -79,10 +80,9 @@ class TransformationExecutor:
             )
 
         try:
-            # ── Save previous state for undo (BEFORE mutation) ──
-            previous_df = df.copy()
-
             # ── Execute the transformation ──
+            # Pass `df` itself (the original) to history; _execute works on df.copy().
+            # This avoids holding TWO full copies of 150k-row DataFrames.
             new_df = self._execute(df.copy(), plan)
 
             # ── Deterministic Postcondition Verification ──
@@ -127,7 +127,7 @@ class TransformationExecutor:
                         plan_id=plan.plan_id,
                         operation_type=plan.operation_type,
                         operation_label=plan.operation_label,
-                        previous_df=previous_df,
+                        previous_df=df,
                         previous_version=prev_version,
                         result_version=new_version,
                         changed_cells=changed_cells,
@@ -529,6 +529,9 @@ class TransformationExecutor:
         snapshot_bytes = serialize_dataframe(new_df)
         file_hash = hashlib.sha256(snapshot_bytes).hexdigest()
         compressed = gzip.compress(snapshot_bytes)
+        snapshot_size = len(snapshot_bytes)
+        del snapshot_bytes  # Free ~50-100 MB immediately
+        gc.collect()
 
         # Create new Dataset record for the versioned copy
         filename_stem = base_filename.rsplit('.', 1)[0]
@@ -538,7 +541,7 @@ class TransformationExecutor:
             user_id=user_id,
             original_filename=versioned_filename,
             mime_type='application/vnd.plexis.typed-dataframe+json',
-            file_size=len(snapshot_bytes),
+            file_size=snapshot_size,
             file_hash=file_hash,
             row_count=len(new_df),
             column_count=len(new_df.columns),

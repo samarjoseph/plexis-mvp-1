@@ -26,7 +26,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 # Maximum undo depth per dataset (memory safety)
-MAX_UNDO_DEPTH = 50
+MAX_UNDO_DEPTH = 10  # Reduced from 50 to prevent Render 512MB OOM
 
 
 class UndoEntry:
@@ -58,7 +58,7 @@ class UndoEntry:
         self.timestamp = timestamp or datetime.now(timezone.utc).isoformat()
         
         # Cache active DataFrame for immediate undo, compress to Parquet bytes for older stack entries
-        self._cached_df = previous_df.copy()
+        self._cached_df = previous_df  # Single reference; .copy() deferred to .previous_df getter
         try:
             import io
             buf = io.BytesIO()
@@ -133,7 +133,7 @@ class TransformationHistory:
             plan_id=plan_id,
             operation_type=operation_type,
             operation_label=operation_label,
-            previous_df=previous_df.copy(),  # Deep copy for safety
+            previous_df=previous_df,  # executor passes original df, UndoEntry copies once
             previous_version=previous_version,
             result_version=result_version,
             changed_cells=changed_cells,
@@ -146,7 +146,7 @@ class TransformationHistory:
             stack.append(entry)
 
             # Memory optimization: evict full DataFrames from RAM for entries older than the latest 2
-            for old_entry in stack[:-2]:
+            for old_entry in stack[:-1]:
                 old_entry.evict_ram_cache()
 
             # Trim old entries to respect MAX_UNDO_DEPTH
