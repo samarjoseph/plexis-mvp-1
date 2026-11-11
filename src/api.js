@@ -576,19 +576,48 @@ export const PlexisAPI = {
     return res.json();
   },
 
-  /** Export the current (possibly transformed) dataset as a CSV download. */
+  /** Export the current (possibly transformed) dataset as a CSV download.
+   *  Uses the File System Access API (showSaveFilePicker) when available
+   *  so the user gets a native "Save As" dialog. Falls back to the old
+   *  auto-download anchor trick in Firefox / older browsers.
+   */
   async exportDataset(datasetId) {
     const res = await fetch(`${BASE_URL}/api/transform/export/${datasetId}`, {
       headers: getAuthHeaders(),
     });
     if (!res.ok) throw new Error(`Export failed: ${res.status}`);
     const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const suggestedName = match ? match[1] : 'dataset_transformed.csv';
+
+    // ── Try native Save-As dialog (Chrome / Edge 86+) ──
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [
+            {
+              description: 'CSV file',
+              accept: { 'text/csv': ['.csv'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;                 // done — user chose where to save
+      } catch (err) {
+        if (err.name === 'AbortError') return;   // user cancelled the dialog
+        // showSaveFilePicker failed for another reason — fall through
+      }
+    }
+
+    // ── Fallback: auto-download via hidden <a> tag ──
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const match = disposition.match(/filename="([^"]+)"/);
-    a.download = match ? match[1] : 'dataset_transformed.csv';
+    a.download = suggestedName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

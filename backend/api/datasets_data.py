@@ -127,7 +127,9 @@ def get_dataset_data(dataset_id: str) -> Tuple[Any, int]:
         except Exception:
             pass
 
-        working = df.copy()
+        # Avoid copying 150k rows unless we actually need to mutate (filter/cap).
+        # .iloc[:] creates a shallow view; only search/filter/cap create a real copy.
+        working = df
         is_plan_capped = False
         untruncated_total_rows = len(df)
 
@@ -177,30 +179,28 @@ def get_dataset_data(dataset_id: str) -> Tuple[Any, int]:
 
         # ── Serialize safely ─────────────────────────────────────────────────
         columns = list(page.columns)
+        # Fast serialisation: to_dict(orient="records") is C-optimised
+        original_indices = page.index.tolist()
+        page_records = page.to_dict(orient="records")
         rows = []
-        for original_idx, row in page.iterrows():
-            safe_row = {}
-            # _row_idx = original DataFrame index (absolute, pre-sort, pre-filter)
-            # Used by frontend Locate to navigate to the correct row even after
-            # sorting/filtering. Must NOT be display_index or filtered_index.
-            # Safely convert to int — handles RangeIndex, Int64Index, MultiIndex fallback
+        for i, rec in enumerate(page_records):
             try:
-                safe_row['_row_idx'] = int(original_idx)
+                rec['_row_idx'] = int(original_indices[i])
             except (TypeError, ValueError):
-                safe_row['_row_idx'] = hash(str(original_idx))  # fallback for exotic indices
-            for col in columns:
-                val = row[col]
+                rec['_row_idx'] = hash(str(original_indices[i]))
+            # Replace NaN/NaT with None for JSON serialisation
+            for k, v in rec.items():
+                if k == '_row_idx':
+                    continue
                 try:
-                    if pd.isna(val):
-                        safe_row[col] = None
+                    if pd.isna(v):
+                        rec[k] = None
                         continue
                 except (TypeError, ValueError):
-                    pass  # pd.isna raises on unhashable types
-                if hasattr(val, 'item'):          # numpy scalar
-                    safe_row[col] = val.item()
-                else:
-                    safe_row[col] = val
-            rows.append(safe_row)
+                    pass
+                if hasattr(v, 'item'):
+                    rec[k] = v.item()
+            rows.append(rec)
 
         return jsonify({
             'columns': columns,

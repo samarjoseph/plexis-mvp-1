@@ -102,17 +102,26 @@ class TransformationExecutor:
             version_number = None
 
             if db is not None and original_db_dataset_id is not None and not is_noop:
-                try:
-                    version_dataset_id, version_id, version_number = self._persist_version(
-                        db=db,
-                        new_df=new_df,
-                        plan=plan,
-                        original_db_dataset_id=original_db_dataset_id,
-                        user_id=user_id,
-                        base_filename=base_filename,
-                    )
-                except Exception as e:
-                    logger.warning('[TransformExecutor] Version persist failed (non-fatal): %s', e)
+                # Fire-and-forget background persist so the UI responds instantly.
+                # Version persistence is non-fatal; the L1 cache already has the
+                # new DataFrame, so the user sees the result immediately.
+                import threading
+                persist_args = dict(
+                    new_df=new_df.copy(),
+                    plan=plan,
+                    original_db_dataset_id=original_db_dataset_id,
+                    user_id=user_id,
+                    base_filename=base_filename,
+                )
+                def _bg_persist():
+                    try:
+                        from db.session import db_session
+                        with db_session() as bg_db:
+                            self._persist_version(db=bg_db, **persist_args)
+                            logger.info('[TransformExecutor] Background persist completed for plan %s', plan.plan_id)
+                    except Exception as e:
+                        logger.warning('[TransformExecutor] Background persist failed (non-fatal): %s', e)
+                threading.Thread(target=_bg_persist, daemon=True).start()
 
             # ── Record in-memory undo history (atomic with registry update) ──
             from transformation.history import transformation_history
