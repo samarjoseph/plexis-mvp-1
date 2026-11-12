@@ -580,22 +580,18 @@ export const PlexisAPI = {
    *  Uses the File System Access API (showSaveFilePicker) when available
    *  so the user gets a native "Save As" dialog. Falls back to the old
    *  auto-download anchor trick in Firefox / older browsers.
+   *
+   *  IMPORTANT: showSaveFilePicker MUST be called synchronously from the
+   *  user click (before any await) — browsers revoke the "user activation"
+   *  after the first async gap, so calling it after fetch() silently fails.
    */
   async exportDataset(datasetId) {
-    const res = await fetch(`${BASE_URL}/api/transform/export/${datasetId}`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
-    const blob = await res.blob();
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const match = disposition.match(/filename="([^"]+)"/);
-    const suggestedName = match ? match[1] : 'dataset_transformed.csv';
-
-    // ── Try native Save-As dialog (Chrome / Edge 86+) ──
+    // ── 1. Open Save-As dialog IMMEDIATELY (while user gesture is active) ──
+    let fileHandle = null;
     if (typeof window.showSaveFilePicker === 'function') {
       try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName,
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: 'dataset_transformed.csv',
           types: [
             {
               description: 'CSV file',
@@ -603,17 +599,35 @@ export const PlexisAPI = {
             },
           ],
         });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return;                 // done — user chose where to save
       } catch (err) {
-        if (err.name === 'AbortError') return;   // user cancelled the dialog
-        // showSaveFilePicker failed for another reason — fall through
+        if (err.name === 'AbortError') return;   // user cancelled
+        fileHandle = null;  // API failed — will fall back to auto-download
       }
     }
 
-    // ── Fallback: auto-download via hidden <a> tag ──
+    // ── 2. Fetch the CSV from the backend ──
+    const res = await fetch(`${BASE_URL}/api/transform/export/${datasetId}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+    const blob = await res.blob();
+
+    // ── 3a. Write to the user-chosen file ──
+    if (fileHandle) {
+      try {
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        // write failed — fall through to auto-download
+      }
+    }
+
+    // ── 3b. Fallback: auto-download via hidden <a> tag ──
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const suggestedName = match ? match[1] : 'dataset_transformed.csv';
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
