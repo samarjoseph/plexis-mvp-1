@@ -171,16 +171,17 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
           </button>
         </div>
 
-        {/* ── Export Progress Bar (Black glass + subtle blue) ── */}
+        {/* ── Export Progress Bar (Minimal Black Glassmorphism) ── */}
         {exportState === 'exporting' && (
           <div
             style={{
               marginTop: '12px',
               padding: '10px 12px',
               borderRadius: '8px',
-              background: 'linear-gradient(135deg, rgba(10, 12, 18, 0.92), rgba(15, 23, 42, 0.65))',
-              border: '1px solid rgba(59, 130, 246, 0.22)',
-              backdropFilter: 'blur(12px)',
+              background: 'rgba(10, 10, 12, 0.75)',
+              border: '1px solid rgba(255, 255, 255, 0.09)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
             }}
           >
             <div
@@ -190,12 +191,12 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
                 justifyContent: 'space-between',
                 fontSize: '12px',
                 marginBottom: '7px',
-                color: '#cbd5e1',
+                color: '#d4d4d8',
                 fontWeight: 500,
               }}
             >
               <span>Saving your CSV...</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums', color: '#93c5fd', fontSize: '11.5px' }}>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: '#a1a1aa', fontSize: '11.5px' }}>
                 {progress.loadedBytes > 0 ? `${formatBytes(progress.loadedBytes)} · ` : ''}
                 {progress.percent > 0 ? `${progress.percent}%` : 'Preparing...'}
               </span>
@@ -203,9 +204,9 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
             <div
               style={{
                 width: '100%',
-                height: '5px',
+                height: '4px',
                 borderRadius: '999px',
-                background: 'rgba(255, 255, 255, 0.06)',
+                background: 'rgba(255, 255, 255, 0.08)',
                 overflow: 'hidden',
               }}
             >
@@ -214,7 +215,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
                   width: `${Math.max(progress.percent, 6)}%`,
                   height: '100%',
                   borderRadius: '999px',
-                  background: 'linear-gradient(90deg, #2563eb 0%, #60a5fa 100%)',
+                  background: '#3b82f6',
                   transition: 'width 180ms ease-out',
                 }}
               />
@@ -230,7 +231,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
         )}
       </div>
 
-      {/* ── Saved Confirmation Popup (Simple Black Glassmorphism + Subtle Blue) ── */}
+      {/* ── Saved Confirmation Popup (Minimal Black Glassmorphism) ── */}
       {savedPopup && typeof document !== 'undefined' && createPortal(
         <div
           role="dialog"
@@ -238,49 +239,52 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
           aria-label="Export saved confirmation"
           style={{
             position: 'fixed',
-            top: '20px',
-            right: '20px',
+            top: '64px',
+            right: '24px',
             zIndex: 9999,
-            maxWidth: '400px',
+            maxWidth: '460px',
             width: 'calc(100vw - 32px)',
-            background:
-              'radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 65%), rgba(9, 11, 16, 0.88)',
-            border: '1px solid rgba(59, 130, 246, 0.24)',
-            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+            background: 'rgba(10, 10, 12, 0.72)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.75)',
             borderRadius: '12px',
-            padding: '14px 15px',
+            padding: '14px 16px',
             display: 'flex',
             alignItems: 'flex-start',
             gap: '12px',
-            color: '#e2e8f0',
-            backdropFilter: 'blur(18px)',
-            WebkitBackdropFilter: 'blur(18px)',
+            color: '#e4e4e7',
+            backdropFilter: 'blur(20px) saturate(140%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(140%)',
           }}
         >
           <div
             style={{
               flexShrink: 0,
-              width: '30px',
-              height: '30px',
-              borderRadius: '8px',
-              background: 'rgba(59, 130, 246, 0.1)',
-              border: '1px solid rgba(59, 130, 246, 0.22)',
+              width: '28px',
+              height: '28px',
+              borderRadius: '7px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#60a5fa',
+              color: '#e4e4e7',
               marginTop: '1px',
             }}
           >
-            <FileCheck2 size={16} />
+            <FileCheck2 size={15} />
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#93c5fd', marginBottom: '3px', letterSpacing: '0.01em' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#fafafa', marginBottom: '3px' }}>
               Saved
             </div>
-            <div style={{ fontSize: '12.5px', lineHeight: 1.45, color: '#cbd5e1', wordBreak: 'break-word' }}>
-              Saved your <span style={{ color: '#f8fafc', fontWeight: 600 }}>{savedPopup.filename}</span> with all your latest transformations.
+            <div style={{ fontSize: '12.5px', lineHeight: 1.5, color: '#a1a1aa' }}>
+              Saved your{' '}
+              <span style={{ color: '#fafafa', fontWeight: 500, overflowWrap: 'anywhere' }}>
+                {savedPopup.filename}
+              </span>{' '}
+              with all your latest transformations.
             </div>
           </div>
 
@@ -293,7 +297,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
               flexShrink: 0,
               background: 'rgba(255, 255, 255, 0.04)',
               border: '1px solid rgba(255, 255, 255, 0.08)',
-              color: '#94a3b8',
+              color: '#a1a1aa',
               cursor: 'pointer',
               padding: '4px',
               borderRadius: '6px',
