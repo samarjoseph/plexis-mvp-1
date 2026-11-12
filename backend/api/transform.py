@@ -493,9 +493,15 @@ def export_dataset(dataset_id):
         else:
             export_name = f"{filename}_transformed.csv"
 
+        total = len(df)
+        estimated_bytes = 0
+        if total > 0:
+            sample_n = min(500, total)
+            sample_csv = df.iloc[:sample_n].to_csv(index=False)
+            estimated_bytes = max(len(sample_csv), int((len(sample_csv) / sample_n) * total))
+
         def _generate_csv():
             chunk_size = 15000
-            total = len(df)
             if total == 0:
                 yield df.to_csv(index=False)
                 return
@@ -508,8 +514,9 @@ def export_dataset(dataset_id):
             mimetype='text/csv',
             headers={
                 'Content-Disposition': f'attachment; filename="{export_name}"',
+                'X-Estimated-Bytes': str(estimated_bytes),
                 'Cache-Control': 'no-store',
-                'Access-Control-Expose-Headers': 'Content-Disposition',
+                'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, X-Estimated-Bytes',
             },
         )
     except Exception as e:

@@ -1735,16 +1735,19 @@ function DashboardInner() {
     }
   }, [activeId]);
 
-  const handleExportDataset = useCallback(async (datasetId) => {
+  const handleExportDataset = useCallback(async (datasetId, onProgress = null) => {
     const resolvedDatasetId = datasetId || activeConversation?.datasetId;
-    const suggestedName = activeConversation?.datasetName || activeConversation?.filename || '';
+    const rawName = activeConversation?.activeDatasetName || activeConversation?.datasetName || activeConversation?.filename || '';
+    const suggestedName = (rawName && rawName !== 'Active Dataset' && rawName !== 'No active dataset')
+      ? rawName
+      : '';
     try {
-      return await PlexisAPI.exportDataset(resolvedDatasetId, suggestedName);
+      return await PlexisAPI.exportDataset(resolvedDatasetId, suggestedName, onProgress);
     } catch (e) {
       console.error('[handleExportDataset]', e);
       throw e;
     }
-  }, [activeConversation?.datasetId, activeConversation?.datasetName, activeConversation?.filename]);
+  }, [activeConversation?.datasetId, activeConversation?.activeDatasetName, activeConversation?.datasetName, activeConversation?.filename]);
 
   // ── Keyboard Shortcuts ─────────────────────────────────────
   useKeyboardShortcuts([

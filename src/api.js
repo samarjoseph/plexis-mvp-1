@@ -585,15 +585,17 @@ export const PlexisAPI = {
    *  user click (before any await) — browsers revoke the "user activation"
    *  after the first async gap, so calling it after fetch() silently fails.
    */
-  async exportDataset(datasetId, suggestedFilename = '') {
-    const baseName = suggestedFilename || 'dataset.csv';
+  async exportDataset(datasetId, suggestedFilename = '', onProgress = null) {
+    const rawName = (suggestedFilename && suggestedFilename !== 'Active Dataset' && suggestedFilename !== 'No active dataset')
+      ? suggestedFilename
+      : 'dataset.csv';
     let cleanSuggested;
-    if (/_transformed\.csv$/i.test(baseName)) {
-      cleanSuggested = baseName;
-    } else if (/\.csv$/i.test(baseName)) {
-      cleanSuggested = baseName.replace(/\.csv$/i, '_transformed.csv');
+    if (/_transformed\.csv$/i.test(rawName)) {
+      cleanSuggested = rawName;
+    } else if (/\.csv$/i.test(rawName)) {
+      cleanSuggested = rawName.replace(/\.csv$/i, '_transformed.csv');
     } else {
-      cleanSuggested = `${baseName.replace(/\.[^.]+$/, '')}_transformed.csv`;
+      cleanSuggested = `${rawName.replace(/\.[^.]+$/, '')}_transformed.csv`;
     }
 
     // ── 1. Open Save-As dialog IMMEDIATELY (while user gesture is active) ──
@@ -616,6 +618,8 @@ export const PlexisAPI = {
       }
     }
 
+    onProgress?.({ percent: 2, loadedBytes: 0, totalBytes: 0, phase: 'preparing' });
+
     // ── 2. Fetch the CSV stream from the backend ──
     const res = await fetch(`${BASE_URL}/api/transform/export/${datasetId}`, {
       headers: getAuthHeaders(),
@@ -625,37 +629,89 @@ export const PlexisAPI = {
     const disposition = res.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="([^"]+)"/);
     const serverName = match ? match[1] : cleanSuggested;
+    const totalBytes = Number(res.headers.get('Content-Length') || res.headers.get('X-Estimated-Bytes') || 0);
 
-    // ── 3a. Stream directly to the user-chosen file on disk ──
-    if (fileHandle) {
+    // ── 3a. Stream chunks directly to disk (or collect for fallback) with real progress ──
+    let loadedBytes = 0;
+    if (res.body && typeof res.body.getReader === 'function') {
+      const reader = res.body.getReader();
       let writable = null;
-      try {
-        writable = await fileHandle.createWritable();
-        if (res.body && typeof res.body.pipeTo === 'function') {
-          await res.body.pipeTo(writable);
-        } else {
-          const blob = await res.blob();
-          if (!blob || blob.size === 0) throw new Error('Export returned empty file');
-          await writable.write(blob);
-          await writable.close();
+      const fallbackChunks = fileHandle ? null : [];
+
+      if (fileHandle) {
+        try {
+          writable = await fileHandle.createWritable();
+        } catch (err) {
+          console.error('[Export] createWritable failed, falling back to blob:', err);
+          fileHandle = null;
         }
-        return { status: 'saved', filename: fileHandle.name || serverName };
+      }
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && value.byteLength > 0) {
+            loadedBytes += value.byteLength;
+            if (writable) {
+              await writable.write(value);
+            } else {
+              fallbackChunks.push(value);
+            }
+            const pct = totalBytes > 0
+              ? Math.min(98, Math.max(5, Math.round((loadedBytes / totalBytes) * 100)))
+              : Math.min(95, 10 + Math.round(loadedBytes / (1024 * 256)) * 4);
+            onProgress?.({ percent: pct, loadedBytes, totalBytes, phase: 'downloading' });
+          }
+        }
+
+        if (writable) {
+          await writable.close();
+          onProgress?.({ percent: 100, loadedBytes, totalBytes: loadedBytes, phase: 'done' });
+          return {
+            status: 'saved',
+            filename: fileHandle.name || serverName,
+            serverFilename: serverName,
+            sizeBytes: loadedBytes,
+          };
+        }
+
+        const blob = new Blob(fallbackChunks, { type: 'text/csv' });
+        if (blob.size === 0) throw new Error('Export returned empty file');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = serverName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        onProgress?.({ percent: 100, loadedBytes: blob.size, totalBytes: blob.size, phase: 'done' });
+        return {
+          status: 'saved',
+          filename: serverName,
+          serverFilename: serverName,
+          sizeBytes: blob.size,
+        };
       } catch (err) {
-        console.error('[Export] File write failed, falling back to download:', err);
         if (writable) {
           try { await writable.abort(); } catch {}
         }
-        // Only fall back to blob download if response body wasn't already consumed
-        if (res.bodyUsed) {
-          throw new Error(`Could not save file: ${err.message || 'Write failed'}`);
-        }
+        throw new Error(`Could not save file: ${err.message || 'Write failed'}`);
       }
     }
 
-    // ── 3b. Fallback: auto-download via hidden <a> tag ──
+    // ── 3b. Non-streaming fallback ──
     const blob = await res.blob();
     if (!blob || blob.size === 0) {
       throw new Error('Export returned empty file');
+    }
+    if (fileHandle) {
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      onProgress?.({ percent: 100, loadedBytes: blob.size, totalBytes: blob.size, phase: 'done' });
+      return { status: 'saved', filename: fileHandle.name || serverName, serverFilename: serverName, sizeBytes: blob.size };
     }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -665,7 +721,8 @@ export const PlexisAPI = {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    return { status: 'saved', filename: serverName };
+    onProgress?.({ percent: 100, loadedBytes: blob.size, totalBytes: blob.size, phase: 'done' });
+    return { status: 'saved', filename: serverName, serverFilename: serverName, sizeBytes: blob.size };
   },
 
   /**
