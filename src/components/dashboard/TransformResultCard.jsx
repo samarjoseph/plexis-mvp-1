@@ -7,22 +7,50 @@
  *   }
  *   datasetId: string
  *   onUndo: (datasetId) => void
- *   onExport: (datasetId) => void
+ *   onExport: (datasetId) => Promise<{ status?: string, filename?: string } | void>
  */
-import React from 'react';
-import { CheckCircle2, RotateCcw, Download, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckCircle2, RotateCcw, Download, Sparkles, Loader2 } from 'lucide-react';
 
 export default function TransformResultCard({ result, datasetId, onUndo, onExport }) {
+  const [exportState, setExportState] = useState('idle'); // 'idle' | 'exporting' | 'saved' | 'error'
+  const [exportMsg, setExportMsg] = useState('');
+
   if (!result) return null;
 
   const {
     operation_label = 'Transformation',
     changed_cells = 0,
     version_number = null,
-    success,
   } = result;
 
   if (result.success === false) return null;
+
+  const handleExportClick = async () => {
+    if (!onExport || exportState === 'exporting') return;
+    setExportState('exporting');
+    setExportMsg('');
+    try {
+      const outcome = await onExport(datasetId);
+      if (outcome && outcome.status === 'cancelled') {
+        setExportState('idle');
+        return;
+      }
+      setExportState('saved');
+      setExportMsg(outcome?.filename ? `Saved ${outcome.filename}` : 'Saved!');
+      setTimeout(() => {
+        setExportState('idle');
+        setExportMsg('');
+      }, 3500);
+    } catch (err) {
+      setExportState('error');
+      setExportMsg(err?.message || 'Export failed');
+      setTimeout(() => {
+        setExportState('idle');
+        setExportMsg('');
+      }, 4500);
+    }
+  };
 
   return (
     <div className="tresult-card">
@@ -50,7 +78,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
       {/* ── Intelligence Suggestion Provenance ── */}
       {result.intelligence_provenance && result.intelligence_provenance.used && (
         <div className="tresult-provenance" style={{
-            margin: '0 12px 12px', padding: '10px 12px', 
+            margin: '0 12px 12px', padding: '10px 12px',
             backgroundColor: 'var(--bg-tertiary, rgba(255,255,255,0.05))',
             borderLeft: '3px solid var(--accent-primary, #6366f1)',
             borderRadius: '4px', fontSize: '13px'
@@ -79,13 +107,44 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
         <button
           type="button"
           className="tresult-btn tresult-btn--primary"
-          onClick={() => onExport?.(datasetId)}
+          onClick={handleExportClick}
+          disabled={exportState === 'exporting'}
           title="Download transformed dataset as CSV"
         >
-          <Download size={13} />
-          Export CSV
+          {exportState === 'exporting' ? (
+            <>
+              <Loader2 size={13} className="spin" />
+              Saving CSV...
+            </>
+          ) : exportState === 'saved' ? (
+            <>
+              <CheckCircle2 size={13} />
+              Saved!
+            </>
+          ) : exportState === 'error' ? (
+            <>
+              <Download size={13} />
+              Retry Export
+            </>
+          ) : (
+            <>
+              <Download size={13} />
+              Export CSV
+            </>
+          )}
         </button>
       </div>
+      {exportMsg && (
+        <div
+          style={{
+            marginTop: '8px',
+            fontSize: '12px',
+            color: exportState === 'error' ? '#f87171' : '#34d399',
+          }}
+        >
+          {exportMsg}
+        </div>
+      )}
     </div>
   );
 }

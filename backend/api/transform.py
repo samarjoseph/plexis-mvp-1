@@ -14,7 +14,7 @@ import logging
 import uuid
 from typing import Optional
 
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, request, jsonify, Response, stream_with_context
 
 from db.session import get_db
 from db.identity import identity_resolver, IdentityError
@@ -464,25 +464,53 @@ def list_versions(dataset_id):
 
 @transform_bp.route('/export/<dataset_id>', methods=['GET'])
 def export_dataset(dataset_id):
-    """Export the current (possibly transformed) dataset as CSV."""
+    """Export the current (possibly transformed) dataset as a streamed CSV download."""
     try:
         from datasets.registry import dataset_registry
 
         entry = dataset_registry.get(dataset_id)
         if entry is None or entry.dataframe is None:
+            # Cold-worker fallback: restore from PostgreSQL
+            try:
+                from db.session import db_session
+                from db.services.dataset_service import dataset_service
+                with db_session() as db:
+                    _, restored_df = dataset_service.restore_dataset_df(db, uuid.UUID(dataset_id), user_id=None)  # type: ignore[arg-type]
+                    if restored_df is not None:
+                        entry = dataset_registry.get(dataset_id)
+            except Exception as restore_err:
+                logger.warning('[transform/export] DB restore failed for %s: %s', dataset_id, restore_err)
+
+        if entry is None or entry.dataframe is None:
             return jsonify({'error': 'Dataset not found'}), 404
 
-        buf = io.StringIO()
-        entry.dataframe.to_csv(buf, index=False)
-        csv_content = buf.getvalue()
-
+        df = entry.dataframe
         filename = getattr(entry, 'filename', 'dataset.csv')
-        export_name = filename.replace('.csv', '_transformed.csv')
+        if filename.lower().endswith('.csv'):
+            export_name = filename[:-4] + '_transformed.csv'
+        elif '.' in filename:
+            export_name = filename.rsplit('.', 1)[0] + '_transformed.csv'
+        else:
+            export_name = f"{filename}_transformed.csv"
+
+        def _generate_csv():
+            chunk_size = 15000
+            total = len(df)
+            if total == 0:
+                yield df.to_csv(index=False)
+                return
+            for start in range(0, total, chunk_size):
+                end = min(start + chunk_size, total)
+                yield df.iloc[start:end].to_csv(index=False, header=(start == 0))
 
         return Response(
-            csv_content,
+            stream_with_context(_generate_csv()),
             mimetype='text/csv',
-            headers={'Content-Disposition': f'attachment; filename="{export_name}"'}
+            headers={
+                'Content-Disposition': f'attachment; filename="{export_name}"',
+                'Cache-Control': 'no-store',
+                'Access-Control-Expose-Headers': 'Content-Disposition',
+            },
         )
     except Exception as e:
         logger.error('[transform/export] Error: %s', e, exc_info=True)

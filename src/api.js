@@ -585,13 +585,23 @@ export const PlexisAPI = {
    *  user click (before any await) — browsers revoke the "user activation"
    *  after the first async gap, so calling it after fetch() silently fails.
    */
-  async exportDataset(datasetId) {
+  async exportDataset(datasetId, suggestedFilename = '') {
+    const baseName = suggestedFilename || 'dataset.csv';
+    let cleanSuggested;
+    if (/_transformed\.csv$/i.test(baseName)) {
+      cleanSuggested = baseName;
+    } else if (/\.csv$/i.test(baseName)) {
+      cleanSuggested = baseName.replace(/\.csv$/i, '_transformed.csv');
+    } else {
+      cleanSuggested = `${baseName.replace(/\.[^.]+$/, '')}_transformed.csv`;
+    }
+
     // ── 1. Open Save-As dialog IMMEDIATELY (while user gesture is active) ──
     let fileHandle = null;
     if (typeof window.showSaveFilePicker === 'function') {
       try {
         fileHandle = await window.showSaveFilePicker({
-          suggestedName: 'dataset_transformed.csv',
+          suggestedName: cleanSuggested,
           types: [
             {
               description: 'CSV file',
@@ -600,42 +610,62 @@ export const PlexisAPI = {
           ],
         });
       } catch (err) {
-        if (err.name === 'AbortError') return;   // user cancelled
-        fileHandle = null;  // API failed — will fall back to auto-download
+        if (err.name === 'AbortError') return { status: 'cancelled' };
+        console.warn('[Export] showSaveFilePicker failed, falling back:', err);
+        fileHandle = null;
       }
     }
 
-    // ── 2. Fetch the CSV from the backend ──
+    // ── 2. Fetch the CSV stream from the backend ──
     const res = await fetch(`${BASE_URL}/api/transform/export/${datasetId}`, {
       headers: getAuthHeaders(),
     });
-    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
-    const blob = await res.blob();
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
 
-    // ── 3a. Write to the user-chosen file ──
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const serverName = match ? match[1] : cleanSuggested;
+
+    // ── 3a. Stream directly to the user-chosen file on disk ──
     if (fileHandle) {
+      let writable = null;
       try {
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return;
+        writable = await fileHandle.createWritable();
+        if (res.body && typeof res.body.pipeTo === 'function') {
+          await res.body.pipeTo(writable);
+        } else {
+          const blob = await res.blob();
+          if (!blob || blob.size === 0) throw new Error('Export returned empty file');
+          await writable.write(blob);
+          await writable.close();
+        }
+        return { status: 'saved', filename: fileHandle.name || serverName };
       } catch (err) {
-        // write failed — fall through to auto-download
+        console.error('[Export] File write failed, falling back to download:', err);
+        if (writable) {
+          try { await writable.abort(); } catch {}
+        }
+        // Only fall back to blob download if response body wasn't already consumed
+        if (res.bodyUsed) {
+          throw new Error(`Could not save file: ${err.message || 'Write failed'}`);
+        }
       }
     }
 
     // ── 3b. Fallback: auto-download via hidden <a> tag ──
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const match = disposition.match(/filename="([^"]+)"/);
-    const suggestedName = match ? match[1] : 'dataset_transformed.csv';
+    const blob = await res.blob();
+    if (!blob || blob.size === 0) {
+      throw new Error('Export returned empty file');
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = suggestedName;
+    a.download = serverName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { status: 'saved', filename: serverName };
   },
 
   /**
