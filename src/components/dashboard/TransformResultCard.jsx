@@ -11,7 +11,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, RotateCcw, Download, Sparkles, Loader2, X } from 'lucide-react';
+import { CheckCircle2, RotateCcw, Download, Sparkles, Loader2, X, FileCheck2 } from 'lucide-react';
 
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return '';
@@ -155,7 +155,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
             ) : exportState === 'saved' ? (
               <>
                 <CheckCircle2 size={13} />
-                Saved!
+                Saved
               </>
             ) : exportState === 'error' ? (
               <>
@@ -171,15 +171,16 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
           </button>
         </div>
 
-        {/* ── Export Progress Bar ── */}
+        {/* ── Export Progress Bar (Black glass + subtle blue) ── */}
         {exportState === 'exporting' && (
           <div
             style={{
               marginTop: '12px',
               padding: '10px 12px',
               borderRadius: '8px',
-              background: 'rgba(15, 23, 42, 0.72)',
-              border: '1px solid rgba(99, 102, 241, 0.28)',
+              background: 'linear-gradient(135deg, rgba(10, 12, 18, 0.92), rgba(15, 23, 42, 0.65))',
+              border: '1px solid rgba(59, 130, 246, 0.22)',
+              backdropFilter: 'blur(12px)',
             }}
           >
             <div
@@ -189,12 +190,12 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
                 justifyContent: 'space-between',
                 fontSize: '12px',
                 marginBottom: '7px',
-                color: '#e2e8f0',
+                color: '#cbd5e1',
                 fontWeight: 500,
               }}
             >
               <span>Saving your CSV...</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums', color: '#94a3b8' }}>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: '#93c5fd', fontSize: '11.5px' }}>
                 {progress.loadedBytes > 0 ? `${formatBytes(progress.loadedBytes)} · ` : ''}
                 {progress.percent > 0 ? `${progress.percent}%` : 'Preparing...'}
               </span>
@@ -202,9 +203,9 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
             <div
               style={{
                 width: '100%',
-                height: '6px',
+                height: '5px',
                 borderRadius: '999px',
-                background: 'rgba(255, 255, 255, 0.08)',
+                background: 'rgba(255, 255, 255, 0.06)',
                 overflow: 'hidden',
               }}
             >
@@ -213,7 +214,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
                   width: `${Math.max(progress.percent, 6)}%`,
                   height: '100%',
                   borderRadius: '999px',
-                  background: 'linear-gradient(90deg, #6366f1 0%, #10b981 100%)',
+                  background: 'linear-gradient(90deg, #2563eb 0%, #60a5fa 100%)',
                   transition: 'width 180ms ease-out',
                 }}
               />
@@ -229,7 +230,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
         )}
       </div>
 
-      {/* ── Saved Confirmation Popup with Close (×) Button ── */}
+      {/* ── Saved Confirmation Popup (Simple Black Glassmorphism + Subtle Blue) ── */}
       {savedPopup && typeof document !== 'undefined' && createPortal(
         <div
           role="dialog"
@@ -237,47 +238,49 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
           aria-label="Export saved confirmation"
           style={{
             position: 'fixed',
-            top: '24px',
-            right: '24px',
+            top: '20px',
+            right: '20px',
             zIndex: 9999,
-            maxWidth: '420px',
+            maxWidth: '400px',
             width: 'calc(100vw - 32px)',
-            background: 'linear-gradient(145deg, rgba(16, 24, 39, 0.98), rgba(10, 15, 28, 0.98))',
-            border: '1px solid rgba(16, 185, 129, 0.45)',
-            boxShadow: '0 20px 45px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.04)',
+            background:
+              'radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 65%), rgba(9, 11, 16, 0.88)',
+            border: '1px solid rgba(59, 130, 246, 0.24)',
+            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
             borderRadius: '12px',
-            padding: '14px 16px',
+            padding: '14px 15px',
             display: 'flex',
             alignItems: 'flex-start',
             gap: '12px',
-            color: '#f8fafc',
-            backdropFilter: 'blur(12px)',
+            color: '#e2e8f0',
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
           }}
         >
           <div
             style={{
               flexShrink: 0,
-              width: '32px',
-              height: '32px',
+              width: '30px',
+              height: '30px',
               borderRadius: '8px',
-              background: 'rgba(16, 185, 129, 0.14)',
-              border: '1px solid rgba(16, 185, 129, 0.35)',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.22)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#34d399',
+              color: '#60a5fa',
               marginTop: '1px',
             }}
           >
-            <CheckCircle2 size={18} />
+            <FileCheck2 size={16} />
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#34d399', marginBottom: '3px' }}>
-              Export Complete
+            <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#93c5fd', marginBottom: '3px', letterSpacing: '0.01em' }}>
+              Saved
             </div>
-            <div style={{ fontSize: '13px', lineHeight: 1.45, color: '#e2e8f0', wordBreak: 'break-word' }}>
-              Saved your <strong style={{ color: '#ffffff' }}>{savedPopup.filename}</strong> with all your latest transformations.
+            <div style={{ fontSize: '12.5px', lineHeight: 1.45, color: '#cbd5e1', wordBreak: 'break-word' }}>
+              Saved your <span style={{ color: '#f8fafc', fontWeight: 600 }}>{savedPopup.filename}</span> with all your latest transformations.
             </div>
           </div>
 
@@ -288,8 +291,8 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
             title="Close"
             style={{
               flexShrink: 0,
-              background: 'transparent',
-              border: 'none',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
               color: '#94a3b8',
               cursor: 'pointer',
               padding: '4px',
@@ -300,7 +303,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
               lineHeight: 1,
             }}
           >
-            <X size={16} />
+            <X size={14} />
           </button>
         </div>,
         document.body
