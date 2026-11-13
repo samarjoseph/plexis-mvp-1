@@ -54,7 +54,11 @@ def check_guest_spreadsheet_access():
     return None
 
 
-def _try_restore_from_db(dataset_id: str) -> pd.DataFrame | None:
+def _try_restore_from_db(
+    dataset_id: str,
+    user_id: Optional[UUID] = None,
+    user_plan: Optional[str] = None,
+) -> pd.DataFrame | None:
     """
     Attempt to restore a dataset DataFrame from PostgreSQL when L1 cache is cold.
     This handles server restart / multi-worker scenarios where the in-memory
@@ -66,10 +70,12 @@ def _try_restore_from_db(dataset_id: str) -> pd.DataFrame | None:
         from db.services.dataset_service import dataset_service
         from uuid import UUID
         with db_session() as db:
-            _, df = dataset_service.restore_dataset_df(db, UUID(dataset_id), user_id=None)  # type: ignore[arg-type]
+            _, df = dataset_service.restore_dataset_df(
+                db, UUID(dataset_id), user_id=user_id, user_plan=user_plan
+            )
             # restore_dataset_df re-registers in cache, so re-check
             if df is not None:
-                logger.info("[DATASETS_DATA] Restored dataset %s from DB into cache", dataset_id)
+                logger.info("[DATASETS_DATA] Restored dataset %s from DB into cache (plan=%s)", dataset_id, user_plan)
                 return df
     except Exception as e:
         logger.warning("[DATASETS_DATA] DB restore failed for dataset %s: %s", dataset_id, e)
@@ -99,7 +105,9 @@ def get_dataset_data(dataset_id: str) -> Tuple[Any, int]:
 
     # L2 DB restore on cache miss (handles server restart / multi-worker cold start)
     if df is None or (hasattr(df, 'empty') and df.empty):
-        df = _try_restore_from_db(dataset_id)
+        user_id = getattr(user, 'user_id', None)
+        user_plan = getattr(user, 'plan', None)
+        df = _try_restore_from_db(dataset_id, user_id=user_id, user_plan=user_plan)
         # Re-check entry after potential restore
         entry = dataset_registry.get_by_id(dataset_id)
 

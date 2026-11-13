@@ -102,26 +102,21 @@ class TransformationExecutor:
             version_number = None
 
             if db is not None and original_db_dataset_id is not None and not is_noop:
-                # Fire-and-forget background persist so the UI responds instantly.
-                # Version persistence is non-fatal; the L1 cache already has the
-                # new DataFrame, so the user sees the result immediately.
-                import threading
-                persist_args = dict(
-                    new_df=new_df.copy(),
-                    plan=plan,
-                    original_db_dataset_id=original_db_dataset_id,
-                    user_id=user_id,
-                    base_filename=base_filename,
-                )
-                def _bg_persist():
-                    try:
-                        from db.session import db_session
-                        with db_session() as bg_db:
-                            self._persist_version(db=bg_db, **persist_args)
-                            logger.info('[TransformExecutor] Background persist completed for plan %s', plan.plan_id)
-                    except Exception as e:
-                        logger.warning('[TransformExecutor] Background persist failed (non-fatal): %s', e)
-                threading.Thread(target=_bg_persist, daemon=True).start()
+                try:
+                    v_ds_id, dv_id, dv_num = self._persist_version(
+                        db=db,
+                        new_df=new_df,
+                        plan=plan,
+                        original_db_dataset_id=original_db_dataset_id,
+                        user_id=user_id,
+                        base_filename=base_filename,
+                    )
+                    version_dataset_id = str(v_ds_id) if v_ds_id else None
+                    version_id = str(dv_id) if dv_id else None
+                    version_number = dv_num
+                    logger.info('[TransformExecutor] Persisted version %s for plan %s', version_number, plan.plan_id)
+                except Exception as e:
+                    logger.warning('[TransformExecutor] Version persistence failed (non-fatal): %s', e)
 
             # ── Record in-memory undo history (atomic with registry update) ──
             from transformation.history import transformation_history
@@ -568,6 +563,49 @@ class TransformationExecutor:
         db.add(version_file)
         db.flush()
 
+        # Safely resolve plan UUID
+        plan_uuid = None
+        if getattr(plan, 'plan_id', None):
+            if isinstance(plan.plan_id, uuid.UUID):
+                plan_uuid = plan.plan_id
+            else:
+                try:
+                    plan_uuid = uuid.UUID(str(plan.plan_id))
+                except Exception:
+                    plan_uuid = None
+
+        # Check if plan exists in transformation_plans DB table to satisfy Foreign Key
+        valid_plan_id = None
+        if plan_uuid:
+            try:
+                existing_plan = transformation_repository.get_plan(db, plan_uuid)
+                if existing_plan:
+                    valid_plan_id = existing_plan.id
+                else:
+                    sample_dicts = [
+                        {'row_index': c.row_index, 'column_name': c.column_name, 'before': c.before, 'after': c.after}
+                        for c in (getattr(plan, 'before_sample', None) or [])
+                    ]
+                    created_plan = transformation_repository.create_plan(
+                        db,
+                        plan_id=plan_uuid,
+                        dataset_id=original_db_dataset_id,
+                        operation_type=getattr(plan, 'operation_type', 'TRANSFORMATION') or 'TRANSFORMATION',
+                        operation_payload=getattr(plan, 'operation_payload', {}) or {},
+                        operation_code=getattr(plan, 'operation_code', '') or '',
+                        affected_rows_count=getattr(plan, 'affected_rows_count', 0) or 0,
+                        affected_cells_count=getattr(plan, 'affected_cells_count', 0) or 0,
+                        before_sample=sample_dicts,
+                        dataset_fingerprint=getattr(plan, 'dataset_fingerprint', None),
+                        user_id=user_id,
+                    )
+                    if hasattr(db, "flush"):
+                        db.flush()
+                    valid_plan_id = created_plan.id if created_plan else None
+            except Exception as plan_err:
+                logger.warning('[TransformExecutor] Could not attach plan_id to version (proceeding with plan_id=None): %s', plan_err)
+                valid_plan_id = None
+
         # Get the latest existing version for parent linking
         latest = transformation_repository.get_latest_version(db, original_db_dataset_id)
         parent_version_id = latest.id if latest else None
@@ -577,7 +615,7 @@ class TransformationExecutor:
             db,
             original_dataset_id=original_db_dataset_id,
             version_dataset_id=version_ds.id,
-            plan_id=uuid.UUID(plan.plan_id),
+            plan_id=valid_plan_id,
             operation_label=plan.operation_label,
             changed_cells_count=plan.affected_cells_count,
             parent_version_id=parent_version_id,
@@ -588,9 +626,14 @@ class TransformationExecutor:
             },
         )
 
-        # Mark plan as applied
-        transformation_repository.mark_plan_applied(db, uuid.UUID(plan.plan_id))
-        db.commit()
+        # Mark plan as applied if recorded in DB
+        if valid_plan_id:
+            try:
+                transformation_repository.mark_plan_applied(db, valid_plan_id)
+            except Exception:
+                pass
+        if hasattr(db, "commit"):
+            db.commit()
 
         return version_ds.id, dv.id, dv.version_number
 

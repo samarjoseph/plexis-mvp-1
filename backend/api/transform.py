@@ -468,6 +468,10 @@ def export_dataset(dataset_id):
     try:
         from datasets.registry import dataset_registry
 
+        current_user, _ = _resolve_user(request)
+        user_id = getattr(current_user, 'user_id', None)
+        user_plan = getattr(current_user, 'plan', None)
+
         entry = dataset_registry.get(dataset_id)
         if entry is None or entry.dataframe is None:
             # Cold-worker fallback: restore from PostgreSQL
@@ -475,7 +479,9 @@ def export_dataset(dataset_id):
                 from db.session import db_session
                 from db.services.dataset_service import dataset_service
                 with db_session() as db:
-                    _, restored_df = dataset_service.restore_dataset_df(db, uuid.UUID(dataset_id), user_id=None)  # type: ignore[arg-type]
+                    _, restored_df = dataset_service.restore_dataset_df(
+                        db, uuid.UUID(dataset_id), user_id=user_id, user_plan=user_plan
+                    )
                     if restored_df is not None:
                         entry = dataset_registry.get(dataset_id)
             except Exception as restore_err:

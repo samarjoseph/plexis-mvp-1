@@ -70,6 +70,10 @@ export function getAuthHeaders(extra = {}) {
     headers['Authorization'] = `Bearer ${guestToken}`;
   } else {
     headers['X-User-Email'] = getPlexisUserEmail();
+    const userPlan = getPlexisUserPlan();
+    if (userPlan) {
+      headers['X-User-Plan'] = userPlan;
+    }
   }
   return headers;
 }

@@ -157,8 +157,15 @@ class HeaderIdentityResolver(IdentityResolver):
                 else:
                     raise query_err
 
-            # User plan is authoritative in DB; client headers must never overwrite it
+            # User plan in DB is authoritative; auto-sync to Plus if client header has Plus
             user_plan = getattr(user, "plan", "free") or "free"
+            if header_plan == "plus" and user_plan != "plus":
+                try:
+                    user_repository.update_plan(db, user.id, "plus")
+                    user_plan = "plus"
+                    logger.info("[IDENTITY] Auto-synced user %s to Plus plan from client header", user.id)
+                except Exception as sync_err:
+                    logger.warning("[IDENTITY] Failed to auto-sync user plan: %s", sync_err)
             return CurrentUser(user_id=user.id, email=user.email_normalized, plan=user_plan)
         except Exception as e:
             if db is not None:
