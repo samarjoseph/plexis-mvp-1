@@ -197,8 +197,11 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
             >
               <span>Saving your CSV...</span>
               <span style={{ fontVariantNumeric: 'tabular-nums', color: '#a1a1aa', fontSize: '11.5px' }}>
-                {progress.loadedBytes > 0 ? `${formatBytes(progress.loadedBytes)} · ` : ''}
-                {progress.percent > 0 ? `${progress.percent}%` : 'Preparing...'}
+                {progress.totalBytes > 0 && progress.loadedBytes > 0
+                  ? `${formatBytes(progress.loadedBytes)} of ${formatBytes(progress.totalBytes)} · ${progress.percent}%`
+                  : progress.loadedBytes > 0
+                    ? `${formatBytes(progress.loadedBytes)} · ${progress.percent}%`
+                    : 'Preparing...'}
               </span>
             </div>
             <div
@@ -212,7 +215,7 @@ export default function TransformResultCard({ result, datasetId, onUndo, onExpor
             >
               <div
                 style={{
-                  width: `${Math.max(progress.percent, 6)}%`,
+                  width: `${Math.max(progress.percent, 2)}%`,
                   height: '100%',
                   borderRadius: '999px',
                   background: '#3b82f6',

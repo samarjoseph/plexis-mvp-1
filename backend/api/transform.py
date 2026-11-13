@@ -496,9 +496,13 @@ def export_dataset(dataset_id):
         total = len(df)
         estimated_bytes = 0
         if total > 0:
-            sample_n = min(500, total)
-            sample_csv = df.iloc[:sample_n].to_csv(index=False)
-            estimated_bytes = max(len(sample_csv), int((len(sample_csv) / sample_n) * total))
+            sample_n = min(1000, total)
+            sample_slice = df.iloc[:sample_n]
+            header_str = df.iloc[:0].to_csv(index=False)
+            header_bytes = len(header_str.encode('utf-8'))
+            sample_body_bytes = len(sample_slice.to_csv(index=False, header=False).encode('utf-8'))
+            avg_row_bytes = sample_body_bytes / sample_n
+            estimated_bytes = header_bytes + int(avg_row_bytes * total)
 
         def _generate_csv():
             chunk_size = 15000
@@ -515,8 +519,10 @@ def export_dataset(dataset_id):
             headers={
                 'Content-Disposition': f'attachment; filename="{export_name}"',
                 'X-Estimated-Bytes': str(estimated_bytes),
+                'X-Total-Bytes': str(estimated_bytes),
+                'X-Total-Rows': str(total),
                 'Cache-Control': 'no-store',
-                'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, X-Estimated-Bytes',
+                'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, X-Estimated-Bytes, X-Total-Bytes, X-Total-Rows',
             },
         )
     except Exception as e:

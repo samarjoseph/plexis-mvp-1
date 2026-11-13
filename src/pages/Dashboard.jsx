@@ -1741,13 +1741,23 @@ function DashboardInner() {
     const suggestedName = (rawName && rawName !== 'Active Dataset' && rawName !== 'No active dataset')
       ? rawName
       : '';
+    let expectedBytes = 0;
+    const rawSize = activeConversation?.file_size || activeConversation?.fileSize;
+    if (typeof rawSize === 'number') {
+      expectedBytes = rawSize;
+    } else if (typeof rawSize === 'string') {
+      const matchMb = rawSize.match(/([\d.]+)\s*mb/i);
+      const matchKb = rawSize.match(/([\d.]+)\s*kb/i);
+      if (matchMb) expectedBytes = Math.round(parseFloat(matchMb[1]) * 1024 * 1024);
+      else if (matchKb) expectedBytes = Math.round(parseFloat(matchKb[1]) * 1024);
+    }
     try {
-      return await PlexisAPI.exportDataset(resolvedDatasetId, suggestedName, onProgress);
+      return await PlexisAPI.exportDataset(resolvedDatasetId, suggestedName, onProgress, expectedBytes);
     } catch (e) {
       console.error('[handleExportDataset]', e);
       throw e;
     }
-  }, [activeConversation?.datasetId, activeConversation?.activeDatasetName, activeConversation?.datasetName, activeConversation?.filename]);
+  }, [activeConversation?.datasetId, activeConversation?.activeDatasetName, activeConversation?.datasetName, activeConversation?.filename, activeConversation?.file_size, activeConversation?.fileSize]);
 
   // ── Keyboard Shortcuts ─────────────────────────────────────
   useKeyboardShortcuts([

@@ -585,7 +585,7 @@ export const PlexisAPI = {
    *  user click (before any await) — browsers revoke the "user activation"
    *  after the first async gap, so calling it after fetch() silently fails.
    */
-  async exportDataset(datasetId, suggestedFilename = '', onProgress = null) {
+  async exportDataset(datasetId, suggestedFilename = '', onProgress = null, expectedBytes = 0) {
     const rawName = (suggestedFilename && suggestedFilename !== 'Active Dataset' && suggestedFilename !== 'No active dataset')
       ? suggestedFilename
       : 'dataset.csv';
@@ -618,7 +618,7 @@ export const PlexisAPI = {
       }
     }
 
-    onProgress?.({ percent: 2, loadedBytes: 0, totalBytes: 0, phase: 'preparing' });
+    onProgress?.({ percent: 1, loadedBytes: 0, totalBytes: Number(expectedBytes) || 0, phase: 'preparing' });
 
     // ── 2. Fetch the CSV stream from the backend ──
     const res = await fetch(`${BASE_URL}/api/transform/export/${datasetId}`, {
@@ -629,7 +629,14 @@ export const PlexisAPI = {
     const disposition = res.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="([^"]+)"/);
     const serverName = match ? match[1] : cleanSuggested;
-    const totalBytes = Number(res.headers.get('Content-Length') || res.headers.get('X-Estimated-Bytes') || 0);
+
+    const headerTotal = Number(
+      res.headers.get('X-Total-Bytes') ||
+      res.headers.get('X-Estimated-Bytes') ||
+      res.headers.get('Content-Length') ||
+      0
+    );
+    let totalBytes = headerTotal > 0 ? headerTotal : (Number(expectedBytes) || 0);
 
     // ── 3a. Stream chunks directly to disk (or collect for fallback) with real progress ──
     let loadedBytes = 0;
@@ -658,10 +665,19 @@ export const PlexisAPI = {
             } else {
               fallbackChunks.push(value);
             }
-            const pct = totalBytes > 0
-              ? Math.min(98, Math.max(5, Math.round((loadedBytes / totalBytes) * 100)))
-              : Math.min(95, 10 + Math.round(loadedBytes / (1024 * 256)) * 4);
-            onProgress?.({ percent: pct, loadedBytes, totalBytes, phase: 'downloading' });
+
+            // Real percentage calculation: 8MB of 16MB = exactly 50%
+            const effectiveTotal = Math.max(totalBytes, loadedBytes);
+            const pct = effectiveTotal > 0
+              ? Math.min(99, Math.max(1, Math.round((loadedBytes / effectiveTotal) * 100)))
+              : 0;
+
+            onProgress?.({
+              percent: pct,
+              loadedBytes,
+              totalBytes: effectiveTotal,
+              phase: 'downloading',
+            });
           }
         }
 

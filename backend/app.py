@@ -93,7 +93,29 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config['MAX_CONTENT_LENGTH'] = (Config.MAX_UPLOAD_SIZE_MB + 5) * 1024 * 1024
 
-    CORS(app, origins=Config.CORS_ORIGINS, supports_credentials=True)
+    CORS(
+        app,
+        origins=Config.CORS_ORIGINS,
+        supports_credentials=True,
+        expose_headers=[
+            'Content-Disposition',
+            'Content-Length',
+            'X-Estimated-Bytes',
+            'X-Total-Bytes',
+            'X-Total-Rows',
+        ],
+    )
+
+    @app.after_request
+    def expose_custom_headers(response):
+        custom = 'Content-Disposition, Content-Length, X-Estimated-Bytes, X-Total-Bytes, X-Total-Rows'
+        existing = response.headers.get('Access-Control-Expose-Headers')
+        if existing:
+            if 'X-Estimated-Bytes' not in existing:
+                response.headers['Access-Control-Expose-Headers'] = f"{existing}, {custom}"
+        else:
+            response.headers['Access-Control-Expose-Headers'] = custom
+        return response
 
     setup_logging(Config.LOG_LEVEL)
     init_middleware(app)
