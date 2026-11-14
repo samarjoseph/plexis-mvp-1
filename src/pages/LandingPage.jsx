@@ -84,7 +84,7 @@ export default function LandingPage() {
           custom={0}
         >
           <span className="badge-dot"></span>
-          <span>Plexis · Intelligent Data Analyst</span>
+          <span>Plexis · Your Intelligent Data Workspace</span>
         </motion.div>
 
         <motion.h1
@@ -94,7 +94,7 @@ export default function LandingPage() {
           animate="visible"
           custom={1}
         >
-          Plexis – AI-Powered <br className="mobile-break" /> Data Analysis
+          Your entire data workspace, <br className="mobile-break" /> controlled through conversation.
         </motion.h1>
 
         <motion.p
@@ -104,9 +104,7 @@ export default function LandingPage() {
           animate="visible"
           custom={2}
         >
-          Meet Plexis, your intelligent AI data analyst. Upload CSV and Excel
-          datasets, discover instant insights, perform AI spreadsheet analysis, and transform
-          data seamlessly from one unified workspace.
+          Analyze datasets, uncover hidden patterns, and perform complex data transformations using natural language. Explore statistics, interact with live spreadsheets, and manage your entire analytical workflow in one intelligent workspace.
         </motion.p>
 
         {/* Hero CTA Button Group */}
@@ -154,17 +152,17 @@ export default function LandingPage() {
         >
           <span className="section-tag">Features</span>
           <h2>Built for modern data teams</h2>
-          <p>Everything you need to go from raw CSV to actionable intelligence.</p>
+          <p>Everything you need to investigate, understand, and transform data in one connected workspace.</p>
         </motion.div>
 
         <div className="features-grid">
           {[
-            { icon: Database,      title: 'AI Data Analysis',          desc: 'Instant profiling, correlations, and structural insights powered by AI data analysis.' },
-            { icon: Shield,        title: 'AI Spreadsheet Analysis',   desc: 'Analyze CSV and Excel tables with automated insight and formula precision.' },
-            { icon: Globe,         title: 'Web Research',              desc: 'Blend live web data with local dataset intelligence effortlessly.' },
-            { icon: BarChart3,     title: 'Advanced Charts',           desc: 'Generate complex charts and data visualizations from natural language.' },
-            { icon: Brain,         title: 'Conversation Memory',       desc: 'Persistent session context and user preferences for seamless workflows.' },
-            { icon: MessageSquare, title: 'Multi-Chat Workspace',      desc: 'Context-aware follow-ups with isolated chat memories and sessions.' },
+            { icon: Database,      title: 'AI Data Analysis',                   desc: 'Investigate datasets, discover hidden patterns, explore statistical distributions, and uncover meaningful insights with intelligent AI-powered analysis.' },
+            { icon: Shield,        title: 'Live Interactive Spreadsheet',       desc: 'Explore and modify your datasets through an integrated spreadsheet that synchronizes with your analytical workspace.' },
+            { icon: Globe,         title: 'Intelligent Web Research',           desc: 'Combine web research with dataset intelligence to explore external information and enrich your analytical workflow.' },
+            { icon: BarChart3,     title: 'Advanced Data Visualizations',       desc: 'Generate interactive charts and visualizations using natural-language instructions. Turn complex data into understandable insights.' },
+            { icon: Brain,         title: 'Intelligent Transformations',        desc: 'Transform datasets using natural language. Review before-and-after changes, apply operations, and undo modifications whenever needed.' },
+            { icon: MessageSquare, title: 'Connected Conversational Workspace', desc: 'Control workspace panels, access spreadsheet functionality, and execute multi-step operations directly through conversation.' },
           ].map((feature, i) => (
             <motion.div
               key={feature.title}
@@ -194,8 +192,8 @@ export default function LandingPage() {
           viewport={{ once: true }}
           transition={{ duration: 0.7 }}
         >
-          <h2>Start analyzing smarter today</h2>
-          <p>Experience intelligent data discovery and automated transformations.</p>
+          <h2>Turn Your Data Into Intelligence</h2>
+          <p>Experience a smarter way to investigate, understand, and transform your datasets.</p>
           <div className="landing-cta-actions">
             <GoogleSignInButton variant="primary" label="Continue with Google" />
             <button
